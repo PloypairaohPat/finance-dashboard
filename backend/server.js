@@ -18,11 +18,19 @@ const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID;
 const app = express();
 app.use(express.json());
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://finance-dashboard-git-main-ploypairaohpats-projects.vercel.app",
-    "https://finance-dashboard-p7874a26n-ploypairaohpats-projects.vercel.app",
-  ],
+  origin: (origin, callback) => {
+    const allowed = [
+      "http://localhost:3000",
+      /https:\/\/finance-dashboard.*\.vercel\.app$/,
+    ];
+    if (!origin || allowed.some(o => 
+      typeof o === "string" ? o === origin : o.test(origin)
+    )) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
 }));
 
 // ── 3. Validate required env vars at startup ──────────────────────
