@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phase 1 — PostgreSQL + Prisma Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0f0c;
+  --surface: #111710;
+  --surface2: #161e14;
+  --border: #1e2b1e;
+  --border2: #253325;
+  --text: #d4e8d4;
+  --muted: #5a7a5a;
+  --green: #00e87a;
+  --green-dim: #00a856;
+  --green-glow: rgba(0,232,122,0.08);
+  --amber: #f0a030;
+  --amber-bg: rgba(240,160,48,0.08);
+  --red: #ff5555;
+  --mono: 'IBM Plex Mono', monospace;
+  --serif: 'Fraunces', Georgia, serif;
+  --sans: 'DM Sans', system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.header {
+  padding: 48px 48px 36px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--green) 0%, transparent 100%);
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green-dim);
+  margin-bottom: 12px;
+}
+.header h1 {
+  font-family: var(--serif);
+  font-size: 42px;
+  font-weight: 300;
+  line-height: 1.1;
+  color: #e8f4e8;
+  margin-bottom: 12px;
+}
+.header h1 em { font-style: italic; color: var(--green); }
+.header-meta {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.meta-badge {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.progress-bar-wrap {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.progress-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
+.progress-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  min-width: 60px;
+  text-align: right;
+}
+
+/* ── Layout ── */
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: calc(100vh - 200px);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 32px 0;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+.sidebar-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 24px;
+  margin-bottom: 16px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.nav-item:hover { background: var(--surface2); }
+.nav-item.active {
+  border-left-color: var(--green);
+  background: var(--green-glow);
+}
+.nav-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  width: 20px;
+  flex-shrink: 0;
+}
+.nav-item.active .nav-num { color: var(--green); }
+.nav-text {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.nav-item.active .nav-text { color: var(--text); }
+.nav-item.done .nav-text { color: var(--green-dim); }
+.nav-check {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  transition: all 0.2s;
+}
+.nav-item.done .nav-check {
+  background: var(--green);
+  border-color: var(--green);
+  color: #000;
+}
+
+/* ── Main content ── */
+.main {
+  padding: 40px 48px 80px;
+  max-width: 780px;
+}
+
+/* ── Step ── */
+.step { display: none; }
+.step.active { display: block; }
+
+.step-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.step-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  background: var(--green-glow);
+  border: 1px solid var(--border2);
+  padding: 4px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  margin-top: 6px;
+}
+.step-title {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 300;
+  color: #e8f4e8;
+  line-height: 1.15;
+}
+.step-title em { font-style: italic; color: var(--green); }
+
+.step-intro {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-left: 3px solid var(--green-dim);
+  border-radius: 0 8px 8px 0;
+  padding: 16px 20px;
+  margin-bottom: 32px;
+  font-size: 14px;
+  color: #8ab88a;
+  line-height: 1.65;
+}
+
+/* ── Sub-tasks ── */
+.tasks { list-style: none; margin-bottom: 32px; }
+.task-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+  cursor: pointer;
+}
+.task-item:last-child { border-bottom: none; }
+.task-cb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  background: var(--surface);
+}
+.task-item.checked .task-cb {
+  background: var(--green);
+  border-color: var(--green);
+  color: #000;
+}
+.task-cb svg { display: none; }
+.task-item.checked .task-cb svg { display: block; }
+.task-body { flex: 1; }
+.task-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 3px;
+  transition: color 0.15s;
+}
+.task-item.checked .task-label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--muted); }
+.task-note {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── Code blocks ── */
+.code-wrap {
+  margin: 20px 0;
+}
+.code-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.copy-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.copy-btn:hover { color: var(--green); border-color: var(--green-dim); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+pre {
+  background: #0d1510;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 22px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #c8e0c8;
+}
+.c  { color: #3d5c3d; } /* comment */
+.k  { color: #7ecfa0; } /* keyword */
+.s  { color: #e8c47c; } /* string */
+.t  { color: #88c4ff; } /* type */
+.p  { color: #ff9966; } /* punctuation / decorator */
+.n  { color: #e0f0e0; } /* name / identifier */
+.v  { color: #ffcc88; } /* value / number */
+.g  { color: var(--green); } /* highlight */
+
+/* ── Callouts ── */
+.callout {
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin: 20px 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  display: flex;
+  gap: 12px;
+}
+.callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.callout-warn { background: var(--amber-bg); border: 1px solid rgba(240,160,48,0.2); color: #c8a060; }
+.callout-info { background: rgba(100,150,255,0.06); border: 1px solid rgba(100,150,255,0.15); color: #8898c8; }
+.callout-good { background: var(--green-glow); border: 1px solid rgba(0,232,122,0.15); color: #6aaa88; }
+.callout strong { font-weight: 500; color: inherit; filter: brightness(1.3); }
+
+/* ── Section label ── */
+.section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 28px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Navigation buttons ── */
+.step-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--surface2);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.btn:hover { border-color: var(--green-dim); color: var(--text); }
+.btn-primary {
+  background: var(--green);
+  color: #000;
+  border-color: var(--green);
+  font-weight: 600;
+}
+.btn-primary:hover { background: #00ff88; border-color: #00ff88; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Folder tree ── */
+.tree {
+  background: #0d1510;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 22px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 2;
+  color: #8ab88a;
+  margin: 16px 0;
+}
+.tree .dir { color: #88c4ff; }
+.tree .file { color: #c8e0c8; }
+.tree .new { color: var(--green); }
+.tree .new::after { content: ' ← new'; color: var(--green-dim); font-size: 10px; }
+.tree .mod { color: var(--amber); }
+.tree .mod::after { content: ' ← edit'; color: #c08030; font-size: 10px; }
+
+/* ── Schema table ── */
+.schema-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+.schema-table th {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border2);
+}
+.schema-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.schema-table tr:last-child td { border-bottom: none; }
+.schema-table .col-name { font-family: var(--mono); font-size: 12px; color: #e0f0e0; }
+.schema-table .col-type { font-family: var(--mono); font-size: 11px; color: #88c4ff; }
+.schema-table .col-note { font-size: 12px; color: var(--muted); }
+.schema-table .important { color: var(--amber); font-size: 10px; font-family: var(--mono); }
+
+/* ── Done banner ── */
+.done-banner {
+  background: var(--green-glow);
+  border: 1px solid rgba(0,232,122,0.2);
+  border-radius: 10px;
+  padding: 20px 24px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 32px;
+}
+.done-icon { font-size: 28px; }
+.done-title { font-size: 16px; font-weight: 500; color: var(--green); margin-bottom: 4px; }
+.done-desc { font-size: 13px; color: #6aaa88; }
+
+@media (max-width: 700px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .header { padding: 28px 20px; }
+  .header h1 { font-size: 30px; }
+  .main { padding: 28px 20px 60px; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="eyebrow">Phase 1 · Week 1–2 · Personal Finance Platform</div>
+  <h1>PostgreSQL + <em>Prisma</em><br>Setup Guide</h1>
+  <div class="header-meta">
+    <span class="meta-badge">8 steps</span>
+    <span class="meta-badge">~90 min</span>
+    <span class="meta-badge">$0 cost</span>
+    <span class="meta-badge">Node.js + Docker required</span>
+  </div>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-label" id="progressLabel">0 / 8</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-title">Steps</div>
+    <a class="nav-item active" onclick="goTo(0)" href="#">
+      <span class="nav-num">01</span>
+      <span class="nav-text">Docker PostgreSQL</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(1)" href="#">
+      <span class="nav-num">02</span>
+      <span class="nav-text">Install Prisma</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(2)" href="#">
+      <span class="nav-num">03</span>
+      <span class="nav-text">Configure .env</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(3)" href="#">
+      <span class="nav-num">04</span>
+      <span class="nav-text">Encryption utility</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(4)" href="#">
+      <span class="nav-num">05</span>
+      <span class="nav-text">Write schema.prisma</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(5)" href="#">
+      <span class="nav-num">06</span>
+      <span class="nav-text">Run migration + seed</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(6)" href="#">
+      <span class="nav-num">07</span>
+      <span class="nav-text">Replace tokenStore</span>
+      <span class="nav-check">✓</span>
+    </a>
+    <a class="nav-item" onclick="goTo(7)" href="#">
+      <span class="nav-num">08</span>
+      <span class="nav-text">Verify everything works</span>
+      <span class="nav-check">✓</span>
+    </a>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- ══ STEP 1 ══ -->
+    <div class="step active" id="step-0">
+      <div class="step-header">
+        <span class="step-num">Step 01 / 08</span>
+        <h2 class="step-title">Start <em>PostgreSQL</em><br>with Docker</h2>
+      </div>
+      <div class="step-intro">
+        Your app currently has no database. This step spins up a real PostgreSQL instance on your machine using Docker — no install, no config files, one command.
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠</span>
+        <div><strong>Docker must be running.</strong> Open Docker Desktop and wait for the engine to start before running any commands below.</div>
+      </div>
+
+      <ul class="tasks" id="tasks-0">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Open Docker Desktop and confirm it's running</div>
+            <div class="task-note">The whale icon in your menu bar should be active, not spinning.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Run the PostgreSQL container</div>
+            <div class="task-note">This creates a container named <code>finance-db</code> on port 5432. The data persists in a Docker volume.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Verify the container is running</div>
+            <div class="task-note">You should see <code>finance-db</code> with status <code>Up</code>.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Start the database</div>
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>terminal</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><span class="c"># Start PostgreSQL — runs in background, restarts automatically</span>
+<span class="k">docker</span> run \
+  --name finance-db \
+  -e <span class="n">POSTGRES_USER</span>=<span class="s">financeuser</span> \
+  -e <span class="n">POSTGRES_PASSWORD</span>=<span class="s">financepass</span> \
+  -e <span class="n">POSTGRES_DB</span>=<span class="s">financedb</span> \
+  -p <span class="v">5432</span>:<span class="v">5432</span> \
+  --restart unless-stopped \
+  -d postgres:<span class="v">16</span>
+
+<span class="c"># Confirm it's running</span>
+<span class="k">docker</span> ps --filter name=finance-db</pre>
+      </div>
+
+      <div class="callout callout-good">
+        <span class="callout-icon">✓</span>
+        <div><strong>Expected output:</strong> A long container ID, then a row showing <code>finance-db</code> with status <code>Up X seconds</code>. If you see an error about port 5432 already in use, you may have a local Postgres running — stop it first or change the port to <code>5433:5432</code> (and update DATABASE_URL in Step 3).</div>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" disabled>← Back</button>
+        <button class="btn btn-primary" onclick="goTo(1)">Next: Install Prisma →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 2 ══ -->
+    <div class="step" id="step-1">
+      <div class="step-header">
+        <span class="step-num">Step 02 / 08</span>
+        <h2 class="step-title">Install <em>Prisma</em></h2>
+      </div>
+      <div class="step-intro">
+        Prisma is your ORM — it lets you write type-safe database queries in JavaScript instead of raw SQL. It also manages migrations and generates a TypeScript client from your schema automatically.
+      </div>
+
+      <ul class="tasks" id="tasks-1">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Navigate to your backend project folder</div>
+            <div class="task-note">This is wherever your <code>server.js</code> lives, not the React frontend folder.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Install Prisma CLI and client</div>
+            <div class="task-note"><code>prisma</code> is the CLI tool (dev only). <code>@prisma/client</code> is what your code imports at runtime.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Initialise Prisma in the project</div>
+            <div class="task-note">This creates a <code>prisma/</code> folder with a <code>schema.prisma</code> file, and adds <code>DATABASE_URL</code> to your <code>.env</code>.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Commands</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>terminal — run from your backend root</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c"># Install both packages</span>
+<span class="k">npm</span> install prisma @prisma/client
+
+<span class="c"># Initialise Prisma (creates prisma/schema.prisma + .env entry)</span>
+<span class="k">npx</span> prisma init --datasource-provider postgresql</pre>
+      </div>
+
+      <div class="section-label">What gets created</div>
+      <div class="tree">
+your-backend/
+├── <span class="dir">prisma/</span>
+│   └── <span class="new">schema.prisma</span>
+├── <span class="mod">.env</span>
+├── server.js
+└── package.json
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ</span>
+        <div>The <code>schema.prisma</code> created by <code>init</code> is just a placeholder. You will <strong>replace its entire contents</strong> in Step 5. Don't edit it yet.</div>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(0)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(2)">Next: Configure .env →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 3 ══ -->
+    <div class="step" id="step-2">
+      <div class="step-header">
+        <span class="step-num">Step 03 / 08</span>
+        <h2 class="step-title">Configure <em>.env</em></h2>
+      </div>
+      <div class="step-intro">
+        Your <code>.env</code> file now has a placeholder <code>DATABASE_URL</code>. Replace it with the real connection string for the Docker container you started in Step 1. You'll also generate an encryption key for your Plaid access tokens.
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠</span>
+        <div><strong>Check .gitignore first.</strong> Open <code>.gitignore</code> and confirm <code>.env</code> is listed. If it's not, add it right now before proceeding. Your access tokens and encryption key must never be committed to git.</div>
+      </div>
+
+      <ul class="tasks" id="tasks-2">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Confirm .env is in .gitignore</div>
+            <div class="task-note">Open <code>.gitignore</code> — you should see a line that says <code>.env</code> or <code>*.env</code>.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Generate a 32-byte encryption key</div>
+            <div class="task-note">Run the Node command below and copy the output — you'll paste it into .env as ENCRYPTION_KEY.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Update .env with the values below</div>
+            <div class="task-note">Replace the existing DATABASE_URL placeholder entirely.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Generate your encryption key (run once)</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>terminal</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="k">node</span> -e <span class="s">"console.log(require('crypto').randomBytes(32).toString('hex'))"</span>
+<span class="c"># Example output: a3f8b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1</span>
+<span class="c"># Copy this — you'll paste it as ENCRYPTION_KEY below</span></pre>
+      </div>
+
+      <div class="section-label">Your .env file (final state)</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>.env</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c"># ── Database ──────────────────────────────────────────</span>
+<span class="n">DATABASE_URL</span>=<span class="s">"postgresql://financeuser:financepass@localhost:5432/financedb"</span>
+
+<span class="c"># ── Plaid ─────────────────────────────────────────────</span>
+<span class="n">PLAID_CLIENT_ID</span>=<span class="s">"your_plaid_client_id"</span>
+<span class="n">PLAID_SECRET</span>=<span class="s">"your_plaid_sandbox_secret"</span>
+<span class="n">PLAID_ENV</span>=<span class="s">"sandbox"</span>
+
+<span class="c"># ── Security ──────────────────────────────────────────</span>
+<span class="c"># Paste the output of the node command above here:</span>
+<span class="n">ENCRYPTION_KEY</span>=<span class="s">"paste_your_64_char_hex_key_here"</span></pre>
+      </div>
+
+      <div class="callout callout-good">
+        <span class="callout-icon">✓</span>
+        <div><strong>Also create a .env.example</strong> — a copy of .env with all real values replaced by placeholders (e.g. <code>your_plaid_client_id</code>). Commit this to git so future collaborators know what's needed, without exposing secrets.</div>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(1)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(3)">Next: Encryption utility →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 4 ══ -->
+    <div class="step" id="step-3">
+      <div class="step-header">
+        <span class="step-num">Step 04 / 08</span>
+        <h2 class="step-title"><em>Encryption</em> utility<br>for access tokens</h2>
+      </div>
+      <div class="step-intro">
+        Plaid access tokens give full read access to someone's bank account. The roadmap requires they are encrypted at rest before being stored in the database. This utility uses AES-256-GCM — the same standard banks use.
+      </div>
+
+      <ul class="tasks" id="tasks-3">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Create the utils/ folder in your backend</div>
+            <div class="task-note"><code>mkdir utils</code> from your backend root if it doesn't exist.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Create utils/encrypt.js with the code below</div>
+            <div class="task-note">Copy the entire block exactly — no changes needed.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Create lib/prisma.js — the shared Prisma client</div>
+            <div class="task-note">This pattern prevents creating a new DB connection on every request.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">utils/encrypt.js</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>create this file</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// utils/encrypt.js — AES-256-GCM encryption for Plaid access tokens
+// Never log, print, or store the plaintext token anywhere else.</span>
+
+<span class="k">const</span> crypto = require(<span class="s">'crypto'</span>)
+
+<span class="k">const</span> KEY = Buffer.from(process.env.ENCRYPTION_KEY, <span class="s">'hex'</span>)
+
+<span class="k">if</span> (KEY.length !== <span class="v">32</span>) {
+  <span class="k">throw new</span> Error(<span class="s">'ENCRYPTION_KEY must be a 64-char hex string (32 bytes)'</span>)
+}
+
+<span class="k">function</span> <span class="n">encrypt</span>(text) {
+  <span class="k">const</span> iv = crypto.randomBytes(<span class="v">12</span>)
+  <span class="k">const</span> cipher = crypto.createCipheriv(<span class="s">'aes-256-gcm'</span>, KEY, iv)
+  <span class="k">const</span> encrypted = Buffer.concat([
+    cipher.update(text, <span class="s">'utf8'</span>),
+    cipher.final()
+  ])
+  <span class="k">const</span> tag = cipher.getAuthTag()
+  <span class="k">return</span> [iv, tag, encrypted]
+    .map(b => b.toString(<span class="s">'base64'</span>))
+    .join(<span class="s">'.'</span>)
+}
+
+<span class="k">function</span> <span class="n">decrypt</span>(str) {
+  <span class="k">const</span> [iv, tag, encrypted] = str
+    .split(<span class="s">'.'</span>)
+    .map(s => Buffer.from(s, <span class="s">'base64'</span>))
+  <span class="k">const</span> decipher = crypto.createDecipheriv(<span class="s">'aes-256-gcm'</span>, KEY, iv)
+  decipher.setAuthTag(tag)
+  <span class="k">return</span> decipher.update(encrypted) + decipher.final(<span class="s">'utf8'</span>)
+}
+
+module.exports = { encrypt, decrypt }</pre>
+      </div>
+
+      <div class="section-label">lib/prisma.js — singleton client</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>create lib/ folder, then this file</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// lib/prisma.js — single shared Prisma client instance
+// Import this wherever you need DB access: const prisma = require('../lib/prisma')</span>
+
+<span class="k">const</span> { PrismaClient } = require(<span class="s">'@prisma/client'</span>)
+
+<span class="k">const</span> prisma = <span class="k">new</span> PrismaClient({
+  log: process.env.NODE_ENV === <span class="s">'development'</span>
+    ? [<span class="s">'query'</span>, <span class="s">'error'</span>]
+    : [<span class="s">'error'</span>],
+})
+
+module.exports = prisma</pre>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(2)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(4)">Next: Write schema.prisma →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 5 ══ -->
+    <div class="step" id="step-4">
+      <div class="step-header">
+        <span class="step-num">Step 05 / 08</span>
+        <h2 class="step-title">Write <em>schema.prisma</em></h2>
+      </div>
+      <div class="step-intro">
+        This is the most important step. The schema defines every table in your database. It's designed following all the roadmap best practices: user_id everywhere, Decimal for money, rawJson stored immutably, soft deletes, and indexes on the fields you'll query most.
+      </div>
+
+      <ul class="tasks" id="tasks-4">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Open prisma/schema.prisma</div>
+            <div class="task-note">It currently has the placeholder content from <code>npx prisma init</code>.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Select all and replace with the schema below</div>
+            <div class="task-note">Delete everything in the file and paste in the full block below. Do not modify anything yet.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Save the file</div>
+            <div class="task-note">Don't run any Prisma commands yet — that's Step 6.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">prisma/schema.prisma — complete file</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>replace entire file contents</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// prisma/schema.prisma</span>
+
+generator client {
+  provider = <span class="s">"prisma-client-js"</span>
+}
+
+datasource db {
+  provider = <span class="s">"postgresql"</span>
+  url      = env(<span class="s">"DATABASE_URL"</span>)
+}
+
+<span class="c">// ── User ──────────────────────────────────────────────
+// Single hardcoded user for now. Schema is multi-user
+// ready: user_id is on every table from day one.</span>
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plaidItems   PlaidItem[]
+  accounts     Account[]
+  transactions Transaction[]
+}
+
+<span class="c">// ── PlaidItem ─────────────────────────────────────────
+// One row per connected bank. Stores the encrypted
+// access_token and the sync cursor for delta fetches.</span>
+model PlaidItem {
+  id              String    @id @default(cuid())
+  userId          String
+  plaidItemId     String    @unique
+  accessToken     String    <span class="c">// AES-256-GCM encrypted — never store plaintext</span>
+  institutionId   String?
+  institutionName String?
+  cursor          String?   <span class="c">// /transactions/sync cursor — stored per item</span>
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  accounts Account[]
+
+  @@index([userId])
+}
+
+<span class="c">// ── Account ───────────────────────────────────────────
+// One row per bank account (checking, savings, credit).</span>
+model Account {
+  id               String   @id @default(cuid())
+  userId           String
+  plaidItemId      String
+  plaidAccountId   String   @unique
+  name             String
+  officialName     String?
+  type             String   <span class="c">// depository | credit | investment | loan</span>
+  subtype          String?  <span class="c">// checking | savings | credit card | etc.</span>
+  mask             String?  <span class="c">// last 4 digits</span>
+  currentBalance   Decimal? @db.Decimal(12, 2)  <span class="c">// Decimal — never Float for money</span>
+  availableBalance Decimal? @db.Decimal(12, 2)
+  isoCurrencyCode  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  plaidItem    PlaidItem     @relation(fields: [plaidItemId], references: [id])
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+<span class="c">// ── Transaction ───────────────────────────────────────
+// Core table. rawJson is immutable — it stores the exact
+// Plaid response and is never modified after insert.
+// All other columns are derived/cleaned from rawJson.</span>
+model Transaction {
+  id                 String    @id @default(cuid())
+  userId             String
+  accountId          String
+  plaidTransactionId String    @unique
+  amount             Decimal   @db.Decimal(12, 2)  <span class="c">// positive = debit, negative = credit</span>
+  isoCurrencyCode    String?
+  date               DateTime  <span class="c">// stored in UTC always</span>
+  name               String    <span class="c">// raw merchant string from Plaid</span>
+  merchantName       String?   <span class="c">// cleaned merchant name (Phase 2)</span>
+  categoryPrimary    String?   <span class="c">// e.g. "Food and Drink"</span>
+  categoryDetailed   String?   <span class="c">// e.g. "Food and Drink > Restaurants"</span>
+  pending            Boolean   @default(false)
+  deletedAt          DateTime? <span class="c">// soft delete — never hard-delete transactions</span>
+  rawJson            Json      <span class="c">// immutable Plaid response — never UPDATE this</span>
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id])
+  account Account @relation(fields: [accountId], references: [id])
+
+  <span class="c">// Indexes on the two most common query patterns</span>
+  @@index([userId, date])
+  @@index([userId, categoryPrimary])
+}</pre>
+      </div>
+
+      <div class="section-label">What each table does</div>
+      <table class="schema-table">
+        <thead>
+          <tr><th>Table</th><th>Purpose</th><th>Key field</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-name">User</td>
+            <td class="col-note">Single user for now. Having it from day 1 means zero refactoring if you add multi-user later.</td>
+            <td class="col-type">id (cuid)</td>
+          </tr>
+          <tr>
+            <td class="col-name">PlaidItem</td>
+            <td class="col-note">One row per connected institution. Replaces your in-memory tokenStore.</td>
+            <td class="col-type"><span class="important">accessToken (encrypted)</span><br/>cursor</td>
+          </tr>
+          <tr>
+            <td class="col-name">Account</td>
+            <td class="col-note">Each checking/savings/credit account under a PlaidItem.</td>
+            <td class="col-type">currentBalance (Decimal)</td>
+          </tr>
+          <tr>
+            <td class="col-name">Transaction</td>
+            <td class="col-note">Every transaction. rawJson column is the source of truth — never modified.</td>
+            <td class="col-type"><span class="important">rawJson (Json) — immutable</span><br/>deletedAt (soft delete)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(3)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(5)">Next: Run migration →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 6 ══ -->
+    <div class="step" id="step-5">
+      <div class="step-header">
+        <span class="step-num">Step 06 / 08</span>
+        <h2 class="step-title">Run migration<br>+ <em>seed</em> a user</h2>
+      </div>
+      <div class="step-intro">
+        Now you apply the schema to the real database. Prisma creates a migration file (which is your history — never delete it) and runs it against the Docker PostgreSQL container. Then you seed one user row so foreign keys work.
+      </div>
+
+      <ul class="tasks" id="tasks-5">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Run the first migration</div>
+            <div class="task-note">This creates all 4 tables in your database and generates the Prisma Client.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Create prisma/seed.js and run it</div>
+            <div class="task-note">This inserts the default user row that all other records will reference.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Open Prisma Studio to visually verify</div>
+            <div class="task-note">This opens a browser UI at localhost:5555 showing all your tables.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Run migration</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>terminal</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c"># Creates prisma/migrations/[timestamp]_init/ folder + runs SQL</span>
+<span class="k">npx</span> prisma migrate dev --name init
+
+<span class="c"># Expected output ends with:
+# ✔ Generated Prisma Client
+# The following migration(s) have been applied:
+#   migrations/20240101000000_init/migration.sql</span></pre>
+      </div>
+
+      <div class="section-label">prisma/seed.js — create your default user</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>create this file</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// prisma/seed.js — run once to create the default user</span>
+<span class="k">const</span> { PrismaClient } = require(<span class="s">'@prisma/client'</span>)
+<span class="k">const</span> prisma = <span class="k">new</span> PrismaClient()
+
+<span class="k">async function</span> <span class="n">main</span>() {
+  <span class="k">const</span> user = <span class="k">await</span> prisma.user.upsert({
+    where:  { email: <span class="s">'me@finance.local'</span> },
+    update: {},
+    create: { email: <span class="s">'me@finance.local'</span> },
+  })
+  console.log(<span class="s">'✓ Default user:'</span>, user.id)
+  <span class="c">// Save this user ID — you'll use it as the default userId</span>
+  <span class="c">// in your server.js (e.g. hardcode as DEFAULT_USER_ID in .env)</span>
+}
+
+main()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect())</pre>
+      </div>
+
+      <div class="section-label">Run the seed + verify</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>terminal</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c"># Run the seed script</span>
+<span class="k">node</span> prisma/seed.js
+
+<span class="c"># You'll see: ✓ Default user: clxxxxxxxxxxxxxx
+# Copy that ID and add it to .env:</span>
+<span class="c"># DEFAULT_USER_ID="clxxxxxxxxxxxxxx"</span>
+
+<span class="c"># Open Prisma Studio to see your tables visually</span>
+<span class="k">npx</span> prisma studio
+<span class="c"># Opens http://localhost:5555 — you should see 1 row in the User table</span></pre>
+      </div>
+
+      <div class="callout callout-good">
+        <span class="callout-icon">✓</span>
+        <div><strong>Add DEFAULT_USER_ID to .env</strong> — paste the cuid that was printed by the seed script. Your backend will use this constant when creating PlaidItems, Accounts, and Transactions until you add real auth in Phase 4.</div>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(4)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(6)">Next: Replace tokenStore →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 7 ══ -->
+    <div class="step" id="step-6">
+      <div class="step-header">
+        <span class="step-num">Step 07 / 08</span>
+        <h2 class="step-title">Replace the<br><em>in-memory</em> tokenStore</h2>
+      </div>
+      <div class="step-intro">
+        This is where the rubber meets the road. You'll update the two critical endpoints in <code>server.js</code>: <strong>/exchange-token</strong> (saves to DB) and <strong>/api/transactions</strong> (reads from DB). Your app will survive server restarts from this point on.
+      </div>
+
+      <ul class="tasks" id="tasks-6">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Add the three imports at the top of server.js</div>
+            <div class="task-note">prisma client, encrypt, and decrypt.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Remove the tokenStore object</div>
+            <div class="task-note">Delete the line <code>const tokenStore = {}</code> and any <code>tokenStore[x] = y</code> assignments.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Replace the /exchange-token endpoint</div>
+            <div class="task-note">Old: saves token to memory. New: encrypts and upserts to plaid_items table.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Update the transactions/balances endpoints to read from DB</div>
+            <div class="task-note">Old: reads token from memory. New: looks up from DB, decrypts, calls Plaid.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Add to the top of server.js</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>server.js — imports to add</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// Add these three lines near the top of server.js,
+// after your existing require() statements</span>
+<span class="k">const</span> prisma = require(<span class="s">'./lib/prisma'</span>)
+<span class="k">const</span> { encrypt, decrypt } = require(<span class="s">'./utils/encrypt'</span>)
+
+<span class="k">const</span> DEFAULT_USER_ID = process.env.DEFAULT_USER_ID
+
+<span class="c">// REMOVE this line (if you have it):</span>
+<span class="c">// const tokenStore = {}</span></pre>
+      </div>
+
+      <div class="section-label">Replace /exchange-token endpoint</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>server.js — exchange-token route</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// REPLACE your existing /exchange-token handler with this:</span>
+app.post(<span class="s">'/exchange-token'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">try</span> {
+    <span class="k">const</span> { public_token } = req.body
+
+    <span class="c">// Exchange public token for access token</span>
+    <span class="k">const</span> tokenResponse = <span class="k">await</span> plaidClient.itemPublicTokenExchange({
+      public_token,
+    })
+    <span class="k">const</span> { access_token, item_id } = tokenResponse.data
+
+    <span class="c">// Encrypt before storing — never store plaintext</span>
+    <span class="k">const</span> encryptedToken = encrypt(access_token)
+
+    <span class="c">// Get institution details from Plaid</span>
+    <span class="k">const</span> itemResponse = <span class="k">await</span> plaidClient.itemGet({ access_token })
+    <span class="k">const</span> institutionId = itemResponse.data.item.institution_id
+
+    <span class="k">let</span> institutionName = <span class="k">null</span>
+    <span class="k">if</span> (institutionId) {
+      <span class="k">const</span> instResponse = <span class="k">await</span> plaidClient.institutionsGetById({
+        institution_id: institutionId,
+        country_codes: [<span class="s">'US'</span>],
+      })
+      institutionName = instResponse.data.institution.name
+    }
+
+    <span class="c">// Upsert PlaidItem — safe to call multiple times</span>
+    <span class="k">const</span> plaidItem = <span class="k">await</span> prisma.plaidItem.upsert({
+      where:  { plaidItemId: item_id },
+      update: { accessToken: encryptedToken },
+      create: {
+        userId:          DEFAULT_USER_ID,
+        plaidItemId:     item_id,
+        accessToken:     encryptedToken,
+        institutionId,
+        institutionName,
+      },
+    })
+
+    <span class="c">// Fetch and store accounts</span>
+    <span class="k">const</span> accountsResponse = <span class="k">await</span> plaidClient.accountsGet({ access_token })
+    <span class="k">const</span> accounts = accountsResponse.data.accounts
+
+    <span class="k">for</span> (<span class="k">const</span> acct <span class="k">of</span> accounts) {
+      <span class="k">await</span> prisma.account.upsert({
+        where:  { plaidAccountId: acct.account_id },
+        update: {
+          currentBalance:   acct.balances.current,
+          availableBalance: acct.balances.available,
+        },
+        create: {
+          userId:          DEFAULT_USER_ID,
+          plaidItemId:     plaidItem.id,
+          plaidAccountId:  acct.account_id,
+          name:            acct.name,
+          officialName:    acct.official_name,
+          type:            acct.type,
+          subtype:         acct.subtype,
+          mask:            acct.mask,
+          currentBalance:  acct.balances.current,
+          availableBalance:acct.balances.available,
+          isoCurrencyCode: acct.balances.iso_currency_code,
+        },
+      })
+    }
+
+    res.json({ success: <span class="k">true</span>, institutionName })
+  } <span class="k">catch</span> (err) {
+    console.error(<span class="s">'exchange-token error:'</span>, err.message)
+    res.status(<span class="v">500</span>).json({ error: err.message })
+  }
+})</pre>
+      </div>
+
+      <div class="section-label">Replace /api/balances endpoint</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>server.js — balances route</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// REPLACE your existing /api/balances handler with this:</span>
+app.get(<span class="s">'/api/balances'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">try</span> {
+    <span class="c">// Read accounts directly from DB — fast, no Plaid call needed</span>
+    <span class="k">const</span> accounts = <span class="k">await</span> prisma.account.findMany({
+      where: { userId: DEFAULT_USER_ID },
+      orderBy: { name: <span class="s">'asc'</span> },
+    })
+    res.json({ accounts })
+  } <span class="k">catch</span> (err) {
+    console.error(<span class="s">'balances error:'</span>, err.message)
+    res.status(<span class="v">500</span>).json({ error: err.message })
+  }
+})</pre>
+      </div>
+
+      <div class="section-label">Replace /api/transactions endpoint</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>server.js — transactions route</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c">// REPLACE your existing /api/transactions handler with this:</span>
+app.get(<span class="s">'/api/transactions'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">try</span> {
+    <span class="c">// Get all PlaidItems for this user</span>
+    <span class="k">const</span> items = <span class="k">await</span> prisma.plaidItem.findMany({
+      where: { userId: DEFAULT_USER_ID },
+    })
+
+    <span class="k">if</span> (items.length === <span class="v">0</span>) {
+      <span class="k">return</span> res.json({ transactions: [] })
+    }
+
+    <span class="k">let</span> allTransactions = []
+
+    <span class="k">for</span> (<span class="k">const</span> item <span class="k">of</span> items) {
+      <span class="k">const</span> access_token = decrypt(item.accessToken)
+
+      <span class="c">// Fetch transactions from Plaid</span>
+      <span class="k">const</span> response = <span class="k">await</span> plaidClient.transactionsGet({
+        access_token,
+        start_date: <span class="s">'2024-01-01'</span>,
+        end_date:   <span class="k">new</span> Date().toISOString().split(<span class="s">'T'</span>)[<span class="v">0</span>],
+      })
+
+      <span class="k">const</span> txns = response.data.transactions
+
+      <span class="c">// Persist each transaction to DB (upsert = safe to re-run)</span>
+      <span class="k">for</span> (<span class="k">const</span> txn <span class="k">of</span> txns) {
+        <span class="k">const</span> account = <span class="k">await</span> prisma.account.findUnique({
+          where: { plaidAccountId: txn.account_id },
+        })
+        <span class="k">if</span> (!account) <span class="k">continue</span>
+
+        <span class="k">await</span> prisma.transaction.upsert({
+          where:  { plaidTransactionId: txn.transaction_id },
+          update: {
+            pending:         txn.pending,
+            amount:          txn.amount,
+            categoryPrimary: txn.personal_finance_category?.primary ?? <span class="k">null</span>,
+          },
+          create: {
+            userId:            DEFAULT_USER_ID,
+            accountId:         account.id,
+            plaidTransactionId:txn.transaction_id,
+            amount:            txn.amount,
+            isoCurrencyCode:   txn.iso_currency_code,
+            date:              <span class="k">new</span> Date(txn.date),
+            name:              txn.name,
+            merchantName:      txn.merchant_name,
+            categoryPrimary:   txn.personal_finance_category?.primary ?? <span class="k">null</span>,
+            categoryDetailed:  txn.personal_finance_category?.detailed ?? <span class="k">null</span>,
+            pending:           txn.pending,
+            rawJson:           txn,  <span class="c">// immutable — never update this column</span>
+          },
+        })
+        allTransactions.push(txn)
+      }
+    }
+
+    res.json({ transactions: allTransactions })
+  } <span class="k">catch</span> (err) {
+    console.error(<span class="s">'transactions error:'</span>, err.message)
+    res.status(<span class="v">500</span>).json({ error: err.message })
+  }
+})</pre>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(5)">← Back</button>
+        <button class="btn btn-primary" onclick="goTo(7)">Next: Verify it works →</button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 8 ══ -->
+    <div class="step" id="step-7">
+      <div class="step-header">
+        <span class="step-num">Step 08 / 08</span>
+        <h2 class="step-title"><em>Verify</em> everything<br>works end-to-end</h2>
+      </div>
+      <div class="step-intro">
+        Run through this checklist to confirm the DB is persisting data correctly. If all tests pass, Phase 1 Week 1–2 is complete and you're ready to move on to webhook-driven transaction sync.
+      </div>
+
+      <ul class="tasks" id="tasks-7">
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Start the server and confirm no errors</div>
+            <div class="task-note"><code>node server.js</code> — check for any import errors or DB connection failures on startup.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Connect Wells Fargo sandbox again via the UI</div>
+            <div class="task-note">Go through the Plaid Link flow — after success, you should see data write to DB instead of memory.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Open Prisma Studio and verify rows exist</div>
+            <div class="task-note">Run <code>npx prisma studio</code>. Check PlaidItem (1 row), Account (3 rows), Transaction (many rows).</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Restart the server and hit /api/balances</div>
+            <div class="task-note">After restarting with <code>Ctrl+C</code> then <code>node server.js</code>, the balances endpoint should still return data — proving persistence works.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Confirm accessToken is encrypted in the DB</div>
+            <div class="task-note">In Prisma Studio, click a PlaidItem row. The accessToken column should show a long dot-separated base64 string, NOT the original <code>access-sandbox-...</code> value.</div>
+          </div>
+        </li>
+        <li class="task-item" onclick="toggleTask(this)">
+          <div class="task-cb"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="task-body">
+            <div class="task-label">Commit to git</div>
+            <div class="task-note">Commit <code>prisma/</code>, <code>lib/prisma.js</code>, <code>utils/encrypt.js</code>, and updated <code>server.js</code>. Never commit <code>.env</code>.</div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="section-label">Quick verification commands</div>
+      <div class="code-wrap">
+        <div class="code-label"><span>terminal</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><span class="c"># 1. Restart server</span>
+<span class="k">node</span> server.js
+
+<span class="c"># 2. In another terminal — check balances (should return data from DB)</span>
+<span class="k">curl</span> http://localhost:3000/api/balances | <span class="k">json_pp</span>
+
+<span class="c"># 3. Check transactions</span>
+<span class="k">curl</span> http://localhost:3000/api/transactions | <span class="k">json_pp</span>
+
+<span class="c"># 4. Open Prisma Studio to visually inspect all tables</span>
+<span class="k">npx</span> prisma studio</pre>
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠</span>
+        <div><strong>Common errors:</strong>
+          <br/><code>P1001: Can't reach database</code> — Docker container isn't running. Run <code>docker start finance-db</code>.
+          <br/><code>Cannot find module './lib/prisma'</code> — You're in the wrong directory. Make sure you're in the backend root, not the frontend.
+          <br/><code>Invalid ENCRYPTION_KEY</code> — The key in .env is wrong length. Regenerate with the node command in Step 3.
+        </div>
+      </div>
+
+      <div class="done-banner">
+        <div class="done-icon">🎉</div>
+        <div>
+          <div class="done-title">Week 1–2 Complete</div>
+          <div class="done-desc">Your app now has a real database. Access tokens are encrypted. Data survives restarts. Next up: <strong>Week 3–4 — Plaid webhooks + /transactions/sync</strong> (delta fetching only what changed).</div>
+        </div>
+      </div>
+
+      <div class="step-nav">
+        <button class="btn" onclick="goTo(6)">← Back</button>
+        <button class="btn btn-primary" disabled>All done ✓</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+let current = 0;
+const total = 8;
+
+function goTo(idx) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('step-' + idx).classList.add('active');
+  document.querySelectorAll('.nav-item')[idx].classList.add('active');
+  current = idx;
+  updateProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function toggleTask(el) {
+  el.classList.toggle('checked');
+  updateProgress();
+}
+
+function updateProgress() {
+  const allTasks = document.querySelectorAll('.task-item');
+  const doneTasks = document.querySelectorAll('.task-item.checked');
+  const pct = allTasks.length ? Math.round((doneTasks.length / allTasks.length) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = doneTasks.length + ' / ' + allTasks.length;
+
+  // Update sidebar done states
+  for (let i = 0; i < total; i++) {
+    const taskList = document.getElementById('tasks-' + i);
+    if (!taskList) continue;
+    const tasks = taskList.querySelectorAll('.task-item');
+    const checked = taskList.querySelectorAll('.task-item.checked');
+    const navItem = document.querySelectorAll('.nav-item')[i];
+    if (checked.length === tasks.length && tasks.length > 0) {
+      navItem.classList.add('done');
+    } else {
+      navItem.classList.remove('done');
+    }
+  }
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.code-wrap').querySelector('pre');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Keyboard nav
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' && current < total - 1) goTo(current + 1);
+  if (e.key === 'ArrowLeft' && current > 0) goTo(current - 1);
+});
+</script>
+</body>
+</html>

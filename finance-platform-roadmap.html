@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Personal Finance Platform — Stack & Roadmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --surface2: #f0ede6;
+    --border: #e0dbd0;
+    --text: #1a1814;
+    --muted: #7a7568;
+    --accent: #1a3a2a;
+    --accent2: #2d5a3d;
+    --green: #00a86b;
+    --green-light: #e8f7f0;
+    --amber: #c47c00;
+    --amber-light: #fef5e0;
+    --red: #c0392b;
+    --red-light: #fdf0ee;
+    --blue: #1a4a7a;
+    --blue-light: #e8f0fa;
+    --mono: 'IBM Plex Mono', monospace;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'DM Sans', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    background: var(--accent);
+    color: #e8f4ee;
+    padding: 40px 48px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .site-header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 3px;
+    background: var(--green);
+  }
+  .header-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: #7ab898;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+  .header-title {
+    font-family: var(--serif);
+    font-size: 38px;
+    font-weight: 300;
+    line-height: 1.15;
+    color: #f0ede8;
+    margin-bottom: 10px;
+  }
+  .header-title em { font-style: italic; color: #a8d8bc; }
+  .header-meta {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #7ab898;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Nav tabs ── */
+  .nav-tabs {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 48px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    border: none;
+    background: none;
+    padding: 16px 18px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--green); font-weight: 500; }
+
+  /* ── Content ── */
+  .content { max-width: 860px; margin: 0 auto; padding: 48px 48px 80px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── Typography ── */
+  h1 { font-family: var(--serif); font-size: 30px; font-weight: 300; margin-bottom: 6px; }
+  h1 em { font-style: italic; }
+  h2 { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 40px 0 14px; color: var(--accent); }
+  h2:first-child { margin-top: 0; }
+  h3 { font-size: 14px; font-weight: 500; font-family: var(--mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin: 28px 0 10px; }
+  p { margin-bottom: 14px; color: var(--text); }
+  .lead { font-size: 16px; color: var(--muted); line-height: 1.7; margin-bottom: 32px; border-left: 3px solid var(--green); padding-left: 16px; }
+
+  /* ── Stack grid ── */
+  .stack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; margin: 20px 0 36px; }
+  .stack-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .stack-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .stack-layer { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .stack-now { font-family: var(--mono); font-size: 10px; background: var(--green-light); color: #1a6644; padding: 2px 8px; border-radius: 4px; }
+  .stack-later { font-family: var(--mono); font-size: 10px; background: var(--amber-light); color: #7a4e00; padding: 2px 8px; border-radius: 4px; }
+  .stack-tool { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+  .stack-alt { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .stack-why { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+  /* ── Phase cards ── */
+  .phase { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
+  .phase-header { padding: 20px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .phase-num { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; font-weight: 500; flex-shrink: 0; }
+  .phase-1 .phase-num { background: var(--green-light); color: #1a6644; }
+  .phase-2 .phase-num { background: var(--blue-light); color: var(--blue); }
+  .phase-3 .phase-num { background: var(--amber-light); color: #7a4e00; }
+  .phase-4 .phase-num { background: #f5eef8; color: #5a2d82; }
+  .phase-title { font-size: 17px; font-weight: 500; }
+  .phase-timeline { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+  .phase-body { padding: 24px; }
+  .milestone-list { list-style: none; }
+  .milestone-list li { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .milestone-list li:last-child { border-bottom: none; }
+  .ms-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-top: 8px; flex-shrink: 0; }
+  .ms-text { font-size: 14px; color: var(--text); line-height: 1.5; }
+  .ms-tag { font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 8px; vertical-align: middle; }
+  .tag-do { background: var(--green-light); color: #1a6644; }
+  .tag-skip { background: #f0f0f0; color: #888; }
+  .tag-prep { background: var(--blue-light); color: var(--blue); }
+  .phase-tools { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .tool-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Schema ── */
+  .schema-block { background: var(--accent); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; }
+  .schema-block pre { font-family: var(--mono); font-size: 12px; color: #c8e6d4; line-height: 1.8; white-space: pre; }
+  .schema-block .comment { color: #5a8c6e; }
+  .schema-block .keyword { color: #7ec8a0; }
+  .schema-block .type { color: #ffd080; }
+  .schema-block .name { color: #e8f4ee; }
+
+  .code-block { background: #1e1e1a; border-radius: 10px; padding: 20px 24px; margin: 16px 0; overflow-x: auto; }
+  .code-block pre { font-family: var(--mono); font-size: 12px; color: #c8c4b8; line-height: 1.75; }
+  .code-block .comment { color: #6a6660; }
+  .code-block .keyword { color: #9dd09d; }
+  .code-block .string { color: #e8c47c; }
+
+  /* ── Architecture diagram ── */
+  .arch-diagram { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 20px 0; }
+  .arch-row { display: grid; grid-template-columns: 110px 1fr; align-items: stretch; gap: 2px; }
+  .arch-label { background: var(--accent); color: #7ab898; font-family: var(--mono); font-size: 11px; padding: 12px 14px; border-radius: 4px; display: flex; align-items: center; }
+  .arch-items { display: flex; gap: 2px; }
+  .arch-item { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px; min-width: 100px; }
+  .arch-item-name { font-size: 13px; font-weight: 500; }
+  .arch-item-note { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 3px; }
+  .arch-item.highlight { border-color: var(--green); background: var(--green-light); }
+  .arch-item.highlight .arch-item-name { color: #1a6644; }
+
+  /* ── Callouts ── */
+  .callout { border-radius: 8px; padding: 16px 20px; margin: 20px 0; font-size: 14px; line-height: 1.6; }
+  .callout-warn { background: var(--amber-light); border-left: 3px solid var(--amber); color: #5a3a00; }
+  .callout-info { background: var(--blue-light); border-left: 3px solid var(--blue); color: #0a2a4a; }
+  .callout-good { background: var(--green-light); border-left: 3px solid var(--green); color: #0d3d22; }
+  .callout strong { font-weight: 500; }
+
+  /* ── Hardware timeline ── */
+  .hw-timeline { position: relative; margin: 30px 0; }
+  .hw-timeline::before { content: ''; position: absolute; left: 17px; top: 10px; bottom: 10px; width: 2px; background: var(--border); }
+  .hw-item { display: flex; gap: 20px; padding: 0 0 32px; position: relative; }
+  .hw-item:last-child { padding-bottom: 0; }
+  .hw-dot { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; flex-shrink: 0; position: relative; z-index: 1; }
+  .hw-dot.active { border-color: var(--green); color: var(--green); background: var(--green-light); }
+  .hw-dot.upcoming { border-color: var(--amber); color: var(--amber); background: var(--amber-light); }
+  .hw-dot.future { border-color: #a890cc; color: #7a5aaa; background: #f5eef8; }
+  .hw-body { padding-top: 6px; }
+  .hw-when { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .hw-title { font-size: 15px; font-weight: 500; margin-bottom: 6px; }
+  .hw-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .hw-cost { font-family: var(--mono); font-size: 12px; margin-top: 8px; display: inline-block; background: var(--surface2); padding: 3px 10px; border-radius: 20px; color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Best practices ── */
+  .practice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 20px 0; }
+  .practice-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; }
+  .practice-icon { font-size: 22px; margin-bottom: 10px; }
+  .practice-title { font-size: 15px; font-weight: 500; margin-bottom: 10px; }
+  .practice-rules { list-style: none; }
+  .practice-rules li { font-size: 13px; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--border); line-height: 1.5; display: flex; gap: 8px; }
+  .practice-rules li:last-child { border-bottom: none; }
+  .rule-check { color: var(--green); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .site-header { padding: 28px 20px; }
+    .header-title { font-size: 26px; }
+    .nav-tabs { padding: 0 8px; }
+    .content { padding: 28px 20px 60px; }
+    .stack-grid { grid-template-columns: 1fr; }
+    .arch-row { grid-template-columns: 80px 1fr; }
+    .practice-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-eyebrow">Technical Architecture Document</div>
+  <h1 class="header-title">Personal <em>Finance</em><br>Platform Roadmap</h1>
+  <div class="header-meta">
+    <span>Stack + Milestones + Architecture</span>
+    <span>Phase 1 → Phase 4</span>
+    <span>Single-user → Multi-user ready</span>
+  </div>
+</header>
+
+<nav class="nav-tabs">
+  <button class="tab-btn active" onclick="showTab('stack')">01. Tech Stack</button>
+  <button class="tab-btn" onclick="showTab('roadmap')">02. Roadmap</button>
+  <button class="tab-btn" onclick="showTab('architecture')">03. Architecture</button>
+  <button class="tab-btn" onclick="showTab('hardware')">04. Hardware</button>
+  <button class="tab-btn" onclick="showTab('practices')">05. Best Practices</button>
+</nav>
+
+<main class="content">
+
+  <!-- ══════════════════════════════════════════ -->
+  <!-- SECTION 1: TECH STACK                      -->
+  <!-- ══════════════════════════════════════════ -->
+  <section id="stack" class="section active">
+    <h1>Tech <em>Stack</em></h1>
+    <p class="lead">Every tool chosen for a reason — cheap to run now, scales without rewrites later. Tools in green are for immediate use. Amber means add in a later phase.</p>
+
+    <h2>Frontend</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Framework</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">React + Vite</div>
+        <div class="stack-alt">Swap CRA → Vite immediately</div>
+        <div class="stack-why">Create React App is deprecated and slow. Vite gives 10-50x faster dev server startup and hot reload. Drop-in replacement — just change your package.json scripts.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Data fetching</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">TanStack Query (React Query)</div>
+        <div class="stack-alt">Replaces manual fetch + useEffect</div>
+        <div class="stack-why">Handles caching, background refetching, loading/error states automatically. Every fetch you wrote manually in useEffect becomes 5 lines. Critical for a dashboard app.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Charts</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">Recharts</div>
+        <div class="stack-alt">Alternative: Chart.js</div>
+        <div class="stack-why">React-native charts built on D3. Composable, responsive, zero config for basic pie/bar/line charts. Perfect for spending breakdowns and trend lines.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Styling</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">Tailwind CSS</div>
+        <div class="stack-alt">Alternative: CSS Modules</div>
+        <div class="stack-why">Much faster to iterate on UI. No context-switching between files. Works great with component-based React. The utility classes become second nature within a week.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Type safety</span>
+          <span class="stack-later">Add in Phase 2</span>
+        </div>
+        <div class="stack-tool">TypeScript</div>
+        <div class="stack-alt">Add to both frontend + backend together</div>
+        <div class="stack-why">Don't add it right now — you have enough to build. Add it in Phase 2 when the schema is stable. TypeScript on a stable codebase is much less painful than retrofitting a moving one.</div>
+      </div>
+    </div>
+
+    <h2>Backend</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Server</span>
+          <span class="stack-now">Keep</span>
+        </div>
+        <div class="stack-tool">Node.js + Express</div>
+        <div class="stack-alt">No reason to change</div>
+        <div class="stack-why">You already have it. The real upgrade is your folder structure — move from a single server.js to a routes/controllers/services/repositories pattern (see Architecture section).</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">ORM</span>
+          <span class="stack-now">Add now</span>
+        </div>
+        <div class="stack-tool">Prisma</div>
+        <div class="stack-alt">Alternative: Drizzle (lighter)</div>
+        <div class="stack-why">Type-safe database client + automatic migration system. You define your schema in schema.prisma and it generates migrations. Beats writing raw SQL for CRUD. Critical when you add TypeScript.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Validation</span>
+          <span class="stack-now">Add now</span>
+        </div>
+        <div class="stack-tool">Zod</div>
+        <div class="stack-alt">Used for request + env validation</div>
+        <div class="stack-why">Validate all incoming API request bodies and your .env variables at startup. Catches bugs like missing fields and bad types before they reach the database.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Caching</span>
+          <span class="stack-later">Add in Phase 3</span>
+        </div>
+        <div class="stack-tool">Redis</div>
+        <div class="stack-alt">Only add when you actually need it</div>
+        <div class="stack-why">Cache expensive aggregation queries (monthly summaries, category totals). Don't add this now — PostgreSQL is fast enough for a single-user app. Add when queries start taking &gt;500ms.</div>
+      </div>
+    </div>
+
+    <h2>Database</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Primary DB</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">PostgreSQL</div>
+        <div class="stack-alt">Dev: Docker · Prod: Supabase free tier</div>
+        <div class="stack-why">Industry standard for financial data. Excellent JSON support for storing raw Plaid responses. ACID transactions matter when syncing financial data. Never SQLite for this use case.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Dev setup</span>
+          <span class="stack-now">Use now</span>
+        </div>
+        <div class="stack-tool">Docker (local Postgres)</div>
+        <div class="stack-alt">One command: docker-compose up</div>
+        <div class="stack-why">Run PostgreSQL locally without installing it. docker-compose.yml with postgres image, then connect Prisma to localhost:5432. Reproducible across any machine.</div>
+      </div>
+    </div>
+
+    <h2>Data &amp; ML Pipeline</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Language</span>
+          <span class="stack-later">Start in Phase 2</span>
+        </div>
+        <div class="stack-tool">Python</div>
+        <div class="stack-alt">Separate service — not part of Node.js</div>
+        <div class="stack-why">The ML ecosystem (pandas, scikit-learn, PyTorch) is Python-only. Keep it as a separate service that reads from the same PostgreSQL database. Node.js handles the API; Python handles analytics and ML.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Exploration</span>
+          <span class="stack-later">Start in Phase 2</span>
+        </div>
+        <div class="stack-tool">Jupyter Notebooks</div>
+        <div class="stack-alt">+ pandas, matplotlib, seaborn</div>
+        <div class="stack-why">Explore your transaction data interactively before writing production pipelines. Connect directly to PostgreSQL with SQLAlchemy. This is where you'll prototype all forecasting logic before productionizing it.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">ML</span>
+          <span class="stack-later">Phase 3</span>
+        </div>
+        <div class="stack-tool">scikit-learn → Prophet</div>
+        <div class="stack-alt">Prophet for time series forecasting</div>
+        <div class="stack-why">Start with scikit-learn for regression models (spending prediction). Upgrade to Facebook Prophet for time series forecasting of monthly budgets — it handles seasonality (holidays, end-of-month) automatically.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Pipelines</span>
+          <span class="stack-later">Phase 3</span>
+        </div>
+        <div class="stack-tool">Prefect (not Airflow)</div>
+        <div class="stack-alt">Airflow is overkill for solo projects</div>
+        <div class="stack-why">Schedule your daily sync, data cleaning, and ML re-training jobs. Prefect has a generous free tier and is far simpler than Airflow for a solo developer. Start with node-cron (npm) in Phase 1 then migrate to Prefect.</div>
+      </div>
+    </div>
+
+    <h2>AI &amp; Agent Layer</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">LLM API</span>
+          <span class="stack-later">Phase 3</span>
+        </div>
+        <div class="stack-tool">OpenAI API (GPT-4o mini)</div>
+        <div class="stack-alt">Cheapest capable model: ~$0.15/1M tokens</div>
+        <div class="stack-why">For your budget assistant and insights generation. GPT-4o mini is remarkably capable and extremely cheap. Build the agent layer first with the API, then migrate to self-hosted models in Phase 4 when you have the home server.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Self-hosted LLM</span>
+          <span class="stack-later">Phase 4</span>
+        </div>
+        <div class="stack-tool">Ollama + Llama 3</div>
+        <div class="stack-alt">Requires home server with decent GPU/RAM</div>
+        <div class="stack-why">Run local LLMs for free once you have the home server. Ollama makes it as easy as installing an app. Llama 3.1 8B runs fine on 16GB RAM. Financial data stays 100% private — never leaves your machine.</div>
+      </div>
+    </div>
+
+    <h2>Hosting</h2>
+    <div class="callout callout-info">
+      <strong>Student strategy:</strong> Use free tiers aggressively in Phase 1. You don't need to pay anything until you have something worth deploying publicly. Total cost for Phase 1: $0/month.
+    </div>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Phase 1 — free</span>
+          <span class="stack-now">Now</span>
+        </div>
+        <div class="stack-tool">Vercel + Railway + Supabase</div>
+        <div class="stack-alt">$0/month</div>
+        <div class="stack-why">Vercel free tier for React. Railway free tier for Node.js backend (500 hours/month). Supabase free tier for PostgreSQL (500MB, plenty for Phase 1). All have one-click deploys from GitHub.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Phase 2-3 — cheap VPS</span>
+          <span class="stack-later">Month 3+</span>
+        </div>
+        <div class="stack-tool">Hetzner Cloud</div>
+        <div class="stack-alt">€3.29/mo — CX22 (2 vCPU, 4GB RAM)</div>
+        <div class="stack-why">Best value VPS in the market. 4x cheaper than DigitalOcean or AWS for the same specs. European data center. Run your PostgreSQL + Node.js + Python all on one box for under $5/month.</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-header">
+          <span class="stack-layer">Phase 4 — home server</span>
+          <span class="stack-later">1+ year</span>
+        </div>
+        <div class="stack-tool">Intel NUC or Beelink mini PC</div>
+        <div class="stack-alt">~$200-350 used, 24/7 uptime</div>
+        <div class="stack-why">For Ollama (local LLMs), your ML training, always-on pipelines. Use Cloudflare Tunnel for external access — free, secure, no port forwarding needed. Pays for itself vs cloud costs within 6 months.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ -->
+  <!-- SECTION 2: ROADMAP                         -->
+  <!-- ══════════════════════════════════════════ -->
+  <section id="roadmap" class="section">
+    <h1>Phased <em>Roadmap</em></h1>
+    <p class="lead">Built around your constraints: student budget, currently single-user, wants to avoid both overengineering and costly rewrites. Each phase has a clear exit condition before moving on.</p>
+
+    <div class="phase phase-1">
+      <div class="phase-header">
+        <div class="phase-num">01</div>
+        <div>
+          <div class="phase-title">Foundation</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">Database · Webhooks · Dashboard UI</div>
+        </div>
+        <div class="phase-timeline">Now → 8 weeks</div>
+      </div>
+      <div class="phase-body">
+        <p style="font-size:14px;color:var(--muted);margin-bottom:20px">The goal of Phase 1 is simple: make the app real. Replace all temporary solutions (in-memory storage, no webhooks, no UI) with production-grade foundations. Don't add anything else until this is done.</p>
+        <ul class="milestone-list">
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 1–2: PostgreSQL + Prisma setup.</strong> Write schema.prisma, run first migration, connect to a local Docker PostgreSQL instance. Migrate tokenStore from memory to a plaid_items table. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 2–3: Store transactions in the DB.</strong> After webhook fires, persist transactions to a transactions table. Add accounts table for account metadata. This is your first real data persistence. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 3–4: Plaid webhooks + transactions/sync.</strong> Replace /transactions/get with /transactions/sync (webhook-driven). This is the production Plaid pattern — it fetches only the delta (new/modified/removed transactions) instead of re-fetching everything. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 4–5: Spending dashboard.</strong> Build the category summary endpoint. Add a Recharts donut chart to the React frontend. This is the first UI milestone that makes the app feel like a product. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 5–6: Transaction search &amp; filtering.</strong> Pure frontend work — filter the in-state transaction array by date, merchant, amount. Debounce the text input. Add sort toggles. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 6–7: Recurring detection.</strong> Add /recurring endpoint using plaidClient.transactionsRecurringGet(). Display subscriptions + income streams in a separate card. <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Week 7–8: Deploy to Vercel + Railway + Supabase.</strong> Get the app live. Use environment variables for all secrets. Add basic error logging (console is fine, add Sentry later). <span class="ms-tag tag-do">do now</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Multi-user auth — SKIP.</strong> Design the DB schema with user_id on every table (see Architecture), but don't build login flows. A single hardcoded user is fine for now. <span class="ms-tag tag-skip">skip for now</span></div></li>
+        </ul>
+        <div class="phase-tools">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Tools introduced in Phase 1</div>
+          <div class="tool-pills">
+            <span class="pill">Prisma ORM</span>
+            <span class="pill">PostgreSQL</span>
+            <span class="pill">Docker (local dev)</span>
+            <span class="pill">Recharts</span>
+            <span class="pill">TanStack Query</span>
+            <span class="pill">Vite</span>
+            <span class="pill">Plaid /transactions/sync</span>
+            <span class="pill">node-cron (daily sync)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase phase-2">
+      <div class="phase-header">
+        <div class="phase-num">02</div>
+        <div>
+          <div class="phase-title">Data &amp; Analytics</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">Cleaning · History · Trends · TypeScript</div>
+        </div>
+        <div class="phase-timeline">Month 2–4</div>
+      </div>
+      <div class="phase-body">
+        <p style="font-size:14px;color:var(--muted);margin-bottom:20px">Phase 2 is about making your data trustworthy and insightful. You now have real transactions in a database — this phase builds the analytics layer on top of them, and introduces TypeScript before the codebase gets too large.</p>
+        <ul class="milestone-list">
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Add TypeScript to both frontend and backend.</strong> Do this at the start of Phase 2 when the schema is stable. It's painful to retrofit later. Prisma generates types from your schema automatically. <span class="ms-tag tag-do">priority</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Data cleaning pipeline (Node.js).</strong> Normalize merchant names (e.g. "AMAZON.COM*XYZ123" → "Amazon"), deduplicate transactions, handle pending → posted transitions. Write this as a service in your backend, not a separate system yet.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Historical data storage.</strong> Add a raw_transactions table that stores the original Plaid JSON, untouched. Your cleaned transactions table is derived from this. Never delete raw data — it's your audit trail and ML training set.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Monthly trend analytics.</strong> Aggregate transactions by month + category into a monthly_summaries materialized view in PostgreSQL. Build a time-series line chart showing spending trends over 6-12 months.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Set up Python environment.</strong> Create a /python directory. Install pandas, psycopg2-binary, jupyter, matplotlib. Connect to the same PostgreSQL DB. Start with exploratory notebooks — no production pipelines yet. <span class="ms-tag tag-prep">prep for Phase 3</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Move to Hetzner VPS.</strong> Migrate off free tiers onto a €3.29/mo Hetzner box. Set up Nginx as a reverse proxy, get a free SSL cert via Let's Encrypt. <span class="ms-tag tag-do">do in this phase</span></div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Refactor folder structure.</strong> Break server.js into routes/controllers/services/repositories. This is the most important structural change before the codebase grows further. See Architecture section for the exact layout.</div></li>
+        </ul>
+        <div class="phase-tools">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Tools introduced in Phase 2</div>
+          <div class="tool-pills">
+            <span class="pill">TypeScript</span>
+            <span class="pill">Python + pandas</span>
+            <span class="pill">Jupyter Notebooks</span>
+            <span class="pill">SQLAlchemy</span>
+            <span class="pill">Hetzner VPS</span>
+            <span class="pill">Nginx</span>
+            <span class="pill">Let's Encrypt</span>
+            <span class="pill">PostgreSQL materialized views</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase phase-3">
+      <div class="phase-header">
+        <div class="phase-num">03</div>
+        <div>
+          <div class="phase-title">ML &amp; Automation</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">Forecasting · Anomaly detection · Pipelines</div>
+        </div>
+        <div class="phase-timeline">Month 4–8</div>
+      </div>
+      <div class="phase-body">
+        <p style="font-size:14px;color:var(--muted);margin-bottom:20px">You now have 4+ months of clean historical data. This is when ML becomes viable — you need data history before you can forecast anything meaningfully. Don't attempt this phase early.</p>
+        <ul class="milestone-list">
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Spending forecast (Prophet).</strong> Use Facebook Prophet on your monthly category totals. Predict next month's spending per category. This requires ~3 months of data to be useful. Serve predictions via a Python FastAPI endpoint.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Anomaly detection.</strong> Flag transactions that are outliers for their merchant/category (e.g. unusually large grocery spend). Start with simple IQR-based detection, upgrade to Isolation Forest if needed.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Budget alerts.</strong> Add a budgets table (category, monthly limit). Run a daily check against actual spend. Send alerts via email (Resend API, free tier) or a simple push notification.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Automated daily pipeline.</strong> Move from node-cron to Prefect. Schedule: 1) Plaid sync → 2) data cleaning → 3) aggregation update → 4) ML re-score. Log each run with status + row counts.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Python FastAPI service.</strong> Expose your ML predictions via a small FastAPI service. Your Node.js backend calls this internally. Keep them separate — don't run Python inside Node.js.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Add Redis for caching.</strong> Cache expensive aggregation queries (monthly summary, trend data) that don't change until the next sync. Only add this if queries are noticeably slow. <span class="ms-tag tag-prep">only if needed</span></div></li>
+        </ul>
+        <div class="phase-tools">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Tools introduced in Phase 3</div>
+          <div class="tool-pills">
+            <span class="pill">scikit-learn</span>
+            <span class="pill">Facebook Prophet</span>
+            <span class="pill">FastAPI (Python)</span>
+            <span class="pill">Prefect</span>
+            <span class="pill">Resend (email alerts)</span>
+            <span class="pill">Redis (optional)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase phase-4">
+      <div class="phase-header">
+        <div class="phase-num">04</div>
+        <div>
+          <div class="phase-title">AI Agents &amp; Self-Hosting</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">LLM agents · Home server · Multi-user (optional)</div>
+        </div>
+        <div class="phase-timeline">Month 8–18</div>
+      </div>
+      <div class="phase-body">
+        <p style="font-size:14px;color:var(--muted);margin-bottom:20px">The platform evolves from a dashboard into an intelligent agent. You have rich historical data, ML forecasts, and clean pipelines — now you give it a language interface and move everything home.</p>
+        <ul class="milestone-list">
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Budget assistant (OpenAI API first).</strong> A chat interface that can query your financial data. System prompt includes your spending context. Start with GPT-4o mini at ~$0/month for personal use (very low token count).</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Home server setup.</strong> Buy a used Intel NUC or Beelink mini PC ($200-350). Install Ubuntu Server. Migrate PostgreSQL, Node.js, and Python services. Use Cloudflare Tunnel for external HTTPS access.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Migrate to Ollama (local LLMs).</strong> Run Llama 3.1 8B locally on the home server. Replace the OpenAI API call with an Ollama endpoint. Financial data never leaves your house.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Agentic pipelines.</strong> Build agents that can take actions: "You've spent 80% of your food budget by the 15th — want me to adjust your meal plan?" Trigger alerts, create calendar events, draft budget adjustments.</div></li>
+          <li><div class="ms-dot"></div><div class="ms-text"><strong>Multi-user support (if desired).</strong> Because you designed the schema with user_id from Day 1, adding auth (Clerk or Auth0) is mostly frontend work. The database requires zero changes. <span class="ms-tag tag-prep">easy because of Day 1 design</span></div></li>
+        </ul>
+        <div class="phase-tools">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Tools introduced in Phase 4</div>
+          <div class="tool-pills">
+            <span class="pill">OpenAI API (GPT-4o mini)</span>
+            <span class="pill">Ollama + Llama 3</span>
+            <span class="pill">LangChain</span>
+            <span class="pill">Cloudflare Tunnel</span>
+            <span class="pill">Ubuntu Server</span>
+            <span class="pill">Clerk / Auth0 (if multi-user)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ -->
+  <!-- SECTION 3: ARCHITECTURE                    -->
+  <!-- ══════════════════════════════════════════ -->
+  <section id="architecture" class="section">
+    <h1>System <em>Architecture</em></h1>
+    <p class="lead">Designed for one user today, ten users tomorrow — without changing a single database column. The key decision: put user_id on every table from Day 1, even when there's only one user.</p>
+
+    <h2>Backend folder structure</h2>
+    <p>Refactor <code>server.js</code> into this layout at the start of Phase 2. Each layer has one job:</p>
+    <div class="code-block">
+<pre><span class="comment"># Current (everything in server.js) — works, but won't scale</span>
+backend/
+  server.js         <span class="comment"># 400+ lines, routes + logic + DB all mixed</span>
+
+<span class="comment"># Target structure (Phase 2+)</span>
+backend/
+  src/
+    routes/         <span class="comment"># Express route definitions only — just app.get/post</span>
+      plaid.js      <span class="comment"># /create_link_token, /exchange_public_token</span>
+      transactions.js
+      accounts.js
+      analytics.js
+    controllers/    <span class="comment"># Thin — parse req, call service, send res</span>
+      plaid.controller.js
+      transactions.controller.js
+    services/       <span class="comment"># All business logic lives here</span>
+      plaid.service.js     <span class="comment"># token exchange, webhook handling</span>
+      sync.service.js      <span class="comment"># /transactions/sync logic + cursor management</span>
+      analytics.service.js <span class="comment"># category summaries, trend calculations</span>
+    repositories/   <span class="comment"># All database queries — ONLY place Prisma is called</span>
+      transaction.repo.js
+      account.repo.js
+      plaid.repo.js
+    jobs/           <span class="comment"># Cron jobs + webhook handlers</span>
+      daily-sync.job.js
+      webhook.handler.js
+    middleware/
+      error.middleware.js
+      auth.middleware.js   <span class="comment"># stub now, real later</span>
+    utils/
+      plaid.client.js  <span class="comment"># singleton Plaid client (move out of server.js)</span>
+      encrypt.js       <span class="comment"># for access token encryption</span>
+  prisma/
+    schema.prisma
+    migrations/
+  .env</pre>
+    </div>
+    <div class="callout callout-info">
+      <strong>The rule:</strong> Routes call controllers. Controllers call services. Services call repositories. Repositories call Prisma. Nothing skips a layer. This means you can change the database by only touching the repository files.
+    </div>
+
+    <h2>Database schema</h2>
+    <p>The critical design decision: <strong>user_id on every table</strong>, populated with a single hardcoded ID for now. When you add real auth, you just wire in the real user ID — zero schema changes.</p>
+    <div class="schema-block">
+<pre><span class="comment">-- ─── schema.prisma (Prisma ORM syntax) ──────────────────────────</span>
+
+<span class="comment">-- Single user for now, but every table is multi-user ready.</span>
+<span class="comment">-- Seed a single user row on startup: id='user_default'</span>
+
+<span class="keyword">model</span> <span class="name">User</span> {
+  id          <span class="type">String</span>       @id @default(cuid())
+  email       <span class="type">String?</span>      @unique
+  createdAt   <span class="type">DateTime</span>     @default(now())
+  plaidItems  <span class="name">PlaidItem[]</span>
+  accounts    <span class="name">Account[]</span>
+  transactions <span class="name">Transaction[]</span>
+  budgets     <span class="name">Budget[]</span>
+}
+
+<span class="keyword">model</span> <span class="name">PlaidItem</span> {
+  id              <span class="type">String</span>    @id @default(cuid())
+  userId          <span class="type">String</span>    <span class="comment">-- always present, even for single user</span>
+  user            <span class="name">User</span>      @relation(fields: [userId], references: [id])
+  accessToken     <span class="type">String</span>    <span class="comment">-- store encrypted! (AES-256)</span>
+  itemId          <span class="type">String</span>    @unique
+  institutionName <span class="type">String?</span>
+  cursor          <span class="type">String?</span>   <span class="comment">-- for /transactions/sync pagination</span>
+  createdAt       <span class="type">DateTime</span>  @default(now())
+  accounts        <span class="name">Account[]</span>
+}
+
+<span class="keyword">model</span> <span class="name">Account</span> {
+  id              <span class="type">String</span>    @id @default(cuid())
+  userId          <span class="type">String</span>
+  user            <span class="name">User</span>      @relation(fields: [userId], references: [id])
+  plaidItemId     <span class="type">String</span>
+  plaidItem       <span class="name">PlaidItem</span> @relation(fields: [plaidItemId], references: [id])
+  plaidAccountId  <span class="type">String</span>    @unique
+  name            <span class="type">String</span>
+  officialName    <span class="type">String?</span>
+  type            <span class="type">String</span>    <span class="comment">-- depository | credit | investment</span>
+  subtype         <span class="type">String?</span>   <span class="comment">-- checking | savings | credit card</span>
+  mask            <span class="type">String?</span>   <span class="comment">-- last 4 digits</span>
+  transactions    <span class="name">Transaction[]</span>
+}
+
+<span class="keyword">model</span> <span class="name">Transaction</span> {
+  id                  <span class="type">String</span>    @id @default(cuid())
+  userId              <span class="type">String</span>
+  user                <span class="name">User</span>      @relation(fields: [userId], references: [id])
+  accountId           <span class="type">String</span>
+  account             <span class="name">Account</span>   @relation(fields: [accountId], references: [id])
+  plaidTransactionId  <span class="type">String</span>    @unique
+  date                <span class="type">DateTime</span>
+  amount              <span class="type">Decimal</span>   <span class="comment">-- positive = debit, negative = credit</span>
+  name                <span class="type">String</span>    <span class="comment">-- raw Plaid name</span>
+  merchantName        <span class="type">String?</span>   <span class="comment">-- cleaned merchant (may be null)</span>
+  categoryPrimary     <span class="type">String?</span>   <span class="comment">-- FOOD_AND_DRINK, TRANSPORTATION, etc.</span>
+  categoryDetailed    <span class="type">String?</span>
+  pending             <span class="type">Boolean</span>   @default(false)
+  rawJson             <span class="type">Json</span>      <span class="comment">-- full Plaid response, immutable, for ML</span>
+  createdAt           <span class="type">DateTime</span>  @default(now())
+
+  <span class="comment">-- Indexes — critical for query performance</span>
+  @@index([userId, date])
+  @@index([userId, categoryPrimary])
+  @@index([accountId, date])
+}
+
+<span class="keyword">model</span> <span class="name">Budget</span> {
+  id              <span class="type">String</span>    @id @default(cuid())
+  userId          <span class="type">String</span>
+  user            <span class="name">User</span>      @relation(fields: [userId], references: [id])
+  category        <span class="type">String</span>    <span class="comment">-- matches categoryPrimary</span>
+  monthlyLimit    <span class="type">Decimal</span>
+  createdAt       <span class="type">DateTime</span>  @default(now())
+}
+
+<span class="keyword">model</span> <span class="name">SyncLog</span> {
+  id          <span class="type">String</span>    @id @default(cuid())
+  userId      <span class="type">String</span>
+  itemId      <span class="type">String</span>
+  status      <span class="type">String</span>    <span class="comment">-- success | error</span>
+  addedCount  <span class="type">Int</span>
+  modifiedCount <span class="type">Int</span>
+  removedCount  <span class="type">Int</span>
+  errorMessage  <span class="type">String?</span>
+  createdAt   <span class="type">DateTime</span>  @default(now())
+}</pre>
+    </div>
+
+    <h2>Data pipeline architecture</h2>
+    <p>Raw data is always preserved. Each layer is derived from the previous. You never lose the original Plaid data.</p>
+    <div class="arch-diagram">
+      <div class="arch-row">
+        <div class="arch-label">Ingest</div>
+        <div class="arch-items">
+          <div class="arch-item highlight"><div class="arch-item-name">Plaid API</div><div class="arch-item-note">/transactions/sync</div></div>
+          <div class="arch-item"><div class="arch-item-name">Webhooks</div><div class="arch-item-note">SYNC_UPDATES_AVAILABLE</div></div>
+        </div>
+      </div>
+      <div style="text-align:center;padding:6px 0;font-size:18px;color:var(--muted)">↓</div>
+      <div class="arch-row">
+        <div class="arch-label">Raw layer</div>
+        <div class="arch-items">
+          <div class="arch-item highlight"><div class="arch-item-name">rawJson column</div><div class="arch-item-note">immutable — never update</div></div>
+        </div>
+      </div>
+      <div style="text-align:center;padding:6px 0;font-size:18px;color:var(--muted)">↓</div>
+      <div class="arch-row">
+        <div class="arch-label">Clean layer</div>
+        <div class="arch-items">
+          <div class="arch-item"><div class="arch-item-name">transactions table</div><div class="arch-item-note">normalized names, deduped</div></div>
+          <div class="arch-item"><div class="arch-item-name">merchant normalization</div><div class="arch-item-note">Phase 2 service</div></div>
+        </div>
+      </div>
+      <div style="text-align:center;padding:6px 0;font-size:18px;color:var(--muted)">↓</div>
+      <div class="arch-row">
+        <div class="arch-label">Aggregate</div>
+        <div class="arch-items">
+          <div class="arch-item"><div class="arch-item-name">monthly_summaries</div><div class="arch-item-note">materialized view</div></div>
+          <div class="arch-item"><div class="arch-item-name">category_totals</div><div class="arch-item-note">refreshed on sync</div></div>
+        </div>
+      </div>
+      <div style="text-align:center;padding:6px 0;font-size:18px;color:var(--muted)">↓</div>
+      <div class="arch-row">
+        <div class="arch-label">ML layer</div>
+        <div class="arch-items">
+          <div class="arch-item"><div class="arch-item-name">feature extraction</div><div class="arch-item-note">Python / pandas (Phase 3)</div></div>
+          <div class="arch-item"><div class="arch-item-name">Prophet forecasts</div><div class="arch-item-note">per-category predictions</div></div>
+          <div class="arch-item"><div class="arch-item-name">anomaly scores</div><div class="arch-item-note">IQR / Isolation Forest</div></div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Service communication (Phase 3+)</h2>
+    <div class="code-block">
+<pre><span class="comment"># Node.js (Express) ──────────────────────────────────────────</span>
+<span class="comment">#   Handles: API, Plaid integration, auth, webhooks, CRUD</span>
+<span class="comment">#   Runs on: port 3001</span>
+<span class="comment">#   Database: direct Prisma connection</span>
+
+<span class="comment"># Python (FastAPI) ───────────────────────────────────────────</span>
+<span class="comment">#   Handles: ML predictions, anomaly detection, forecasting</span>
+<span class="comment">#   Runs on: port 8000 (internal only, not public)</span>
+<span class="comment">#   Database: direct SQLAlchemy connection to same PostgreSQL</span>
+
+<span class="comment"># Communication: Node calls Python via internal HTTP</span>
+<span class="keyword">const</span> forecast = <span class="keyword">await</span> fetch(<span class="string">'http://localhost:8000/forecast'</span>, {
+  method: <span class="string">'POST'</span>,
+  body: JSON.stringify({ userId, category: <span class="string">'FOOD_AND_DRINK'</span> })
+})
+
+<span class="comment"># Nginx routes public traffic:</span>
+<span class="comment">#   /api/*    → Node.js :3001</span>
+<span class="comment">#   /         → React (static files)</span>
+<span class="comment">#   Python service is NEVER exposed publicly</span></pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ -->
+  <!-- SECTION 4: HARDWARE                        -->
+  <!-- ══════════════════════════════════════════ -->
+  <section id="hardware" class="section">
+    <h1>Hardware &amp; <em>Deployment</em></h1>
+    <p class="lead">Spend nothing now. Spend a little in 3 months. Spend once on hardware in a year. The total cost of this entire journey is less than two months of AWS.</p>
+
+    <h2>Deployment timeline</h2>
+    <div class="hw-timeline">
+      <div class="hw-item">
+        <div class="hw-dot active">Now</div>
+        <div class="hw-body">
+          <div class="hw-when">Phase 1 — today</div>
+          <div class="hw-title">Local dev + free cloud tiers</div>
+          <div class="hw-desc">
+            Run everything locally for development. Deploy to free tiers to prove it works in production.
+            <br><br>
+            <strong>Frontend:</strong> Vercel (free — unlimited personal projects)<br>
+            <strong>Backend:</strong> Railway (free tier — 500 hours/month, plenty for one user)<br>
+            <strong>Database:</strong> Supabase (free tier — 500MB PostgreSQL, more than enough for Phase 1)<br>
+            <strong>Local DB:</strong> Docker postgres:16 container
+          </div>
+          <span class="hw-cost">$0 / month</span>
+        </div>
+      </div>
+
+      <div class="hw-item">
+        <div class="hw-dot upcoming">VPS</div>
+        <div class="hw-body">
+          <div class="hw-when">Phase 2 — around month 3</div>
+          <div class="hw-title">Hetzner CX22 VPS</div>
+          <div class="hw-desc">
+            Move off free tiers onto a proper VPS. Hetzner is the best value in the market — significantly cheaper than DigitalOcean or AWS for equivalent specs.
+            <br><br>
+            <strong>Specs:</strong> 2 vCPU (AMD), 4GB RAM, 40GB SSD, 20TB traffic<br>
+            <strong>OS:</strong> Ubuntu 24.04 LTS<br>
+            <strong>Stack on one box:</strong> PostgreSQL + Node.js + Nginx + SSL<br>
+            <strong>Backups:</strong> Hetzner automated backups (+20% = ~€0.66/mo extra)
+            <br><br>
+            Set up with: ufw firewall, fail2ban, SSH key auth only, non-root user.
+          </div>
+          <span class="hw-cost">~€3.29 / month</span>
+        </div>
+      </div>
+
+      <div class="hw-item">
+        <div class="hw-dot upcoming">Laptop</div>
+        <div class="hw-body">
+          <div class="hw-when">When your current laptop blocks you</div>
+          <div class="hw-title">Laptop upgrade (only if needed)</div>
+          <div class="hw-desc">
+            <strong>Don't upgrade until your laptop genuinely blocks development.</strong> "Feeling slow" is not a reason. Real reasons to upgrade: Docker runs out of memory, ML training loops take 30+ minutes, you can't run the full dev stack.
+            <br><br>
+            <strong>Best option for students (macOS):</strong> MacBook Air M3 or M2 refurbished. Exceptional battery, fast enough for all dev work including ML training on CPU. 8GB RAM is fine; 16GB is better.<br><br>
+            <strong>Best option (Linux):</strong> ThinkPad X1 Carbon or T-series. Excellent Linux support, upgradeable RAM, great keyboard.<br><br>
+            <strong>Where to buy refurbished:</strong> Apple Certified Refurbished, Back Market, Swappie (EU). 30-50% cheaper than new.
+          </div>
+          <span class="hw-cost">$700–1,400 refurbished</span>
+        </div>
+      </div>
+
+      <div class="hw-item">
+        <div class="hw-dot future">Home</div>
+        <div class="hw-body">
+          <div class="hw-when">Phase 4 — month 12+</div>
+          <div class="hw-title">Home server (mini PC)</div>
+          <div class="hw-desc">
+            The payoff of the whole architecture. Run Ollama, PostgreSQL, all services, and ML training locally — free, private, always-on.
+            <br><br>
+            <strong>Best options:</strong><br>
+            → Beelink EQ12 / SER5 (~$150-250 used): Intel N100/Ryzen 5, 16GB RAM, 512GB SSD. Great for all services + Ollama 7B models.<br>
+            → Intel NUC 11/12 (~$200-350 used): More powerful, better for bigger models.<br><br>
+            <strong>Software stack:</strong> Ubuntu Server 24.04, Docker Compose for all services, Ollama for LLMs, Cloudflare Tunnel for external access.<br><br>
+            <strong>Cloudflare Tunnel:</strong> Free. No port forwarding, no exposed IP, automatic HTTPS. One command to get your home server accessible from anywhere securely.
+          </div>
+          <span class="hw-cost">$150–350 one-time</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-good">
+      <strong>Total cost breakdown:</strong> Phase 1 = $0. Phase 2–3 = ~€3.29/month. Home server = $200-350 one-time investment. Compare to AWS t3.small ($18/mo) + RDS ($23/mo) = $41/month just for basic hosting.
+    </div>
+
+    <h2>Cloudflare Tunnel setup (Phase 4)</h2>
+    <div class="code-block">
+<pre><span class="comment"># On your home server — 3 commands to get external HTTPS access</span>
+<span class="comment"># No port forwarding, no static IP, no firewall changes needed</span>
+
+<span class="keyword">curl</span> -L https://github.com/cloudflare/cloudflared/releases/latest/\
+  download/cloudflared-linux-amd64 -o cloudflared
+<span class="keyword">chmod</span> +x cloudflared
+<span class="keyword">./cloudflared</span> tunnel login
+
+<span class="comment"># config.yml — routes your domain to local services</span>
+tunnel: your-tunnel-id
+credentials-file: ~/.cloudflared/your-tunnel-id.json
+
+ingress:
+  - hostname: app.yourdomain.com
+    service: http://localhost:3001      <span class="comment"># Node.js</span>
+  - hostname: jupyter.yourdomain.com
+    service: http://localhost:8888      <span class="comment"># Jupyter (private access)</span>
+  - service: http_status:404</pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ -->
+  <!-- SECTION 5: BEST PRACTICES                  -->
+  <!-- ══════════════════════════════════════════ -->
+  <section id="practices" class="section">
+    <h1>Best <em>Practices</em></h1>
+    <p class="lead">The decisions you make in Phase 1 are the hardest to undo in Phase 3. These practices cost almost nothing now and save weeks of refactoring later.</p>
+
+    <div class="practice-grid">
+      <div class="practice-card">
+        <div class="practice-icon">🗄</div>
+        <div class="practice-title">Database design</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> user_id on every table — even with one user. Populate with a default user row.</li>
+          <li><span class="rule-check">✓</span> Never hard-delete transactions. Use a deletedAt nullable timestamp.</li>
+          <li><span class="rule-check">✓</span> Store Plaid's raw JSON in a rawJson column. It's your source of truth and future training data.</li>
+          <li><span class="rule-check">✓</span> Add indexes on (userId, date) and (userId, categoryPrimary) from day one.</li>
+          <li><span class="rule-check">✓</span> Use Decimal (not Float) for all monetary amounts. Floats cause rounding errors.</li>
+          <li><span class="rule-check">✓</span> Store all timestamps in UTC. Display conversion is the frontend's job.</li>
+        </ul>
+      </div>
+
+      <div class="practice-card">
+        <div class="practice-icon">🔄</div>
+        <div class="practice-title">Migrations — never edit schema directly</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> Always run npx prisma migrate dev to create a migration file. Never hand-edit the DB.</li>
+          <li><span class="rule-check">✓</span> Every schema change = one migration file = one git commit.</li>
+          <li><span class="rule-check">✓</span> Name migrations descriptively: add_cursor_to_plaid_items, not migration_v2.</li>
+          <li><span class="rule-check">✓</span> Test migrations on a copy of production data before applying to prod.</li>
+          <li><span class="rule-check">✓</span> Never delete old migration files — they're your history.</li>
+        </ul>
+      </div>
+
+      <div class="practice-card">
+        <div class="practice-icon">🔐</div>
+        <div class="practice-title">Security basics</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> Encrypt Plaid access tokens at rest before storing. Use AES-256 with a key in .env.</li>
+          <li><span class="rule-check">✓</span> Never log access tokens, even to console. Scrub them from error logs.</li>
+          <li><span class="rule-check">✓</span> Validate Plaid webhook signatures — never skip this. It prevents spoofed webhooks.</li>
+          <li><span class="rule-check">✓</span> Use Zod to validate every incoming request body. Reject malformed input early.</li>
+          <li><span class="rule-check">✓</span> .env is in .gitignore. Use .env.example with placeholder values in git.</li>
+        </ul>
+      </div>
+
+      <div class="practice-card">
+        <div class="practice-icon">📊</div>
+        <div class="practice-title">Data pipeline design</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> Raw data is immutable. Never UPDATE or DELETE a rawJson value once stored.</li>
+          <li><span class="rule-check">✓</span> All pipelines must be idempotent — running twice produces the same result.</li>
+          <li><span class="rule-check">✓</span> Log every sync run to a sync_logs table: rows added, modified, removed, errors.</li>
+          <li><span class="rule-check">✓</span> Use Plaid's cursor (from /transactions/sync) to avoid re-fetching everything. Store cursor per item in the DB.</li>
+          <li><span class="rule-check">✓</span> Separate raw → cleaned → aggregated layers. Never mix them.</li>
+        </ul>
+      </div>
+
+      <div class="practice-card">
+        <div class="practice-icon">🏗</div>
+        <div class="practice-title">Avoiding technical debt</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> Add TypeScript in Phase 2 — don't wait until Phase 3 when there's 5,000 lines to convert.</li>
+          <li><span class="rule-check">✓</span> Don't add Redis, message queues, or microservices until you've profiled and confirmed you need them.</li>
+          <li><span class="rule-check">✓</span> Keep Python and Node.js strictly separated — don't try to run Python from Node via child_process.</li>
+          <li><span class="rule-check">✓</span> Refactor server.js into the routes/controllers/services/repos structure at the start of Phase 2, not later.</li>
+          <li><span class="rule-check">✓</span> Write a README for every service that explains how to run it locally. Future you will thank present you.</li>
+        </ul>
+      </div>
+
+      <div class="practice-card">
+        <div class="practice-icon">🧪</div>
+        <div class="practice-title">Testing strategy (minimal but effective)</div>
+        <ul class="practice-rules">
+          <li><span class="rule-check">✓</span> Don't write unit tests for everything — too slow for a solo dev. Focus on integration tests for critical paths.</li>
+          <li><span class="rule-check">✓</span> Test: token exchange flow, webhook handler, transaction sync, category aggregation.</li>
+          <li><span class="rule-check">✓</span> Use Vitest (fast, works with Vite) for backend. It's Jest-compatible so docs apply.</li>
+          <li><span class="rule-check">✓</span> Use a test PostgreSQL database (separate Docker container) for integration tests.</li>
+          <li><span class="rule-check">✓</span> Plaid sandbox has test credentials (user_good, pass_good) — write end-to-end tests against it.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>The one rule that pays off most</h2>
+    <div class="callout callout-good">
+      <strong>Keep raw data immutable and separated from derived data.</strong> Your transactions table has a rawJson column containing the exact Plaid response. You never touch this column after insert. All cleaning, normalization, and ML features are derived from it into separate columns and tables. In 2 years when you want to retrain an ML model with better features, you still have all the original data. This decision costs you a few extra megabytes of storage and saves you months of regret.
+    </div>
+
+    <h2>Secrets and access token encryption</h2>
+    <div class="code-block">
+<pre><span class="comment">// utils/encrypt.js — AES-256-GCM encryption for access tokens</span>
+<span class="keyword">const</span> crypto = require(<span class="string">'crypto'</span>)
+<span class="keyword">const</span> KEY = Buffer.from(process.env.ENCRYPTION_KEY, <span class="string">'hex'</span>) <span class="comment">// 32-byte key</span>
+
+<span class="keyword">function</span> encrypt(text) {
+  <span class="keyword">const</span> iv = crypto.randomBytes(12)
+  <span class="keyword">const</span> cipher = crypto.createCipheriv(<span class="string">'aes-256-gcm'</span>, KEY, iv)
+  <span class="keyword">const</span> encrypted = Buffer.concat([cipher.update(text, <span class="string">'utf8'</span>), cipher.final()])
+  <span class="keyword">const</span> tag = cipher.getAuthTag()
+  <span class="keyword">return</span> [iv, tag, encrypted].map(b => b.toString(<span class="string">'base64'</span>)).join(<span class="string">'.'</span>)
+}
+
+<span class="keyword">function</span> decrypt(str) {
+  <span class="keyword">const</span> [iv, tag, encrypted] = str.split(<span class="string">'.'</span>).map(s => Buffer.from(s, <span class="string">'base64'</span>))
+  <span class="keyword">const</span> decipher = crypto.createDecipheriv(<span class="string">'aes-256-gcm'</span>, KEY, iv)
+  decipher.setAuthTag(tag)
+  <span class="keyword">return</span> decipher.update(encrypted) + decipher.final(<span class="string">'utf8'</span>)
+}
+
+<span class="comment">// Generate your ENCRYPTION_KEY once:</span>
+<span class="comment">// node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</span></pre>
+    </div>
+  </section>
+
+</main>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'))
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+  document.getElementById(id).classList.add('active')
+  event.target.classList.add('active')
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+</script>
+</body>
+</html>
