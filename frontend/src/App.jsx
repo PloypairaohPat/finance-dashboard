@@ -7,7 +7,10 @@ import { usePlaidLink } from "react-plaid-link";
 import SpendingChart  from "./SpendingChart";
 import RecurringCard from "./RecurringCard";
 
-const API     = "http://localhost:3001";
+const API =
+  process.env.NODE_ENV === "production"
+    ? "https://finance-dashboard-production-1a0c.up.railway.app"
+    : "http://localhost:3001";
 const USER_ID = "demo-user";
 
 // ── Styles ────────────────────────────────────────────────────────
