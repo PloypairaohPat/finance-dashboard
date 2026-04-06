@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Plaid integration backend",
   "main": "server.js",
-  "scripts": {
-    "build": "npx prisma generate",
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
+"scripts": {
+  "build": "npx prisma generate",
+  "start": "node server.js",
+  "dev": "nodemon server.js"
+},
   "dependencies": {
     "@prisma/client": "^6.11.1",
     "cors": "^2.8.5",

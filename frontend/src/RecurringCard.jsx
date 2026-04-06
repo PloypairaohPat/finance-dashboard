@@ -1,7 +1,9 @@
 // src/RecurringCard.jsx — Recurring subscriptions and income streams
 import React, { useState, useEffect } from "react"
 
-const API = "http://localhost:3001"
+const API = process.env.NODE_ENV === "production"
+  ? "https://finance-dashboard-production-1a0c.up.railway.app"
+  : "http://localhost:3001"
 
 const fmt = (n) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n)
