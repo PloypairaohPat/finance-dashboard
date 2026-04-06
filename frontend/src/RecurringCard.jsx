@@ -7,11 +7,11 @@ const fmt = (n) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n)
 
 const freqLabel = (f) => ({
-  WEEKLY:        "weekly",
-  BIWEEKLY:      "every 2 weeks",
-  SEMI_MONTHLY:  "twice a month",
-  MONTHLY:       "monthly",
-  ANNUALLY:      "annually",
+  WEEKLY:       "weekly",
+  BIWEEKLY:     "every 2 weeks",
+  SEMI_MONTHLY: "twice a month",
+  MONTHLY:      "monthly",
+  ANNUALLY:     "annually",
 }[f] || f?.toLowerCase() || "recurring")
 
 function StreamRow({ stream, type }) {
@@ -37,10 +37,7 @@ function StreamRow({ stream, type }) {
           {isIncome ? "+" : "-"}{fmt(stream.averageAmount)}
         </div>
         {stream.status === "EARLY_DETECTION" && (
-          <div style={{
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px",
-            color: "#f0a030", marginTop: "2px",
-          }}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px", color: "#f0a030", marginTop: "2px" }}>
             detecting…
           </div>
         )}
@@ -54,7 +51,9 @@ export default function RecurringCard() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
+    setError(null)
     fetch(`${API}/recurring`)
       .then(r => r.json())
       .then(d => {
@@ -63,7 +62,11 @@ export default function RecurringCard() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  // Fetch on mount — parent uses key={accounts.length} to remount
+  // when accounts are available, triggering a fresh fetch automatically
+  useEffect(() => { load() }, [])
 
   if (loading) return (
     <div style={{ color: "#5a7a5a", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", padding: "20px 0" }}>
@@ -74,6 +77,16 @@ export default function RecurringCard() {
   if (error) return (
     <div style={{ color: "#ff5555", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px" }}>
       ⚠ {error}
+      <button
+        onClick={load}
+        style={{
+          marginLeft: "12px", background: "transparent", border: "1px solid #555",
+          color: "#888", padding: "4px 10px", borderRadius: "4px",
+          cursor: "pointer", fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
+        }}
+      >
+        retry
+      </button>
     </div>
   )
 
@@ -87,10 +100,9 @@ export default function RecurringCard() {
     <div>
       {/* Monthly summary bar */}
       <div style={{
-        display: "flex", gap: "24px", marginBottom: "28px",
+        display: "flex", flexWrap: "wrap", gap: "20px", marginBottom: "28px",
         padding: "16px 20px", background: "#111",
         border: "1px solid #1e1e1e", borderRadius: "10px",
-        flexWrap: "wrap", gap: "20px",
       }}>
         <div>
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#555", marginBottom: "4px" }}>
@@ -113,27 +125,21 @@ export default function RecurringCard() {
       {/* Two-column layout */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "32px" }}>
 
-        {/* Outflow — subscriptions & bills */}
         {data.outflow.length > 0 && (
           <div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px", letterSpacing: ".1em", textTransform: "uppercase", color: "#555", marginBottom: "12px" }}>
-              Subscriptions & bills · {data.outflow.length}
+              Subscriptions &amp; bills · {data.outflow.length}
             </div>
-            {data.outflow.map((s, i) => (
-              <StreamRow key={i} stream={s} type="outflow" />
-            ))}
+            {data.outflow.map((s, i) => <StreamRow key={i} stream={s} type="outflow" />)}
           </div>
         )}
 
-        {/* Inflow — income */}
         {data.inflow.length > 0 && (
           <div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px", letterSpacing: ".1em", textTransform: "uppercase", color: "#555", marginBottom: "12px" }}>
               Income streams · {data.inflow.length}
             </div>
-            {data.inflow.map((s, i) => (
-              <StreamRow key={i} stream={s} type="inflow" />
-            ))}
+            {data.inflow.map((s, i) => <StreamRow key={i} stream={s} type="inflow" />)}
           </div>
         )}
       </div>

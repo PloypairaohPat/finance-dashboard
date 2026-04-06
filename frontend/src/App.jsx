@@ -4,10 +4,10 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import SpendingChart  from "./SpendingChart";
+import SpendingChart from "./SpendingChart";
 import RecurringCard from "./RecurringCard";
 
-const API = "https://finance-dashboard-production-1a0c.up.railway.app";
+const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
 const USER_ID = "demo-user";
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -202,7 +202,6 @@ const styles = {
     padding: "2px 7px",
     borderRadius: "3px",
   },
-  // ── Filter bar styles ─────────────────────────────────────────────
   filterBar: {
     display: "flex",
     gap: "10px",
@@ -278,26 +277,15 @@ const fmtDate = (d) => (d ? String(d).slice(0, 10) : "—");
 // ── Account Card ──────────────────────────────────────────────────
 function AccountCard({ account }) {
   const {
-    plaidAccountId,
-    name,
-    officialName,
-    type,
-    subtype,
-    mask,
-    currentBalance,
-    availableBalance,
-    isoCurrencyCode,
+    name, officialName, type, subtype,
+    mask, currentBalance, availableBalance, isoCurrencyCode,
   } = account;
-
   const currency = isoCurrencyCode || "USD";
-
   return (
     <div style={styles.accountCard}>
       <div style={styles.accountType}>{type} · {subtype}</div>
       <div style={styles.accountName}>{name}</div>
-      <div style={styles.accountMask}>
-        {officialName || name} ···· {mask || "——"}
-      </div>
+      <div style={styles.accountMask}>{officialName || name} ···· {mask || "——"}</div>
       <div style={styles.balanceRow}>
         <span style={styles.balanceLabel}>Available</span>
         <span style={styles.balanceValue(true)}>{fmt(availableBalance, currency)}</span>
@@ -334,13 +322,9 @@ function TxRow({ tx, index }) {
 
 // ── Filter Bar ────────────────────────────────────────────────────
 function FilterBar({
-  searchInput, setSearchInput,
-  dateRange,   setDateRange,
-  categoryFilter, setCategoryFilter,
-  sortBy,      setSortBy,
-  uniqueCategories,
-  onClear,
-  totalCount,  filteredCount,
+  searchInput, setSearchInput, dateRange, setDateRange,
+  categoryFilter, setCategoryFilter, sortBy, setSortBy,
+  uniqueCategories, onClear, totalCount, filteredCount,
 }) {
   return (
     <div style={styles.filterBar}>
@@ -351,31 +335,17 @@ function FilterBar({
         onChange={(e) => setSearchInput(e.target.value)}
       />
       {[7, 30, 90, null].map((d) => (
-        <button
-          key={d ?? "all"}
-          style={styles.filterBtn(dateRange === d)}
-          onClick={() => setDateRange(d)}
-        >
+        <button key={d ?? "all"} style={styles.filterBtn(dateRange === d)} onClick={() => setDateRange(d)}>
           {d ? `${d}d` : "All"}
         </button>
       ))}
-      <select
-        style={styles.filterSelect}
-        value={categoryFilter}
-        onChange={(e) => setCategoryFilter(e.target.value)}
-      >
+      <select style={styles.filterSelect} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
         <option value="">All categories</option>
         {uniqueCategories.map((cat) => (
-          <option key={cat} value={cat}>
-            {cat.replace(/_/g, " ")}
-          </option>
+          <option key={cat} value={cat}>{cat.replace(/_/g, " ")}</option>
         ))}
       </select>
-      <select
-        style={styles.filterSelect}
-        value={sortBy}
-        onChange={(e) => setSortBy(e.target.value)}
-      >
+      <select style={styles.filterSelect} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
         <option value="date-desc">Newest first</option>
         <option value="date-asc">Oldest first</option>
         <option value="amount-desc">Highest amount</option>
@@ -393,7 +363,7 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [categories,   setCategories]   = useState([]);  // ← NEW
+  const [categories,   setCategories]   = useState([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState(null);
 
@@ -404,29 +374,23 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [sortBy,         setSortBy]         = useState("date-desc");
 
-  // Debounce the search input — wait 300ms after typing stops
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Derive filtered + sorted list from raw transactions
   const filteredTransactions = useMemo(() => {
     let result = [...transactions];
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter((tx) =>
-        (tx.merchantName || tx.name || "").toLowerCase().includes(q)
-      );
+      result = result.filter((tx) => (tx.merchantName || tx.name || "").toLowerCase().includes(q));
     }
     if (dateRange) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - dateRange);
       result = result.filter((tx) => new Date(tx.date) >= cutoff);
     }
-    if (categoryFilter) {
-      result = result.filter((tx) => tx.categoryPrimary === categoryFilter);
-    }
+    if (categoryFilter) result = result.filter((tx) => tx.categoryPrimary === categoryFilter);
     result.sort((a, b) => {
       if (sortBy === "date-desc")   return new Date(b.date) - new Date(a.date);
       if (sortBy === "date-asc")    return new Date(a.date) - new Date(b.date);
@@ -438,8 +402,7 @@ export default function App() {
   }, [transactions, search, dateRange, categoryFilter, sortBy]);
 
   const uniqueCategories = useMemo(
-    () =>
-      [...new Set(transactions.map((tx) => tx.categoryPrimary).filter(Boolean))].sort(),
+    () => [...new Set(transactions.map((tx) => tx.categoryPrimary).filter(Boolean))].sort(),
     [transactions]
   );
 
@@ -448,9 +411,8 @@ export default function App() {
     (async () => {
       try {
         const res  = await fetch(`${API}/create_link_token`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ userId: USER_ID }),
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: USER_ID }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -463,11 +425,10 @@ export default function App() {
     })();
   }, []);
 
-  // Fetch accounts + transactions + categories after connection
+  // Fetch accounts + transactions + categories
   const fetchData = useCallback(async () => {
     setLoading((l) => ({ ...l, accounts: true, tx: true }));
 
-    // 1. Accounts
     try {
       const res  = await fetch(`${API}/accounts`);
       const data = await res.json();
@@ -479,7 +440,6 @@ export default function App() {
       setLoading((l) => ({ ...l, accounts: false }));
     }
 
-    // 2. Transactions (triggers sync — must run before categories)
     try {
       const res  = await fetch(`${API}/transactions`);
       const data = await res.json();
@@ -491,26 +451,23 @@ export default function App() {
       setLoading((l) => ({ ...l, tx: false }));
     }
 
-    // 3. Categories (depends on synced transactions)
     try {
       const res  = await fetch(`${API}/categories`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setCategories(data.categories || []);  // ← NEW
+      setCategories(data.categories || []);
     } catch (e) {
       setError(`Categories fetch failed: ${e.message}`);
     }
   }, []);
 
-  // Exchange public_token after Plaid Link success
   const onSuccess = useCallback(
     async (public_token, metadata) => {
       console.log("✅ Plaid Link success!", metadata.institution);
       try {
         const res  = await fetch(`${API}/exchange_public_token`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ public_token, userId: USER_ID }),
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_token, userId: USER_ID }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -523,21 +480,14 @@ export default function App() {
     [fetchData]
   );
 
-  // Clear all filters back to defaults
   const clearFilters = useCallback(() => {
-    setSearchInput("");
-    setSearch("");
-    setDateRange(30);
-    setCategoryFilter("");
-    setSortBy("date-desc");
+    setSearchInput(""); setSearch(""); setDateRange(30);
+    setCategoryFilter(""); setSortBy("date-desc");
   }, []);
 
   const { open, ready } = usePlaidLink({
-    token:    linkToken,
-    onSuccess,
-    onExit: (err) => {
-      if (err) setError(`Plaid Link exited with error: ${err.message}`);
-    },
+    token: linkToken, onSuccess,
+    onExit: (err) => { if (err) setError(`Plaid Link exited with error: ${err.message}`); },
   });
 
   const steps = [
@@ -552,27 +502,19 @@ export default function App() {
 
   return (
     <div style={styles.root}>
-      {/* Header */}
       <header style={styles.header}>
-        <div style={styles.logo}>
-          plaid<span style={styles.logoAccent}>.</span>app
-        </div>
+        <div style={styles.logo}>plaid<span style={styles.logoAccent}>.</span>app</div>
         <div style={styles.envBadge}>ENV: SANDBOX</div>
       </header>
 
       <main style={styles.main}>
-        {/* Hero */}
         <div style={styles.hero}>
-          <h1 style={styles.heroTitle}>
-            Connect your<br />
-            bank account.
-          </h1>
+          <h1 style={styles.heroTitle}>Connect your<br />bank account.</h1>
           <p style={styles.heroSub}>
             Node.js + React + Plaid Link integration.<br />
             Sandbox mode — use Wells Fargo test credentials.
           </p>
 
-          {/* Step status grid */}
           <div style={styles.stepList}>
             {steps.map((s, i) => (
               <div key={i} style={styles.step(s.done)}>
@@ -582,7 +524,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Connect / Refresh button */}
           {!connected ? (
             <>
               <button
@@ -596,17 +537,12 @@ export default function App() {
               </button>
               <p style={styles.hint}>
                 In the Plaid Link dialog, select{" "}
-                <span style={styles.hintAccent}>Wells Fargo</span> and use sandbox
-                credentials:{" "}
-                <span style={styles.hintAccent}>user_good</span> /{" "}
-                <span style={styles.hintAccent}>pass_good</span>
+                <span style={styles.hintAccent}>Wells Fargo</span> and use sandbox credentials:{" "}
+                <span style={styles.hintAccent}>user_good</span> / <span style={styles.hintAccent}>pass_good</span>
               </p>
             </>
           ) : (
-            <button
-              style={{ ...styles.connectBtn, background: "#1a2e20", color: "#00e5a0" }}
-              onClick={fetchData}
-            >
+            <button style={{ ...styles.connectBtn, background: "#1a2e20", color: "#00e5a0" }} onClick={fetchData}>
               ↻ Refresh Data
             </button>
           )}
@@ -622,14 +558,12 @@ export default function App() {
               <span style={styles.sectionCount}>{accounts.length} accounts</span>
             </div>
             <div style={styles.accountGrid}>
-              {accounts.map((a) => (
-                <AccountCard key={a.plaidAccountId} account={a} />
-              ))}
+              {accounts.map((a) => <AccountCard key={a.plaidAccountId} account={a} />)}
             </div>
           </div>
         )}
 
-        {/* Spending Breakdown chart — categories passed as prop */}
+        {/* Spending Breakdown */}
         {accounts.length > 0 && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
@@ -640,15 +574,15 @@ export default function App() {
           </div>
         )}
 
-        {/* Recurring */}
+        {/* Recurring — key={accounts.length} forces remount when accounts load */}
         {accounts.length > 0 && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Recurring</h2>
-              <span style={styles.sectionCount}>subscriptions & income</span>
-              </div>
-              <RecurringCard />
-              </div>
+              <span style={styles.sectionCount}>subscriptions &amp; income</span>
+            </div>
+            <RecurringCard key={accounts.length} />
+          </div>
         )}
 
         {/* Transactions */}
@@ -660,7 +594,6 @@ export default function App() {
                 {filteredTransactions.length} of {transactions.length} · last {dateRange ?? "all"} days
               </span>
             </div>
-
             <FilterBar
               searchInput={searchInput}       setSearchInput={setSearchInput}
               dateRange={dateRange}           setDateRange={setDateRange}
@@ -671,14 +604,8 @@ export default function App() {
               totalCount={transactions.length}
               filteredCount={filteredTransactions.length}
             />
-
             {filteredTransactions.length === 0 ? (
-              <div style={{
-                fontFamily: "'IBM Plex Mono', monospace",
-                fontSize: "13px",
-                color: "#555",
-                padding: "20px 0",
-              }}>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#555", padding: "20px 0" }}>
                 No transactions match your filters.
               </div>
             ) : (
