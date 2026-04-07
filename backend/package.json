@@ -4,10 +4,13 @@
   "description": "Plaid integration backend",
   "main": "server.js",
 "scripts": {
-  "build": "npx prisma generate",
-  "start": "node server.js",
-  "dev": "nodemon server.js"
-},
+  "dev": "nodemon --watch src --ext ts --exec tsx src/server.ts",
+  "build": "tsc",
+  "start": "node dist/server.js",
+  "typecheck": "tsc --noEmit",
+  "prisma:generate": "prisma generate",
+  "prisma:migrate": "prisma migrate dev"
+  },
   "dependencies": {
     "@prisma/client": "^6.11.1",
     "cors": "^2.8.5",
@@ -17,6 +20,12 @@
     "prisma": "^6.11.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.2",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
   }
 }

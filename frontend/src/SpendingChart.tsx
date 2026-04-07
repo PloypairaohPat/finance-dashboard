@@ -6,6 +6,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { CategorySpend } from "./types";
+
+type SpendingChartProps = {
+  categories: CategorySpend[];
+};
+
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: Array<{
+    payload: CategorySpend;
+  }>;
+};
 
 const COLORS = [
   "#00e87a",
@@ -20,19 +32,19 @@ const COLORS = [
   "#ff70c0",
 ];
 
-const formatMoney = (value) =>
+const formatMoney = (value: number | null | undefined) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   }).format(Number(value || 0));
 
-const formatCategoryName = (name) =>
+const formatCategoryName = (name: string | null | undefined) =>
   String(name || "")
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-function CustomTooltip({ active, payload }) {
+function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
 
   const { name, total } = payload[0].payload;
@@ -69,8 +81,8 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function SpendingChart({ categories = [] }) {
-  const [activeIndex, setActiveIndex] = useState(null);
+export default function SpendingChart({ categories }: SpendingChartProps) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   if (!Array.isArray(categories) || categories.length === 0) {
     return (
@@ -113,7 +125,7 @@ export default function SpendingChart({ categories = [] }) {
               outerRadius={110}
               paddingAngle={2}
               stroke="none"
-              onMouseEnter={(_, index) => setActiveIndex(index)}
+              onMouseEnter={(_, index: number) => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
             >
               {categories.map((_, index) => (
@@ -164,13 +176,14 @@ export default function SpendingChart({ categories = [] }) {
 
       <div style={{ flex: 1, minWidth: 220, paddingTop: "8px" }}>
         {categories.map((category, index) => {
-          const pct = totalSpent > 0 ? (Number(category.total || 0) / totalSpent) * 100 : 0;
+          const pct =
+            totalSpent > 0 ? (Number(category.total || 0) / totalSpent) * 100 : 0;
           const color = COLORS[index % COLORS.length];
           const isActive = activeIndex === index;
 
           return (
             <div
-              key={category.name}
+              key={`${category.name ?? "uncategorized"}-${index}`}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
               style={{

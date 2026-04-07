@@ -1,14 +1,16 @@
 // ─────────────────────────────────────────────────────────────────
-//  services/plaidSync.js
+//  services/plaidSync.ts
 //  Reusable sync function — called by both the /transactions route
 //  and the /webhook handler. Uses /transactions/sync (cursor-based
 //  delta fetching) instead of re-fetching everything every time.
 // ─────────────────────────────────────────────────────────────────
 
-const prisma      = require("../lib/prisma");
-const { decrypt } = require("../utils/encrypt");
+import { PlaidApi } from 'plaid'
+import prisma        from '../lib/prisma'
+import { decrypt }   from '../utils/encrypt'
+import { cleanTransactions } from './cleaner'
 
-async function syncTransactions(plaidClient, plaidItemId) {
+async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
   // Load PlaidItem from DB to get the cursor + encrypted token
   const item = await prisma.plaidItem.findUnique({
     where: { id: plaidItemId },
@@ -20,16 +22,16 @@ async function syncTransactions(plaidClient, plaidItemId) {
   const access_token = decrypt(item.accessToken);
   let   cursor       = item.cursor ?? null;
 
-  let added    = [];
-  let modified = [];
-  let removed  = [];
+  let added:    any[] = [];
+  let modified: any[] = [];
+  let removed:  any[] = [];
   let hasMore  = true;
 
   // Loop through pages — Plaid paginates sync results
   while (hasMore) {
     const response = await plaidClient.transactionsSync({
       access_token,
-      cursor,      // null on first call = fetch everything from the start
+      cursor: cursor ?? undefined,
       count: 500,  // max per page
     });
 
@@ -111,6 +113,10 @@ async function syncTransactions(plaidClient, plaidItemId) {
     `modified: ${modified.length}, removed: ${removed.length}`
   );
 
+  // ── Clean after every sync ────────────────────────────────────
+  const clean = await cleanTransactions(prisma, item.userId)
+  console.log(`   🧹 cleaned: ${clean.normalized} names, ${clean.resolved} pending resolved`)
+
   return {
     added:    added.length,
     modified: modified.length,
@@ -118,4 +124,4 @@ async function syncTransactions(plaidClient, plaidItemId) {
   };
 }
 
-module.exports = { syncTransactions };
+export { syncTransactions };

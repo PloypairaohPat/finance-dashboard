@@ -8,8 +8,6 @@ datasource db {
 }
 
 // ── User ──────────────────────────────────────────────────────────
-// Single user for now. user_id is on every table from day one
-// so there is zero refactoring needed when you add auth later.
 model User {
   id           String        @id @default(cuid())
   email        String?       @unique
@@ -20,17 +18,15 @@ model User {
 }
 
 // ── PlaidItem ─────────────────────────────────────────────────────
-// One row per connected bank item. Stores the encrypted access_token
-// and the sync cursor used for delta fetches (/transactions/sync).
 model PlaidItem {
   id              String    @id @default(cuid())
   userId          String
   user            User      @relation(fields: [userId], references: [id])
   itemId          String    @unique
-  accessToken     String                     // AES-256-GCM encrypted — never store plaintext
+  accessToken     String
   institutionId   String?
   institutionName String?
-  cursor          String?                    // /transactions/sync cursor — stored per item
+  cursor          String?
   lastSyncedAt    DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -41,7 +37,6 @@ model PlaidItem {
 }
 
 // ── Account ───────────────────────────────────────────────────────
-// One row per bank account (checking, savings, credit card, etc.)
 model Account {
   id               String        @id @default(cuid())
   userId           String
@@ -53,8 +48,8 @@ model Account {
   officialName     String?
   type             String
   subtype          String?
-  mask             String?                   // last 4 digits
-  currentBalance   Decimal?      @db.Decimal(12, 2)  // Decimal — never Float for money
+  mask             String?
+  currentBalance   Decimal?      @db.Decimal(12, 2)
   availableBalance Decimal?      @db.Decimal(12, 2)
   isoCurrencyCode  String?
   createdAt        DateTime      @default(now())
@@ -66,8 +61,6 @@ model Account {
 }
 
 // ── Transaction ───────────────────────────────────────────────────
-// rawJson is immutable — stores the exact Plaid API response.
-// Never update rawJson after insert. All derived fields come from it.
 model Transaction {
   id                 String    @id @default(cuid())
   userId             String
@@ -75,16 +68,17 @@ model Transaction {
   accountId          String
   account            Account   @relation(fields: [accountId], references: [id])
   plaidTransactionId String    @unique
-  date               DateTime                // always stored in UTC
-  amount             Decimal   @db.Decimal(12, 2)  // positive = debit, negative = credit
-  name               String                  // raw merchant string from Plaid
-  merchantName       String?                 // cleaned merchant name (Phase 2)
-  categoryPrimary    String?                 // e.g. "Food and Drink"
-  categoryDetailed   String?                 // e.g. "Food and Drink > Restaurants"
+  date               DateTime
+  amount             Decimal   @db.Decimal(12, 2)
+  name               String
+  cleanName          String?   // normalized display name — populated by cleaner
+  merchantName       String?
+  categoryPrimary    String?
+  categoryDetailed   String?
   isoCurrencyCode    String?
   pending            Boolean   @default(false)
-  rawJson            Json?                   // immutable Plaid response — never UPDATE this
-  deletedAt          DateTime?               // soft delete — never hard-delete transactions
+  rawJson            Json?
+  deletedAt          DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
