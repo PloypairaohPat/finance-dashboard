@@ -1,5 +1,5 @@
 import { Request, Response }                       from 'express'
-import { fetchTransactions, fetchCategoryTotals }  from '../services/transactions.service'
+import { fetchTransactions, fetchCategoryTotals, fetchMonthlyTotals } from '../services/transactions.service'
 
 export async function getTransactions(_req: Request, res: Response): Promise<void> {
   try {
@@ -18,5 +18,16 @@ export async function getCategories(_req: Request, res: Response): Promise<void>
   } catch (err: any) {
     console.error('❌ getCategories:', err)
     res.status(500).json({ error: 'Failed to fetch categories' })
+  }
+}
+
+export async function getTrends(req: Request, res: Response): Promise<void> {
+  try {
+    const months = req.query.months ? parseInt(req.query.months as string) : 12
+    const trends = await fetchMonthlyTotals(months)
+    res.json({ trends })
+  } catch (err: any) {
+    console.error('❌ getTrends:', err.message)
+    res.status(500).json({ error: 'Failed to fetch trends' })
   }
 }

@@ -44,3 +44,10 @@ export interface RecurringData {
   inflow: RecurringStream[]
   monthlyOutflow: number
 }
+
+export interface MonthlyTotal {
+  month:   string
+  label:   string
+  total:   number
+  txCount: number
+}

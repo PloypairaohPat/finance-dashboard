@@ -7,6 +7,7 @@ import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-
 import SpendingChart from "./SpendingChart";
 import RecurringCard from "./RecurringCard";
 import { Account, Transaction, CategorySpend } from "./types";
+import TrendChart from './TrendChart'
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
 const USER_ID = "demo-user";
@@ -605,6 +606,16 @@ export default function App() {
             <SpendingChart categories={categories} />
           </div>
         )}
+
+        {accounts.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Monthly Spending</h2>
+              <span style={styles.sectionCount}>last 12 months</span>
+            </div>
+            <TrendChart />
+            </div>
+          )}
 
         {/* Recurring — key={accounts.length} forces remount when accounts load */}
         {accounts.length > 0 && (
