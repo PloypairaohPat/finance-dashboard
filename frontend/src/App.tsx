@@ -607,15 +607,15 @@ export default function App() {
           </div>
         )}
 
-        {accounts.length > 0 && (
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Monthly Spending</h2>
-              <span style={styles.sectionCount}>last 12 months</span>
-            </div>
-            <TrendChart />
-            </div>
-          )}
+{accounts.length > 0 && (
+  <div style={styles.section as CSSProperties}>
+    <div style={styles.sectionHeader as CSSProperties}>
+      <h2 style={styles.sectionTitle as CSSProperties}>Monthly Spending</h2>
+      <span style={styles.sectionCount as CSSProperties}>last 12 months</span>
+    </div>
+    <TrendChart />
+  </div>
+)}
 
         {/* Recurring — key={accounts.length} forces remount when accounts load */}
         {accounts.length > 0 && (

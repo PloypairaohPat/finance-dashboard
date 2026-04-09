@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, CSSProperties } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { MonthlyTotal } from './types'
 
-const API = process.env.REACT_APP_API_URL || 'https://finance-dashboard-production-1a0c.up.railway.app'
+const API = 'https://finance-dashboard-production-1a0c.up.railway.app'
 
-const styles: Record<string, React.CSSProperties> = {
-  wrap:    { background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px 24px' },
-  header:  { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 20 },
-  title:   { fontSize: '22px', fontWeight: 700, letterSpacing: '-0.5px', color: '#f0ede8' },
-  sub:     { fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px', color: '#555' },
-  empty:   { textAlign: 'center', padding: '40px 0', color: '#555', fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' },
-  delta:   (up: boolean) => ({
+const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
+  wrap:   { background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px 24px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 20 },
+  title:  { fontSize: '22px', fontWeight: 700, letterSpacing: '-0.5px', color: '#f0ede8' },
+  sub:    { fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px', color: '#555' },
+  empty:  { textAlign: 'center', padding: '40px 0', color: '#555', fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' },
+  delta:  (up: boolean) => ({
     fontFamily: "'IBM Plex Mono', monospace",
     fontSize: '11px',
     padding: '2px 8px',
@@ -56,23 +56,23 @@ export default function TrendChart() {
   })()
 
   return (
-    <div style={styles.wrap}>
-      <div style={styles.header}>
-        <span style={styles.title}>Monthly Spending</span>
+    <div style={styles.wrap as CSSProperties}>
+      <div style={styles.header as CSSProperties}>
+        <span style={styles.title as CSSProperties}>Monthly Spending</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {delta && (
-            <span style={styles.delta(delta.up)}>
+            <span style={(styles.delta as (up: boolean) => CSSProperties)(delta.up)}>
               {delta.up ? '▲' : '▼'} {delta.pct}% vs last month
             </span>
           )}
-          <span style={styles.sub}>last {data.length} months</span>
+          <span style={styles.sub as CSSProperties}>last {data.length} months</span>
         </div>
       </div>
 
-      {loading && <div style={styles.empty}>Loading...</div>}
+      {loading && <div style={styles.empty as CSSProperties}>Loading...</div>}
 
       {!loading && data.length < 2 && (
-        <div style={styles.empty}>Not enough data yet — need at least 2 months.</div>
+        <div style={styles.empty as CSSProperties}>Not enough data yet — need at least 2 months.</div>
       )}
 
       {!loading && data.length >= 2 && (
