@@ -78,3 +78,93 @@ function formatMonthLabel(yyyymm: string): string {
   const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   return `${names[parseInt(month) - 1]} ${year}`
 }
+
+// ── M3.3: Server-side search with filters ──────────────────────
+interface SearchFilters {
+  q?:          string
+  category?:   string
+  dateFrom?:   string
+  dateTo?:     string
+  minAmount?:  number
+  maxAmount?:  number
+  tag?:        string
+  sortBy?:     string   // "date-desc" | "date-asc" | "amount-desc" | "amount-asc"
+  limit?:      number
+  offset?:     number
+}
+
+export async function searchTransactions(userId: string, filters: SearchFilters) {
+  const where: any = { userId, deletedAt: null }
+
+  // Text search — merchant name, clean name, or original name
+  if (filters.q) {
+    const q = filters.q.trim()
+    where.OR = [
+      { cleanName:    { contains: q, mode: "insensitive" } },
+      { merchantName: { contains: q, mode: "insensitive" } },
+      { name:         { contains: q, mode: "insensitive" } },
+      { notes:        { contains: q, mode: "insensitive" } },
+    ]
+  }
+
+  // Category filter
+  if (filters.category) {
+    where.categoryPrimary = filters.category
+  }
+
+  // Date range
+  if (filters.dateFrom || filters.dateTo) {
+    where.date = {}
+    if (filters.dateFrom) where.date.gte = new Date(filters.dateFrom)
+    if (filters.dateTo)   where.date.lte = new Date(filters.dateTo)
+  }
+
+  // Amount range
+  if (filters.minAmount !== undefined || filters.maxAmount !== undefined) {
+    where.amount = {}
+    if (filters.minAmount !== undefined) where.amount.gte = filters.minAmount
+    if (filters.maxAmount !== undefined) where.amount.lte = filters.maxAmount
+  }
+
+  // Tag filter
+  if (filters.tag) {
+    where.tags = { has: filters.tag }
+  }
+
+  // Sorting
+  let orderBy: any = { date: "desc" }
+  switch (filters.sortBy) {
+    case "date-asc":    orderBy = { date: "asc" };   break
+    case "amount-desc": orderBy = { amount: "desc" }; break
+    case "amount-asc":  orderBy = { amount: "asc" };  break
+  }
+
+  const limit  = Math.min(filters.limit  ?? 100, 500)
+  const offset = filters.offset ?? 0
+
+  const [transactions, total] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy,
+      take: limit,
+      skip: offset,
+    }),
+    prisma.transaction.count({ where }),
+  ])
+
+  return { transactions, total, limit, offset }
+}
+
+// ── M3.3: Update tags / notes on a single transaction ──────────
+export async function updateTransaction(
+  transactionId: string,
+  data: { tags?: string[]; notes?: string | null }
+) {
+  return prisma.transaction.update({
+    where: { id: transactionId },
+    data: {
+      ...(data.tags  !== undefined && { tags:  data.tags }),
+      ...(data.notes !== undefined && { notes: data.notes }),
+    },
+  })
+}
