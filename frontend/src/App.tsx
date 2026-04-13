@@ -11,7 +11,10 @@ import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
 import TransactionDetail from "./TransactionDetail"
+import TransactionCard from "./TransactionCard"
 import NetWorthChart from "./NetWorthChart"
+import CashFlowChart from "./CashFlowChart"
+import useMediaQuery from "./useMediaQuery"
 
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
@@ -305,6 +308,7 @@ type FilterBarProps = {
   onClear:           () => void;
   totalCount:        number;
   filteredCount:     number;
+  isMobile:          boolean;
 };
 
 // ── Account Card ──────────────────────────────────────────────────
@@ -380,39 +384,50 @@ function TxRow({ tx, index, isExpanded, onToggle, onUpdated }: TxRowProps) {
 function FilterBar({
   searchInput, setSearchInput, dateRange, setDateRange,
   categoryFilter, setCategoryFilter, sortBy, setSortBy,
-  uniqueCategories, onClear, totalCount, filteredCount,
+  uniqueCategories, onClear, totalCount, filteredCount, isMobile,
 }: FilterBarProps) {
   return (
-    <div style={styles.filterBar as CSSProperties}>
+    <div style={{
+      ...(styles.filterBar as CSSProperties),
+      flexDirection: isMobile ? "column" : "row",
+      alignItems: isMobile ? "stretch" : "center",
+    }}>
       <input
-        style={styles.filterInput as CSSProperties}
+        style={{
+          ...(styles.filterInput as CSSProperties),
+          width: isMobile ? "100%" : "200px",
+        }}
         placeholder="Search merchants…"
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
       />
-      {[7, 30, 90, null].map((d) => (
-        <button
-          key={d ?? "all"}
-          style={(styles.filterBtn as (a: boolean) => CSSProperties)(dateRange === d)}
-          onClick={() => setDateRange(d)}
-        >
-          {d ? `${d}d` : "All"}
-        </button>
-      ))}
-      <select style={styles.filterSelect as CSSProperties} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+        {[7, 30, 90, null].map((d) => (
+          <button
+            key={d ?? "all"}
+            style={(styles.filterBtn as (a: boolean) => CSSProperties)(dateRange === d)}
+            onClick={() => setDateRange(d)}
+          >
+            {d ? `${d}d` : "All"}
+          </button>
+        ))}
+      </div>
+      <select style={{ ...(styles.filterSelect as CSSProperties), width: isMobile ? "100%" : "auto" }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
         <option value="">All categories</option>
         {uniqueCategories.map((cat: string) => (
           <option key={cat} value={cat}>{cat.replace(/_/g, " ")}</option>
         ))}
       </select>
-      <select style={styles.filterSelect as CSSProperties} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+      <select style={{ ...(styles.filterSelect as CSSProperties), width: isMobile ? "100%" : "auto" }} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
         <option value="date-desc">Newest first</option>
         <option value="date-asc">Oldest first</option>
         <option value="amount-desc">Highest amount</option>
         <option value="amount-asc">Lowest amount</option>
       </select>
-      <span style={styles.filterCount as CSSProperties}>{filteredCount} / {totalCount}</span>
-      <button style={styles.clearBtn as CSSProperties} onClick={onClear}>✕ Clear</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+        <span style={styles.filterCount as CSSProperties}>{filteredCount} / {totalCount}</span>
+        <button style={styles.clearBtn as CSSProperties} onClick={onClear}>✕ Clear</button>
+      </div>
     </div>
   );
 }
@@ -429,6 +444,7 @@ export default function App() {
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
+  const isMobile = useMediaQuery("(max-width: 640px)")
 
   const handleTxUpdated = useCallback((updated: Transaction) => {
     setTransactions(prev =>
@@ -604,20 +620,34 @@ export default function App() {
 
   return (
     <div style={styles.root as CSSProperties}>
-      <header style={styles.header as CSSProperties}>
+      <header
+      style={{
+        ...(styles.header as React.CSSProperties),
+        padding: isMobile ? "16px 20px" : "24px 40px",
+        }}>
         <div style={styles.logo as CSSProperties}>plaid<span style={styles.logoAccent as CSSProperties}>.</span>app</div>
         <div style={styles.envBadge as CSSProperties}>ENV: SANDBOX</div>
       </header>
 
-      <main style={styles.main as CSSProperties}>
+      <main style={{
+          ...(styles.main as CSSProperties),
+          padding: isMobile ? "30px 16px" : "60px 40px",
+        }}>
         <div style={styles.hero as CSSProperties}>
-          <h1 style={styles.heroTitle as CSSProperties}>Connect your<br />bank account.</h1>
+          <h1 style={{
+            ...(styles.heroTitle as CSSProperties),
+            fontSize: isMobile ? "32px" : "52px",
+            letterSpacing: isMobile ? "-1px" : "-2px",
+          }}>Connect your<br />bank account.</h1>
           <p style={styles.heroSub as CSSProperties}>
             Node.js + React + Plaid Link integration.<br />
             Sandbox mode — use Wells Fargo test credentials.
           </p>
 
-          <div style={styles.stepList as CSSProperties}>
+          <div style={{
+            ...(styles.stepList as CSSProperties),
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+          }}>
             {steps.map((s, i) => (
               <div key={i} style={(styles.step as (d: boolean) => CSSProperties)(s.done)}>
                 <div style={(styles.stepDot as (d: boolean) => CSSProperties)(s.done)} />
@@ -629,7 +659,10 @@ export default function App() {
           {!connected ? (
             <>
               <button
-                style={loading.link || !ready ? styles.loadingBtn as CSSProperties : styles.connectBtn as CSSProperties}
+                style={{
+                  ...(loading.link || !ready ? styles.loadingBtn as CSSProperties : styles.connectBtn as CSSProperties),
+                  ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
+                }}
                 onClick={() => open()}
                 disabled={loading.link || !ready}
                 onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => {
@@ -648,7 +681,7 @@ export default function App() {
               </p>
             </>
           ) : (
-            <button style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: "#00e5a0" }} onClick={fetchData}>
+            <button style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: "#00e5a0", ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}) }} onClick={fetchData}>
               ↻ Refresh Data
             </button>
           )}
@@ -674,7 +707,10 @@ export default function App() {
               <h2 style={styles.sectionTitle as CSSProperties}>Account Balances</h2>
               <span style={styles.sectionCount as CSSProperties}>{accounts.length} accounts</span>
             </div>
-            <div style={styles.accountGrid as CSSProperties}>
+            <div style={{
+              ...(styles.accountGrid as CSSProperties),
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(260px, 1fr))",
+            }}>
               {accounts.map((a) => <AccountCard key={a.plaidAccountId} account={a} />)}
             </div>
           </div>
@@ -708,10 +744,21 @@ export default function App() {
             <div style={styles.sectionHeader as CSSProperties}>
               <h2 style={styles.sectionTitle as CSSProperties}>Net Worth</h2>
               <span style={styles.sectionCount as CSSProperties}>last 90 days</span>
-              </div>
-              <NetWorthChart />
-              </div>
-            )}
+            </div>
+            <NetWorthChart />
+          </div>
+        )}
+
+        {/* Cash Flow */}
+        {accounts.length > 0 && (
+          <div style={styles.section as CSSProperties}>
+            <div style={styles.sectionHeader as CSSProperties}>
+              <h2 style={styles.sectionTitle as CSSProperties}>Cash Flow</h2>
+              <span style={styles.sectionCount as CSSProperties}>last 6 months</span>
+            </div>
+            <CashFlowChart />
+          </div>
+        )}
 
         {/* Monthly Budgets */}
         {budgets.length > 0 && (
@@ -755,10 +802,23 @@ export default function App() {
               onClear={clearFilters}
               totalCount={transactions.length}
               filteredCount={filteredTransactions.length}
+              isMobile={isMobile}
             />
             {filteredTransactions.length === 0 ? (
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#555", padding: "20px 0" }}>
                 No transactions match your filters.
+              </div>
+            ) : isMobile ? (
+              <div>
+                {filteredTransactions.map((tx) => (
+                  <TransactionCard
+                    key={tx.plaidTransactionId}
+                    transaction={tx}
+                    isExpanded={expandedTxId === tx.id}
+                    onToggle={() => setExpandedTxId(prev => prev === tx.id ? null : tx.id)}
+                    onUpdated={handleTxUpdated}
+                  />
+                ))}
               </div>
             ) : (
               <table style={styles.txTable as CSSProperties}>
