@@ -9,6 +9,7 @@ import { PlaidApi } from 'plaid'
 import prisma        from '../lib/prisma'
 import { decrypt }   from '../utils/encrypt'
 import { cleanTransactions } from './cleaner'
+import { captureBalanceSnapshots } from "./networth.service"
 
 async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
   // Load PlaidItem from DB to get the cursor + encrypted token
@@ -108,20 +109,23 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
     data:  { cursor, lastSyncedAt: new Date() },
   });
 
-  console.log(
-    `✅ Sync complete — added: ${added.length}, ` +
-    `modified: ${modified.length}, removed: ${removed.length}`
-  );
+console.log(
+  `✅ Sync complete — added: ${added.length}, ` +
+  `modified: ${modified.length}, removed: ${removed.length}`
+);
 
-  // ── Clean after every sync ────────────────────────────────────
-  const clean = await cleanTransactions(prisma, item.userId)
-  console.log(`   🧹 cleaned: ${clean.normalized} names, ${clean.resolved} pending resolved`)
+// ── Clean after every sync ────────────────────────────────────
+const clean = await cleanTransactions(prisma, item.userId)
+console.log(`   🧹 cleaned: ${clean.normalized} names, ${clean.resolved} pending resolved`)
 
-  return {
-    added:    added.length,
-    modified: modified.length,
-    removed:  removed.length,
-  };
+// ── Capture balance snapshot after sync ───────────────────────
+await captureBalanceSnapshots(item.userId)
+
+return {
+  added:    added.length,
+  modified: modified.length,
+  removed:  removed.length,
+};
 }
 
 export { syncTransactions };
