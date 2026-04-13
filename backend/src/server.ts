@@ -16,6 +16,7 @@ import { getCategories }              from './controllers/transactions.controlle
 import budgetsRouter from "./routes/budgets.routes"
 import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
+import cashflowRouter from "./routes/cashflow.routes"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
@@ -77,7 +78,7 @@ app.use('/',             makePlaidRouter(plaidClient, plaidProducts, plaidCountr
 app.use("/budgets", budgetsRouter)
 app.use("/alerts", alertsRouter)
 app.use("/networth", networthRouter)
-
+app.use("/cashflow", cashflowRouter)
 
 // ── /categories kept at original path for frontend compatibility ──
 app.get('/categories', getCategories)
