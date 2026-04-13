@@ -11,6 +11,7 @@ import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
 import TransactionDetail from "./TransactionDetail"
+import NetWorthChart from "./NetWorthChart"
 
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
@@ -700,6 +701,17 @@ export default function App() {
             <TrendChart />
           </div>
         )}
+
+        {/* Net Worth */}
+        {accounts.length > 0 && (
+          <div style={styles.section as CSSProperties}>
+            <div style={styles.sectionHeader as CSSProperties}>
+              <h2 style={styles.sectionTitle as CSSProperties}>Net Worth</h2>
+              <span style={styles.sectionCount as CSSProperties}>last 90 days</span>
+              </div>
+              <NetWorthChart />
+              </div>
+            )}
 
         {/* Monthly Budgets */}
         {budgets.length > 0 && (
