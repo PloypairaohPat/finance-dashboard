@@ -22,6 +22,8 @@ export interface Transaction {
   categoryDetailed: string | null
   isoCurrencyCode: string | null
   pending: boolean
+  tags: string[]
+  notes: string | null
 }
 
 export interface CategorySpend {
