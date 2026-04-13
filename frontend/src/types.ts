@@ -51,3 +51,13 @@ export interface MonthlyTotal {
   total:   number
   txCount: number
 }
+
+export interface Budget {
+  category:     string
+  monthlyLimit: number
+  currentSpend: number
+  percentUsed:  number
+  remaining:    number
+  status:       "on_track" | "warning" | "over"
+  month:        string
+}

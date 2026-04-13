@@ -6,8 +6,9 @@ import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from 
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import RecurringCard from "./RecurringCard";
-import { Account, Transaction, CategorySpend } from "./types";
+import { Account, Transaction, CategorySpend, Budget } from "./types";
 import TrendChart from './TrendChart'
+import BudgetCard from './BudgetCard'
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
 const USER_ID = "demo-user";
@@ -390,6 +391,7 @@ export default function App() {
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
+  const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
 
@@ -432,7 +434,7 @@ export default function App() {
     [transactions]
   );
 
-  // Fetch link_token on mount
+  // ── Fetch link_token on mount ────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -451,7 +453,18 @@ export default function App() {
     })();
   }, []);
 
-  // Fetch accounts + transactions + categories
+  // ── Fetch budgets ────────────────────────────────────────────────
+  const fetchBudgets = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/budgets`);
+      const data = await res.json() as { budgets: Budget[] };
+      setBudgets(data.budgets ?? []);
+    } catch (e: any) {
+      console.error("Budgets fetch failed:", e.message);
+    }
+  }, []);
+
+  // ── Fetch accounts + transactions + categories + budgets ─────────
   const fetchData = useCallback(async () => {
     setLoading((l) => ({ ...l, accounts: true, tx: true }));
 
@@ -485,7 +498,15 @@ export default function App() {
     } catch (e: any) {
       setError(`Categories fetch failed: ${e.message}`);
     }
-  }, []);
+
+    fetchBudgets();
+  }, [fetchBudgets]);
+
+  // ── Auto-load data on mount ──────────────────────────────────────
+  useEffect(() => {
+    fetchData();
+    fetchBudgets();
+  }, [fetchData, fetchBudgets]);
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
@@ -607,17 +628,31 @@ export default function App() {
           </div>
         )}
 
-{accounts.length > 0 && (
-  <div style={styles.section as CSSProperties}>
-    <div style={styles.sectionHeader as CSSProperties}>
-      <h2 style={styles.sectionTitle as CSSProperties}>Monthly Spending</h2>
-      <span style={styles.sectionCount as CSSProperties}>last 12 months</span>
-    </div>
-    <TrendChart />
-  </div>
-)}
+        {/* Monthly Spending Trend */}
+        {accounts.length > 0 && (
+          <div style={styles.section as CSSProperties}>
+            <div style={styles.sectionHeader as CSSProperties}>
+              <h2 style={styles.sectionTitle as CSSProperties}>Monthly Spending</h2>
+              <span style={styles.sectionCount as CSSProperties}>last 12 months</span>
+            </div>
+            <TrendChart />
+          </div>
+        )}
 
-        {/* Recurring — key={accounts.length} forces remount when accounts load */}
+        {/* Monthly Budgets */}
+        {budgets.length > 0 && (
+          <div style={styles.section as CSSProperties}>
+            <div style={styles.sectionHeader as CSSProperties}>
+              <h2 style={styles.sectionTitle as CSSProperties}>Monthly Budgets</h2>
+              <span style={styles.sectionCount as CSSProperties}>this month</span>
+            </div>
+            {budgets.map((b) => (
+              <BudgetCard key={b.category} budget={b} onUpdated={fetchBudgets} />
+            ))}
+          </div>
+        )}
+
+        {/* Recurring */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
