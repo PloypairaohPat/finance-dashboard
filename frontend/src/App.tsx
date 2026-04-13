@@ -10,6 +10,7 @@ import { Account, Transaction, CategorySpend, Budget, Alert } from "./types"
 import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
+import TransactionDetail from "./TransactionDetail"
 
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
@@ -282,7 +283,13 @@ const fmtDate = (d: string | null | undefined) => (d ? String(d).slice(0, 10) : 
 // ── Component prop types ──────────────────────────────────────────
 type AccountCardProps = { account: Account };
 
-type TxRowProps = { tx: Transaction; index: number };
+type TxRowProps = {
+  tx: Transaction
+  index: number
+  isExpanded: boolean
+  onToggle: () => void
+  onUpdated: (updated: Transaction) => void
+}
 
 type FilterBarProps = {
   searchInput:       string;
@@ -324,24 +331,47 @@ function AccountCard({ account }: AccountCardProps) {
 }
 
 // ── Transaction Row ───────────────────────────────────────────────
-function TxRow({ tx, index }: TxRowProps) {
+function TxRow({ tx, index, isExpanded, onToggle, onUpdated }: TxRowProps) {
   return (
-    <tr style={(styles.txRow as (i: number) => CSSProperties)(index)}>
-      <td style={styles.txCell as CSSProperties}>{fmtDate(tx.date)}</td>
-      <td style={styles.txName as CSSProperties}>
-        {tx.merchantName || tx.name}
-        {tx.pending && <span style={styles.pending as CSSProperties}>pending</span>}
-      </td>
-      <td style={styles.txCell as CSSProperties}>
-        {tx.categoryPrimary && (
-          <span style={styles.tag as CSSProperties}>{tx.categoryPrimary.replace(/_/g, " ")}</span>
-        )}
-      </td>
-      <td style={(styles.txAmount as (a: number) => CSSProperties)(tx.amount)}>
-        {tx.amount > 0 ? "-" : "+"}
-        {fmt(Math.abs(tx.amount), tx.isoCurrencyCode || "USD")}
-      </td>
-    </tr>
+    <>
+      <tr
+        style={{ ...(styles.txRow as (i: number) => CSSProperties)(index), cursor: "pointer" }}
+        onClick={onToggle}
+      >
+        <td style={styles.txCell as CSSProperties}>{fmtDate(tx.date)}</td>
+        <td style={styles.txName as CSSProperties}>
+          {tx.merchantName || tx.name}
+          {tx.pending && <span style={styles.pending as CSSProperties}>pending</span>}
+          {tx.tags?.length > 0 && tx.tags.map(tag => (
+            <span key={tag} style={{
+              display: "inline-block",
+              background: "rgba(74,158,255,0.1)",
+              border: "1px solid rgba(74,158,255,0.2)",
+              color: "#4a9eff",
+              fontFamily: "IBM Plex Mono, monospace",
+              fontSize: 10, padding: "1px 6px", borderRadius: 3,
+              marginLeft: 6,
+            }}>{tag}</span>
+          ))}
+        </td>
+        <td style={styles.txCell as CSSProperties}>
+          {tx.categoryPrimary && (
+            <span style={styles.tag as CSSProperties}>{tx.categoryPrimary.replace(/_/g, " ")}</span>
+          )}
+        </td>
+        <td style={(styles.txAmount as (a: number) => CSSProperties)(tx.amount)}>
+          {tx.amount > 0 ? "-" : "+"}
+          {fmt(Math.abs(tx.amount), tx.isoCurrencyCode || "USD")}
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr>
+          <td colSpan={4} style={{ padding: 0 }}>
+            <TransactionDetail transaction={tx} onUpdated={onUpdated} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -395,8 +425,15 @@ export default function App() {
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [alerts,       setAlerts]      = useState<Alert[]>([]);
+  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
+
+  const handleTxUpdated = useCallback((updated: Transaction) => {
+    setTransactions(prev =>
+      prev.map(tx => tx.id === updated.id ? { ...tx, tags: updated.tags, notes: updated.notes } : tx)
+    )
+  }, [])
 
   // ── Filter state ────────────────────────────────────────────────
   const [searchInput,    setSearchInput]    = useState("");
@@ -723,7 +760,14 @@ export default function App() {
                 </thead>
                 <tbody>
                   {filteredTransactions.map((tx, i) => (
-                    <TxRow key={tx.plaidTransactionId} tx={tx} index={i} />
+                    <TxRow
+                      key={tx.plaidTransactionId}
+                      tx={tx}
+                      index={i}
+                      isExpanded={expandedTxId === tx.id}
+                      onToggle={() => setExpandedTxId(prev => prev === tx.id ? null : tx.id)}
+                      onUpdated={handleTxUpdated}
+                    />
                   ))}
                 </tbody>
               </table>
