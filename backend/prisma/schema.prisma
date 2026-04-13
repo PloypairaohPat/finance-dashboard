@@ -71,7 +71,7 @@ model Transaction {
   date               DateTime
   amount             Decimal   @db.Decimal(12, 2)
   name               String
-  cleanName          String?   // normalized display name — populated by cleaner
+  cleanName          String?
   merchantName       String?
   categoryPrimary    String?
   categoryDetailed   String?
@@ -85,4 +85,19 @@ model Transaction {
   @@index([userId, date])
   @@index([userId, categoryPrimary])
   @@index([accountId])
+}
+
+// ── Budget ────────────────────────────────────────────────────────
+model Budget {
+  id           String   @id @default(cuid())
+  userId       String
+  category     String
+  monthlyLimit Decimal  @db.Decimal(12, 2)
+  month        String
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, category, month])
+  @@index([userId, month])
 }
