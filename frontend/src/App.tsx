@@ -6,9 +6,11 @@ import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from 
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import RecurringCard from "./RecurringCard";
-import { Account, Transaction, CategorySpend, Budget } from "./types";
+import { Account, Transaction, CategorySpend, Budget, Alert } from "./types"
+import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
+
 
 const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
 const USER_ID = "demo-user";
@@ -392,6 +394,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
+  const [alerts,       setAlerts]      = useState<Alert[]>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
 
@@ -502,11 +505,22 @@ export default function App() {
     fetchBudgets();
   }, [fetchBudgets]);
 
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/alerts`)
+      const data = await res.json() as { alerts: Alert[] }
+      setAlerts(data.alerts ?? [])
+    } catch (e: any) {
+      console.error("Alerts fetch failed:", e.message)
+    }
+  }, [])
+
   // ── Auto-load data on mount ──────────────────────────────────────
   useEffect(() => {
-    fetchData();
-    fetchBudgets();
-  }, [fetchData, fetchBudgets]);
+    fetchData()
+    fetchBudgets()
+    fetchAlerts()
+  }, [fetchData, fetchBudgets, fetchAlerts])
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
@@ -603,6 +617,17 @@ export default function App() {
 
           {error && <div style={styles.error as CSSProperties}>⚠ {error}</div>}
         </div>
+
+        {/* Smart Alerts */}
+        {alerts.length > 0 && (
+          <div style={styles.section as CSSProperties}>
+            <div style={styles.sectionHeader as CSSProperties}>
+              <h2 style={styles.sectionTitle as CSSProperties}>Alerts</h2>
+              <span style={styles.sectionCount as CSSProperties}>{alerts.length} active</span>
+            </div>
+            <AlertBanner alerts={alerts} />
+          </div>
+        )}
 
         {/* Account Balances */}
         {accounts.length > 0 && (

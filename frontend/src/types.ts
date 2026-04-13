@@ -61,3 +61,13 @@ export interface Budget {
   status:       "on_track" | "warning" | "over"
   month:        string
 }
+
+export interface Alert {
+  type:        "large_transaction" | "new_merchant" | "monthly_pace" | "budget_exceeded"
+  severity:    "warning" | "critical"
+  title:       string
+  description: string
+  amount?:     number
+  category?:   string
+  date?:       string
+}
