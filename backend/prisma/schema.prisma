@@ -103,3 +103,20 @@ model Budget {
   @@unique([userId, category, month])
   @@index([userId, month])
 }
+
+model BalanceSnapshot {
+  id               String   @id @default(cuid())
+  userId           String
+  accountId        String
+  accountName      String
+  accountType      String
+  currentBalance   Decimal  @db.Decimal(12, 2)
+  availableBalance Decimal? @db.Decimal(12, 2)
+  isoCurrencyCode  String?  @default("USD")
+  date             DateTime @db.Date
+  createdAt        DateTime @default(now())
+
+  @@unique([accountId, date])
+  @@index([userId, date])
+  @@index([date])
+}
