@@ -1,0 +1,39 @@
+/* ═══════════════════════════════════════════════════════════════
+   M3.6 — Mobile Responsive Breakpoints
+   ═══════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Tablet */
+@media (max-width: 900px) {
+  body {
+    font-size: 14px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  body {
+    font-size: 13px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  #root {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  .tx-table-desktop {
+    display: none !important;
+  }
+
+  .tx-cards-mobile {
+    display: block !important;
+  }
+
+  .recharts-responsive-container {
+    min-width: 0 !important;
+  }
+}
