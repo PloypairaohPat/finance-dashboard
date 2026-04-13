@@ -14,6 +14,7 @@ import { makeRecurringRouter }        from './routes/recurring.routes'
 import { makePlaidRouter }            from './routes/plaid.routes'
 import { getCategories }              from './controllers/transactions.controller'
 import budgetsRouter from "./routes/budgets.routes"
+import alertsRouter from "./routes/alerts.routes"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
@@ -73,6 +74,7 @@ app.use('/transactions', transactionsRouter)
 app.use('/recurring',    makeRecurringRouter(plaidClient))
 app.use('/',             makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
 app.use("/budgets", budgetsRouter)
+app.use("/alerts", alertsRouter)
 
 
 // ── /categories kept at original path for frontend compatibility ──
