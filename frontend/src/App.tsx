@@ -444,6 +444,7 @@ export default function App() {
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const isMobile = useMediaQuery("(max-width: 640px)")
 
   const handleTxUpdated = useCallback((updated: Transaction) => {
@@ -490,6 +491,25 @@ export default function App() {
     () => [...new Set(transactions.map((tx) => tx.categoryPrimary).filter(Boolean))] as string[],
     [transactions]
   );
+
+  // ── M4.1: Auto-connect — check for existing accounts on mount ──
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/accounts`);
+        const data = await res.json() as { accounts: Account[]; error?: string };
+        if (data.accounts && data.accounts.length > 0) {
+          setConnected(true);
+          setAccounts(data.accounts);
+        }
+      } catch (err) {
+        console.error("Auto-connect check failed:", err);
+        // Fall through — will show Plaid Link as fallback
+      } finally {
+        setInitialLoading(false);
+      }
+    })();
+  }, []);
 
   // ── Fetch link_token on mount ────────────────────────────────────
   useEffect(() => {
@@ -618,6 +638,38 @@ export default function App() {
     { label: "transactions fetched",  done: transactions.length > 0 },
   ];
 
+  // ── M4.1: Loading gate — show spinner while checking for existing accounts
+  if (initialLoading) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        height: "100vh",
+        background: "#0a0a0a",
+        gap: "16px",
+      }}>
+        <div style={{
+          fontSize: "20px",
+          fontWeight: 800,
+          letterSpacing: "-0.5px",
+          color: "#f0ede8",
+          fontFamily: "'Syne', sans-serif",
+        }}>
+          plaid<span style={{ color: "#00e5a0" }}>.</span>app
+        </div>
+        <div style={{
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: "13px",
+          color: "#555",
+        }}>
+          Loading your dashboard…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.root as CSSProperties}>
       <header
@@ -626,7 +678,26 @@ export default function App() {
         padding: isMobile ? "16px 20px" : "24px 40px",
         }}>
         <div style={styles.logo as CSSProperties}>plaid<span style={styles.logoAccent as CSSProperties}>.</span>app</div>
-        <div style={styles.envBadge as CSSProperties}>ENV: SANDBOX</div>
+        <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+          {connected && (
+            <button
+              onClick={() => setConnected(false)}
+              style={{
+                background: "transparent",
+                border: "1px solid #333",
+                color: "#666",
+                padding: "4px 12px",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontSize: "11px",
+                fontFamily: "'IBM Plex Mono', monospace",
+              }}
+            >
+              + Link Account
+            </button>
+          )}
+          <div style={styles.envBadge as CSSProperties}>PRODUCTION</div>
+        </div>
       </header>
 
       <main style={{
@@ -641,7 +712,7 @@ export default function App() {
           }}>Connect your<br />bank account.</h1>
           <p style={styles.heroSub as CSSProperties}>
             Node.js + React + Plaid Link integration.<br />
-            Sandbox mode — use Wells Fargo test credentials.
+            Production mode — connected to Wells Fargo.
           </p>
 
           <div style={{
@@ -675,9 +746,7 @@ export default function App() {
                 {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
               </button>
               <p style={styles.hint as CSSProperties}>
-                In the Plaid Link dialog, select{" "}
-                <span style={styles.hintAccent as CSSProperties}>Wells Fargo</span> and use sandbox credentials:{" "}
-                <span style={styles.hintAccent as CSSProperties}>user_good</span> / <span style={styles.hintAccent as CSSProperties}>pass_good</span>
+                Link a new bank account via Plaid to get started.
               </p>
             </>
           ) : (
