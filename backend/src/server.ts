@@ -18,6 +18,7 @@ import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
 import { clerkAuth, requireSession } from "./middleware/auth"
+import { startScheduler } from "./scheduler"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
@@ -120,4 +121,5 @@ app.listen(PORT, () => {
   console.log(`   GET  /recurring`)
   console.log(`   POST /webhook`)
   console.log(`   GET  /health\n`)
+  startScheduler(plaidClient)
 })
