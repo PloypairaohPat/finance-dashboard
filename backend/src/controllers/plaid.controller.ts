@@ -28,7 +28,7 @@ export function makePlaidController(
     async exchangeToken(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const result = await exchangePublicToken(plaidClient, req.body.public_token)
+        const result = await exchangePublicToken(plaidClient, req.body.public_token, userId)
         res.json({ success: true, institutionName: result.institutionName })
       } catch (err: any) {
         console.error('❌ exchangeToken:', err.response?.data || err.message)
@@ -39,7 +39,7 @@ export function makePlaidController(
     async sync(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const result = await triggerSync(plaidClient)
+        const result = await triggerSync(plaidClient, userId)
         res.json(result)
       } catch (err: any) {
         console.error('❌ sync:', err.message)
@@ -60,16 +60,23 @@ export function makePlaidController(
       console.log(`📨 Webhook: ${webhook_type}/${webhook_code} — item: ${item_id}`)
       res.json({ received: true })
 
-      // Fire-and-forget sync after responding
       if (webhook_type === 'TRANSACTIONS') {
         if (
           webhook_code === 'SYNC_UPDATES_AVAILABLE' ||
           webhook_code === 'INITIAL_UPDATE' ||
           webhook_code === 'HISTORICAL_UPDATE'
         ) {
-          triggerSync(plaidClient).catch((err: any) =>
-            console.error('❌ Webhook sync error:', err.message)
-          )
+          // Webhook doesn't have auth context — look up userId from the item
+          if (item_id) {
+            const plaidItem = await (await import('../lib/prisma')).default.plaidItem.findUnique({
+              where: { itemId: item_id },
+            })
+            if (plaidItem) {
+              triggerSync(plaidClient, plaidItem.userId).catch((err: any) =>
+                console.error('❌ Webhook sync error:', err.message)
+              )
+            }
+          }
         }
       }
 

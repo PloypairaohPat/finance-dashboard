@@ -5,7 +5,7 @@ import { getUserId } from '../middleware/auth'
 export async function getTransactions(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const transactions = await fetchTransactions()
+    const transactions = await fetchTransactions(userId)
     res.json({ transactions })
   } catch (err: any) {
     console.error('❌ getTransactions:', err.message)
@@ -16,7 +16,7 @@ export async function getTransactions(req: Request, res: Response): Promise<void
 export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const categories = await fetchCategoryTotals()
+    const categories = await fetchCategoryTotals(userId)
     res.json({ categories })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
@@ -28,7 +28,7 @@ export async function getTrends(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
     const months = req.query.months ? parseInt(req.query.months as string) : 12
-    const trends = await fetchMonthlyTotals(months)
+    const trends = await fetchMonthlyTotals(userId, months)
     res.json({ trends })
   } catch (err: any) {
     console.error('❌ getTrends:', err.message)
@@ -36,7 +36,6 @@ export async function getTrends(req: Request, res: Response): Promise<void> {
   }
 }
 
-// ── M3.3: Search endpoint ────────────────────────────────────
 export async function searchTransactionsHandler(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
@@ -60,7 +59,6 @@ export async function searchTransactionsHandler(req: Request, res: Response): Pr
   }
 }
 
-// ── M3.3: PATCH tags / notes ─────────────────────────────────
 export async function patchTransaction(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)

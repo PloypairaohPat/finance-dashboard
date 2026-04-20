@@ -8,7 +8,7 @@ export function makeRecurringController(plaidClient: PlaidApi) {
     async getRecurring(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const result = await fetchRecurring(plaidClient)
+        const result = await fetchRecurring(plaidClient, userId)
         res.json(result)
       } catch (err: any) {
         console.error('❌ getRecurring:', err.response?.data || err.message)
