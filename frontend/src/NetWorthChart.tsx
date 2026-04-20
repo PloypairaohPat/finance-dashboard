@@ -3,6 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts"
+import { useAuth } from "@clerk/clerk-react"
 
 const API = "https://finance-dashboard-production-1a0c.up.railway.app"
 
@@ -57,11 +58,15 @@ function CustomTooltip({ active, payload, label }: any) {
 export default function NetWorthChart() {
   const [data, setData] = useState<NetWorthPoint[]>([])
   const [loading, setLoading] = useState(true)
+  const { getToken } = useAuth()
 
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch(`${API}/networth?days=90`)
+        const token = await getToken()
+        const res = await fetch(`${API}/networth?days=90`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
         const json = await res.json()
         setData(json.history ?? [])
       } catch (e: any) {
@@ -70,7 +75,7 @@ export default function NetWorthChart() {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [getToken])
 
   if (loading) {
     return (

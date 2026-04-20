@@ -1,4 +1,5 @@
 import { useState, useRef } from "react"
+import { useAuth } from "@clerk/clerk-react"
 import { Transaction } from "./types"
 
 const API = "https://finance-dashboard-production-1a0c.up.railway.app"
@@ -14,13 +15,18 @@ export default function TransactionDetail({ transaction, onUpdated }: Props) {
   const [tagInput, setTagInput] = useState("")
   const [saving, setSaving] = useState(false)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { getToken } = useAuth()
 
   async function saveToPatch(newTags: string[], newNotes: string) {
     setSaving(true)
     try {
+      const token = await getToken()
       const res = await fetch(`${API}/transactions/${transaction.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ tags: newTags, notes: newNotes }),
       })
       const data = await res.json()

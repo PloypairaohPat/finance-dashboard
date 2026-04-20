@@ -4,12 +4,14 @@ import {
   fetchBudgetsWithSpend,
   fetchBudgetStatus,
 } from "../services/budgets.service"
+import { getUserId } from "../middleware/auth"
 
 export async function createOrUpdateBudget(
   req: Request,
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const { category, monthlyLimit, month } = req.body as {
       category:     string
       monthlyLimit: number
@@ -32,6 +34,7 @@ export async function getBudgets(
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const month = req.query.month as string | undefined
     const budgets = await fetchBudgetsWithSpend(month)
     res.json({ budgets })
@@ -46,6 +49,7 @@ export async function getBudgetStatus(
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const month = req.query.month as string | undefined
     const status = await fetchBudgetStatus(month)
     res.json(status)

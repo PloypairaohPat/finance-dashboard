@@ -3,6 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts'
+import { useAuth } from '@clerk/clerk-react'
 import { MonthlyTotal } from './types'
 
 const API = 'https://finance-dashboard-production-1a0c.up.railway.app'
@@ -38,13 +39,24 @@ function CustomTooltip({ active, payload, label }: any) {
 export default function TrendChart() {
   const [data,    setData]    = useState<MonthlyTotal[]>([])
   const [loading, setLoading] = useState(true)
+  const { getToken } = useAuth()
 
   useEffect(() => {
-    fetch(`${API}/transactions/trends`)
-      .then(r => r.json())
-      .then(d => { setData(d.trends ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
+    (async () => {
+      try {
+        const token = await getToken()
+        const res = await fetch(`${API}/transactions/trends`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const d = await res.json()
+        setData(d.trends ?? [])
+      } catch (e) {
+        console.error('TrendChart fetch failed:', e)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [getToken])
 
   const delta = (() => {
     if (data.length < 2) return null

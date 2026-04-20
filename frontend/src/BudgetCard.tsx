@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useAuth } from "@clerk/clerk-react"
 import { Budget } from "./types"
 
 const API = "https://finance-dashboard-production-1a0c.up.railway.app"
@@ -18,6 +19,7 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
   const [editing,   setEditing]   = useState(false)
   const [limitInput, setLimitInput] = useState(String(budget.monthlyLimit))
   const [saving,    setSaving]    = useState(false)
+  const { getToken } = useAuth()
 
   const colors = STATUS_COLORS[budget.status]
 
@@ -26,10 +28,14 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
     if (isNaN(val) || val <= 0) { setEditing(false); return }
     setSaving(true)
     try {
+      const token = await getToken()
       await fetch(`${API}/budgets`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ category: budget.category, monthlyLimit: val }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ category: budget.category, monthlyLimit: val }),
       })
       onUpdated()
     } finally {

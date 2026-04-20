@@ -5,6 +5,7 @@ import {
   exchangePublicToken,
   triggerSync,
 } from '../services/plaid.service'
+import { getUserId } from '../middleware/auth'
 
 export function makePlaidController(
   plaidClient:  PlaidApi,
@@ -12,13 +13,11 @@ export function makePlaidController(
   countryCodes: CountryCode[]
 ) {
   return {
-    async getLinkToken(
-      req: Request<{}, {}, { userId?: string }>,
-      res: Response
-    ) {
+    async getLinkToken(req: Request, res: Response) {
       try {
-        const link_token = await createLinkToken(plaidClient, products, countryCodes, req.body.userId)
-        console.log(`✅ link_token created for user: ${req.body.userId || 'default'}`)
+        const userId = getUserId(req)
+        const link_token = await createLinkToken(plaidClient, products, countryCodes, userId)
+        console.log(`✅ link_token created for user: ${userId}`)
         res.json({ link_token })
       } catch (err: any) {
         console.error('❌ getLinkToken:', err.response?.data || err.message)
@@ -26,11 +25,9 @@ export function makePlaidController(
       }
     },
 
-    async exchangeToken(
-      req: Request<{}, {}, { public_token: string }>,
-      res: Response
-    ) {
+    async exchangeToken(req: Request, res: Response) {
       try {
+        const userId = getUserId(req)
         const result = await exchangePublicToken(plaidClient, req.body.public_token)
         res.json({ success: true, institutionName: result.institutionName })
       } catch (err: any) {
@@ -39,8 +36,9 @@ export function makePlaidController(
       }
     },
 
-    async sync(_req: Request, res: Response) {
+    async sync(req: Request, res: Response) {
       try {
+        const userId = getUserId(req)
         const result = await triggerSync(plaidClient)
         res.json(result)
       } catch (err: any) {
