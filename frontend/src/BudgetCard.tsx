@@ -1,8 +1,7 @@
 import { useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { Budget } from "./types"
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app"
+import { API_URL } from "./config"
 
 const STATUS_COLORS = {
   on_track: { bar: "#00e87a", text: "#00a856", bg: "rgba(0,232,122,0.07)" },
@@ -29,7 +28,7 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
     setSaving(true)
     try {
       const token = await getToken()
-      await fetch(`${API}/budgets`, {
+      await fetch(`${API_URL}/budgets`, {
         method:  "POST",
         headers: {
           "Content-Type": "application/json",

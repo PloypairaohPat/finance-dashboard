@@ -4,8 +4,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts"
 import { useAuth } from "@clerk/clerk-react"
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app"
+import { API_URL } from "./config"
 
 interface NetWorthPoint {
   date: string
@@ -64,7 +63,7 @@ export default function NetWorthChart() {
     ;(async () => {
       try {
         const token = await getToken()
-        const res = await fetch(`${API}/networth?days=90`, {
+        const res = await fetch(`${API_URL}/networth?days=90`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const json = await res.json()

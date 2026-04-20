@@ -22,9 +22,8 @@ import {
   UserButton,
   useAuth,
 } from "@clerk/clerk-react";
+import { API_URL } from "./config"
 
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app";
 
 // ── Styles ────────────────────────────────────────────────────────
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
@@ -524,7 +523,7 @@ export default function App() {
 
     (async () => {
       try {
-        const res = await authFetch(`${API}/accounts`);
+        const res = await authFetch(`${API_URL}/accounts`);
         const data = await res.json() as { accounts: Account[]; error?: string };
         if (data.accounts && data.accounts.length > 0) {
           setConnected(true);
@@ -544,7 +543,7 @@ export default function App() {
 
     (async () => {
       try {
-        const res  = await authFetch(`${API}/create_link_token`, {
+        const res  = await authFetch(`${API_URL}/create_link_token`, {
           method: "POST",
         });
         const data = await res.json() as { link_token: string; error?: string };
@@ -561,7 +560,7 @@ export default function App() {
   // ── Fetch budgets ────────────────────────────────────────────────
   const fetchBudgets = useCallback(async () => {
     try {
-      const res  = await authFetch(`${API}/budgets`);
+      const res  = await authFetch(`${API_URL}/budgets`);
       const data = await res.json() as { budgets: Budget[] };
       setBudgets(data.budgets ?? []);
     } catch (e: any) {
@@ -574,7 +573,7 @@ export default function App() {
     setLoading((l) => ({ ...l, accounts: true, tx: true }));
 
     try {
-      const res  = await authFetch(`${API}/accounts`);
+      const res  = await authFetch(`${API_URL}/accounts`);
       const data = await res.json() as { accounts: Account[]; error?: string };
       if (data.error) throw new Error(data.error);
       setAccounts(data.accounts);
@@ -585,7 +584,7 @@ export default function App() {
     }
 
     try {
-      const res  = await authFetch(`${API}/transactions`);
+      const res  = await authFetch(`${API_URL}/transactions`);
       const data = await res.json() as { transactions: Transaction[]; error?: string };
       if (data.error) throw new Error(data.error);
       setTransactions(data.transactions);
@@ -596,7 +595,7 @@ export default function App() {
     }
 
     try {
-      const res  = await authFetch(`${API}/categories`);
+      const res  = await authFetch(`${API_URL}/categories`);
       const data = await res.json() as { categories: CategorySpend[]; error?: string };
       if (data.error) throw new Error(data.error);
       setCategories(data.categories || []);
@@ -609,7 +608,7 @@ export default function App() {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res  = await authFetch(`${API}/alerts`)
+      const res  = await authFetch(`${API_URL}/alerts`)
       const data = await res.json() as { alerts: Alert[] }
       setAlerts(data.alerts ?? [])
     } catch (e: any) {
@@ -630,7 +629,7 @@ export default function App() {
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
       console.log("✅ Plaid Link success!", metadata.institution);
       try {
-        const res  = await authFetch(`${API}/exchange_public_token`, {
+        const res  = await authFetch(`${API_URL}/exchange_public_token`, {
           method: "POST",
           body: JSON.stringify({ public_token }),
         });

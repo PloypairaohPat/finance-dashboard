@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { RecurringData, RecurringStream } from "./types";
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app";
+import { API_URL } from "./config"
 
 const fmt = (n: number | null | undefined) =>
   new Intl.NumberFormat("en-US", {
@@ -100,7 +99,7 @@ export default function RecurringCard() {
 
     try {
       const token = await getToken();
-      const r = await fetch(`${API}/recurring`, {
+      const r = await fetch(`${API_URL}/recurring`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const d: RecurringData & { error?: string } = await r.json();

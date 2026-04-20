@@ -1,8 +1,7 @@
 import { useState, useRef } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { Transaction } from "./types"
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app"
+import { API_URL } from "./config"
 
 interface Props {
   transaction: Transaction
@@ -21,7 +20,7 @@ export default function TransactionDetail({ transaction, onUpdated }: Props) {
     setSaving(true)
     try {
       const token = await getToken()
-      const res = await fetch(`${API}/transactions/${transaction.id}`, {
+      const res = await fetch(`${API_URL}/transactions/${transaction.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
