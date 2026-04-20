@@ -5,8 +5,7 @@ import {
 } from 'recharts'
 import { useAuth } from '@clerk/clerk-react'
 import { MonthlyTotal } from './types'
-
-const API = 'https://finance-dashboard-production-1a0c.up.railway.app'
+import { API_URL } from "./config"
 
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
   wrap:   { background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px 24px' },
@@ -45,7 +44,7 @@ export default function TrendChart() {
     (async () => {
       try {
         const token = await getToken()
-        const res = await fetch(`${API}/transactions/trends`, {
+        const res = await fetch(`${API_URL}/transactions/trends`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const d = await res.json()

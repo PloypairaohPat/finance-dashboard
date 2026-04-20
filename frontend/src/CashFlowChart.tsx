@@ -11,8 +11,7 @@ import {
   ReferenceLine,
 } from "recharts"
 import { useAuth } from "@clerk/clerk-react"
-
-const API = "https://finance-dashboard-production-1a0c.up.railway.app"
+import { API_URL } from "./config"
 
 interface CashFlowMonth {
   month: string
@@ -78,7 +77,7 @@ export default function CashFlowChart() {
     ;(async () => {
       try {
         const token = await getToken()
-        const res = await fetch(`${API}/cashflow?months=6`, {
+        const res = await fetch(`${API_URL}/cashflow?months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const json = await res.json()
