@@ -1,11 +1,13 @@
 import { Request, Response } from 'express'
 import { PlaidApi }          from 'plaid'
 import { fetchRecurring }    from '../services/recurring.service'
+import { getUserId }         from '../middleware/auth'
 
 export function makeRecurringController(plaidClient: PlaidApi) {
   return {
-    async getRecurring(_req: Request, res: Response) {
+    async getRecurring(req: Request, res: Response) {
       try {
+        const userId = getUserId(req)
         const result = await fetchRecurring(plaidClient)
         res.json(result)
       } catch (err: any) {

@@ -1,8 +1,10 @@
 import { Request, Response } from 'express'
 import { fetchAccounts }     from '../services/accounts.service'
+import { getUserId }         from '../middleware/auth'
 
-export async function getAccounts(_req: Request, res: Response): Promise<void> {
+export async function getAccounts(req: Request, res: Response): Promise<void> {
   try {
+    const userId = getUserId(req)
     const accounts = await fetchAccounts()
     res.json({ accounts })
   } catch (err: any) {
