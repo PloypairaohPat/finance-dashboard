@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { RecurringData, RecurringStream } from "./types";
 
 const API = "https://finance-dashboard-production-1a0c.up.railway.app";
@@ -91,19 +92,25 @@ export default function RecurringCard() {
   const [data, setData] = useState<RecurringData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getToken } = useAuth();
 
-  const load = () => {
+  const load = async () => {
     setLoading(true);
     setError(null);
 
-    fetch(`${API}/recurring`)
-      .then((r) => r.json())
-      .then((d: RecurringData & { error?: string }) => {
-        if (d.error) throw new Error(d.error);
-        setData(d);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+    try {
+      const token = await getToken();
+      const r = await fetch(`${API}/recurring`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d: RecurringData & { error?: string } = await r.json();
+      if (d.error) throw new Error(d.error);
+      setData(d);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
