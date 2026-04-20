@@ -2,11 +2,9 @@ import { PlaidApi } from 'plaid'
 import prisma        from '../lib/prisma'
 import { decrypt }   from '../utils/encrypt'
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID!
-
-export async function fetchRecurring(plaidClient: PlaidApi) {
+export async function fetchRecurring(plaidClient: PlaidApi, userId: string) {
   const items = await prisma.plaidItem.findMany({
-    where:   { userId: DEFAULT_USER_ID },
+    where:   { userId },
     include: { accounts: true },
   })
 

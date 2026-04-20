@@ -6,23 +6,29 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 import express, { Request, Response } from 'express'
-import cors, { CorsOptions }          from 'cors'
+import cors, { CorsOptions } from 'cors'
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid'
-import accountsRouter                 from './routes/accounts.routes'
-import transactionsRouter             from './routes/transactions.routes'
-import { makeRecurringRouter }        from './routes/recurring.routes'
-import { makePlaidRouter }            from './routes/plaid.routes'
-import { getCategories }              from './controllers/transactions.controller'
+import accountsRouter from './routes/accounts.routes'
+import transactionsRouter from './routes/transactions.routes'
+import { makeRecurringRouter } from './routes/recurring.routes'
+import { makePlaidRouter } from './routes/plaid.routes'
+import { getCategories } from './controllers/transactions.controller'
 import budgetsRouter from "./routes/budgets.routes"
 import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
+import { clerkAuth, requireSession } from "./middleware/auth"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
-  'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV',
-  'DEFAULT_USER_ID', 'ENCRYPTION_KEY',
+  'PLAID_CLIENT_ID',
+  'PLAID_SECRET',
+  'PLAID_ENV',
+  'ENCRYPTION_KEY',
+  'CLERK_SECRET_KEY',
+  'CLERK_PUBLISHABLE_KEY',
 ]
+
 REQUIRED_ENV.forEach((key) => {
   if (!process.env[key]) {
     console.error(`❌ Missing required env var: ${key}`)
@@ -38,7 +44,7 @@ const plaidClient = new PlaidApi(new Configuration({
   baseOptions: {
     headers: {
       'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID!,
-      'PLAID-SECRET':    process.env.PLAID_SECRET!,
+      'PLAID-SECRET': process.env.PLAID_SECRET!,
     },
   },
 }))
@@ -51,7 +57,6 @@ const plaidCountryCodes = (process.env.PLAID_COUNTRY_CODES || 'US')
 
 // ── App setup ─────────────────────────────────────────────────────
 const app = express()
-app.use(express.json())
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
@@ -59,29 +64,41 @@ const corsOptions: CorsOptions = {
       'http://localhost:3000',
       /https:\/\/finance-dashboard.*\.vercel\.app$/,
     ]
-    if (!origin || allowed.some((o) =>
-      typeof o === 'string' ? o === origin : o.test(origin)
-    )) {
+
+    if (
+      !origin ||
+      allowed.some((o) =>
+        typeof o === 'string' ? o === origin : o.test(origin)
+      )
+    ) {
       callback(null, true)
     } else {
       callback(new Error('Not allowed by CORS'))
     }
   },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }
+
 app.use(cors(corsOptions))
+app.use(express.json())
+app.use(clerkAuth)
 
 // ── Routes ────────────────────────────────────────────────────────
-app.use('/accounts',     accountsRouter)
-app.use('/transactions', transactionsRouter)
-app.use('/recurring',    makeRecurringRouter(plaidClient))
-app.use('/',             makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
-app.use("/budgets", budgetsRouter)
-app.use("/alerts", alertsRouter)
-app.use("/networth", networthRouter)
-app.use("/cashflow", cashflowRouter)
+app.use('/accounts', requireSession, accountsRouter)
+app.use('/transactions', requireSession, transactionsRouter)
+app.use('/recurring', requireSession, makeRecurringRouter(plaidClient))
+app.use('/budgets', requireSession, budgetsRouter)
+app.use('/alerts', requireSession, alertsRouter)
+app.use('/networth', requireSession, networthRouter)
+app.use('/cashflow', requireSession, cashflowRouter)
 
-// ── /categories kept at original path for frontend compatibility ──
-app.get('/categories', getCategories)
+// Keep /categories protected too
+app.get('/categories', requireSession, getCategories)
+
+// Plaid router still needs route-level auth inside plaid.routes.ts
+app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
 
 // ── Health ────────────────────────────────────────────────────────
 app.get('/health', (_req: Request, res: Response) =>

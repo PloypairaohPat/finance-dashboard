@@ -1,11 +1,11 @@
-import { Request, Response }                       from 'express'
+import { Request, Response } from 'express'
 import { fetchTransactions, fetchCategoryTotals, fetchMonthlyTotals, searchTransactions, updateTransaction } from '../services/transactions.service'
+import { getUserId } from '../middleware/auth'
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
-
-export async function getTransactions(_req: Request, res: Response): Promise<void> {
+export async function getTransactions(req: Request, res: Response): Promise<void> {
   try {
-    const transactions = await fetchTransactions()
+    const userId = getUserId(req)
+    const transactions = await fetchTransactions(userId)
     res.json({ transactions })
   } catch (err: any) {
     console.error('❌ getTransactions:', err.message)
@@ -13,9 +13,10 @@ export async function getTransactions(_req: Request, res: Response): Promise<voi
   }
 }
 
-export async function getCategories(_req: Request, res: Response): Promise<void> {
+export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
-    const categories = await fetchCategoryTotals()
+    const userId = getUserId(req)
+    const categories = await fetchCategoryTotals(userId)
     res.json({ categories })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
@@ -25,8 +26,9 @@ export async function getCategories(_req: Request, res: Response): Promise<void>
 
 export async function getTrends(req: Request, res: Response): Promise<void> {
   try {
+    const userId = getUserId(req)
     const months = req.query.months ? parseInt(req.query.months as string) : 12
-    const trends = await fetchMonthlyTotals(months)
+    const trends = await fetchMonthlyTotals(userId, months)
     res.json({ trends })
   } catch (err: any) {
     console.error('❌ getTrends:', err.message)
@@ -34,10 +36,9 @@ export async function getTrends(req: Request, res: Response): Promise<void> {
   }
 }
 
-// ── M3.3: Search endpoint ────────────────────────────────────
 export async function searchTransactionsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.query.userId as string) || DEFAULT_USER_ID
+    const userId = getUserId(req)
     const filters = {
       q:          req.query.q         as string | undefined,
       category:   req.query.category  as string | undefined,
@@ -58,9 +59,9 @@ export async function searchTransactionsHandler(req: Request, res: Response): Pr
   }
 }
 
-// ── M3.3: PATCH tags / notes ─────────────────────────────────
 export async function patchTransaction(req: Request, res: Response): Promise<void> {
   try {
+    const userId = getUserId(req)
     const id = req.params.id as string
     const { tags, notes } = req.body
     const updated = await updateTransaction(id, { tags, notes })
