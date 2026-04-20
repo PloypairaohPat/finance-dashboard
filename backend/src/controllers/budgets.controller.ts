@@ -4,12 +4,14 @@ import {
   fetchBudgetsWithSpend,
   fetchBudgetStatus,
 } from "../services/budgets.service"
+import { getUserId } from "../middleware/auth"
 
 export async function createOrUpdateBudget(
   req: Request,
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const { category, monthlyLimit, month } = req.body as {
       category:     string
       monthlyLimit: number
@@ -19,7 +21,7 @@ export async function createOrUpdateBudget(
       res.status(400).json({ error: "category and monthlyLimit are required" })
       return
     }
-    await upsertBudget(category, monthlyLimit, month)
+    await upsertBudget(userId, category, monthlyLimit, month)
     res.json({ ok: true })
   } catch (err: any) {
     console.error("createOrUpdateBudget:", err.message)
@@ -32,8 +34,9 @@ export async function getBudgets(
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const month = req.query.month as string | undefined
-    const budgets = await fetchBudgetsWithSpend(month)
+    const budgets = await fetchBudgetsWithSpend(userId, month)
     res.json({ budgets })
   } catch (err: any) {
     console.error("getBudgets:", err.message)
@@ -46,8 +49,9 @@ export async function getBudgetStatus(
   res: Response
 ): Promise<void> {
   try {
+    const userId = getUserId(req)
     const month = req.query.month as string | undefined
-    const status = await fetchBudgetStatus(month)
+    const status = await fetchBudgetStatus(userId, month)
     res.json(status)
   } catch (err: any) {
     console.error("getBudgetStatus:", err.message)

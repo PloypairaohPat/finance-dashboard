@@ -15,10 +15,16 @@ import TransactionCard from "./TransactionCard"
 import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import useMediaQuery from "./useMediaQuery"
+import {
+  SignedIn,
+  SignedOut,
+  SignIn,
+  UserButton,
+  useAuth,
+} from "@clerk/clerk-react";
 
 
-const API     = "https://finance-dashboard-production-1a0c.up.railway.app";
-const USER_ID = "demo-user";
+const API = "https://finance-dashboard-production-1a0c.up.railway.app";
 
 // ── Styles ────────────────────────────────────────────────────────
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
@@ -446,6 +452,23 @@ export default function App() {
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const isMobile = useMediaQuery("(max-width: 640px)")
+  const { getToken, isSignedIn } = useAuth();
+
+  // ── M4.2: Authenticated fetch wrapper ───────────────────────────
+  const authFetch = useCallback(
+    async (url: string, options: RequestInit = {}) => {
+      const token = await getToken();
+      return fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    },
+    [getToken]
+  );
 
   const handleTxUpdated = useCallback((updated: Transaction) => {
     setTransactions(prev =>
@@ -494,9 +517,14 @@ export default function App() {
 
   // ── M4.1: Auto-connect — check for existing accounts on mount ──
   useEffect(() => {
+    if (!isSignedIn) {
+      setInitialLoading(false);
+      return;
+    }
+
     (async () => {
       try {
-        const res = await fetch(`${API}/accounts`);
+        const res = await authFetch(`${API}/accounts`);
         const data = await res.json() as { accounts: Account[]; error?: string };
         if (data.accounts && data.accounts.length > 0) {
           setConnected(true);
@@ -504,20 +532,20 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auto-connect check failed:", err);
-        // Fall through — will show Plaid Link as fallback
       } finally {
         setInitialLoading(false);
       }
     })();
-  }, []);
+  }, [authFetch, isSignedIn]);
 
   // ── Fetch link_token on mount ────────────────────────────────────
   useEffect(() => {
+    if (!isSignedIn) return;
+
     (async () => {
       try {
-        const res  = await fetch(`${API}/create_link_token`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: USER_ID }),
+        const res  = await authFetch(`${API}/create_link_token`, {
+          method: "POST",
         });
         const data = await res.json() as { link_token: string; error?: string };
         if (data.error) throw new Error(data.error);
@@ -528,25 +556,25 @@ export default function App() {
         setLoading((l) => ({ ...l, link: false }));
       }
     })();
-  }, []);
+  }, [authFetch, isSignedIn]);
 
   // ── Fetch budgets ────────────────────────────────────────────────
   const fetchBudgets = useCallback(async () => {
     try {
-      const res  = await fetch(`${API}/budgets`);
+      const res  = await authFetch(`${API}/budgets`);
       const data = await res.json() as { budgets: Budget[] };
       setBudgets(data.budgets ?? []);
     } catch (e: any) {
       console.error("Budgets fetch failed:", e.message);
     }
-  }, []);
+  }, [authFetch]);
 
   // ── Fetch accounts + transactions + categories + budgets ─────────
   const fetchData = useCallback(async () => {
     setLoading((l) => ({ ...l, accounts: true, tx: true }));
 
     try {
-      const res  = await fetch(`${API}/accounts`);
+      const res  = await authFetch(`${API}/accounts`);
       const data = await res.json() as { accounts: Account[]; error?: string };
       if (data.error) throw new Error(data.error);
       setAccounts(data.accounts);
@@ -557,7 +585,7 @@ export default function App() {
     }
 
     try {
-      const res  = await fetch(`${API}/transactions`);
+      const res  = await authFetch(`${API}/transactions`);
       const data = await res.json() as { transactions: Transaction[]; error?: string };
       if (data.error) throw new Error(data.error);
       setTransactions(data.transactions);
@@ -568,7 +596,7 @@ export default function App() {
     }
 
     try {
-      const res  = await fetch(`${API}/categories`);
+      const res  = await authFetch(`${API}/categories`);
       const data = await res.json() as { categories: CategorySpend[]; error?: string };
       if (data.error) throw new Error(data.error);
       setCategories(data.categories || []);
@@ -577,32 +605,34 @@ export default function App() {
     }
 
     fetchBudgets();
-  }, [fetchBudgets]);
+  }, [authFetch, fetchBudgets]);
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res  = await fetch(`${API}/alerts`)
+      const res  = await authFetch(`${API}/alerts`)
       const data = await res.json() as { alerts: Alert[] }
       setAlerts(data.alerts ?? [])
     } catch (e: any) {
       console.error("Alerts fetch failed:", e.message)
     }
-  }, [])
+  }, [authFetch])
 
   // ── Auto-load data on mount ──────────────────────────────────────
   useEffect(() => {
-    fetchData()
-    fetchBudgets()
-    fetchAlerts()
-  }, [fetchData, fetchBudgets, fetchAlerts])
+    if (!isSignedIn) return;
+
+    fetchData();
+    fetchBudgets();
+    fetchAlerts();
+  }, [fetchData, fetchBudgets, fetchAlerts, isSignedIn])
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
       console.log("✅ Plaid Link success!", metadata.institution);
       try {
-        const res  = await fetch(`${API}/exchange_public_token`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_token, userId: USER_ID }),
+        const res  = await authFetch(`${API}/exchange_public_token`, {
+          method: "POST",
+          body: JSON.stringify({ public_token }),
         });
         const data = await res.json() as { error?: string };
         if (data.error) throw new Error(data.error);
@@ -612,7 +642,7 @@ export default function App() {
         setError(`Token exchange failed: ${e.message}`);
       }
     },
-    [fetchData]
+    [authFetch, fetchData]
   );
 
   const clearFilters = useCallback(() => {
@@ -671,6 +701,32 @@ export default function App() {
   }
 
   return (
+    <>
+    {/* ── M4.2: Auth gate — show login when signed out ────────────── */}
+    <SignedOut>
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        height: "100vh",
+        background: "#0a0a0a",
+        gap: "24px",
+      }}>
+        <div style={{
+          fontSize: "28px",
+          fontWeight: 800,
+          letterSpacing: "-0.5px",
+          color: "#f0ede8",
+          fontFamily: "'Syne', sans-serif",
+        }}>
+          plaid<span style={{ color: "#00e5a0" }}>.</span>app
+        </div>
+        <SignIn />
+      </div>
+    </SignedOut>
+
+    <SignedIn>
     <div style={styles.root as CSSProperties}>
       <header
       style={{
@@ -696,7 +752,7 @@ export default function App() {
               + Link Account
             </button>
           )}
-          <div style={styles.envBadge as CSSProperties}>PRODUCTION</div>
+          <UserButton afterSignOutUrl="/" />
         </div>
       </header>
 
@@ -917,5 +973,7 @@ export default function App() {
         )}
       </main>
     </div>
+    </SignedIn>
+    </>
   );
 }
