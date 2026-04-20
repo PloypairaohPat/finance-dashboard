@@ -3,16 +3,14 @@ import prisma              from '../lib/prisma'
 import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID!
-
 export async function createLinkToken(
   plaidClient:   PlaidApi,
   products:      Products[],
   countryCodes:  CountryCode[],
-  userId?:       string
+  userId:        string
 ): Promise<string> {
   const response = await plaidClient.linkTokenCreate({
-    user:          { client_user_id: userId || DEFAULT_USER_ID },
+    user:          { client_user_id: userId },
     client_name:   'My Finance App',
     products,
     country_codes: countryCodes,
@@ -24,7 +22,8 @@ export async function createLinkToken(
 
 export async function exchangePublicToken(
   plaidClient:  PlaidApi,
-  publicToken:  string
+  publicToken:  string,
+  userId:       string
 ): Promise<{ institutionName: string | null }> {
   // 1. Exchange for permanent access token
   const tokenResponse = await plaidClient.itemPublicTokenExchange({ public_token: publicToken })
@@ -48,7 +47,7 @@ export async function exchangePublicToken(
 
   // 4. Re-link: if item exists for this institution, replace it cleanly
   const existingItem = await prisma.plaidItem.findFirst({
-    where: { userId: DEFAULT_USER_ID, institutionId },
+    where: { userId, institutionId },
   })
 
   if (existingItem) {
@@ -70,7 +69,7 @@ export async function exchangePublicToken(
   // 5. Create fresh PlaidItem
   const plaidItem = await prisma.plaidItem.create({
     data: {
-      userId:          DEFAULT_USER_ID,
+      userId,
       itemId:          item_id,
       accessToken:     encryptedToken,
       institutionId,
@@ -85,7 +84,7 @@ export async function exchangePublicToken(
     await prisma.account.upsert({
       where:  { plaidAccountId: acct.account_id },
       update: {
-        userId:           DEFAULT_USER_ID,
+        userId,
         plaidItemId:      plaidItem.id,
         name:             acct.name,
         officialName:     acct.official_name              ?? null,
@@ -97,7 +96,7 @@ export async function exchangePublicToken(
         isoCurrencyCode:  acct.balances.iso_currency_code ?? null,
       },
       create: {
-        userId:           DEFAULT_USER_ID,
+        userId,
         plaidItemId:      plaidItem.id,
         plaidAccountId:   acct.account_id,
         name:             acct.name,
@@ -117,10 +116,11 @@ export async function exchangePublicToken(
 }
 
 export async function triggerSync(
-  plaidClient: PlaidApi
+  plaidClient: PlaidApi,
+  userId: string
 ): Promise<{ added: number; modified: number; removed: number }> {
   const items = await prisma.plaidItem.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
   })
 
   let added = 0, modified = 0, removed = 0

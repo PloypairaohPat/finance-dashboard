@@ -5,7 +5,7 @@ import { getUserId } from "../middleware/auth"
 export async function getAlerts(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const alerts = await fetchAlerts()
+    const alerts = await fetchAlerts(userId)
     res.json({ alerts })
   } catch (err: any) {
     console.error("getAlerts:", err.message)

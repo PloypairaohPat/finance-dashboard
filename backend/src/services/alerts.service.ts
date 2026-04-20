@@ -1,7 +1,5 @@
 import prisma from "../lib/prisma"
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
-
 export interface Alert {
   type:        "large_transaction" | "new_merchant" | "monthly_pace" | "budget_exceeded"
   severity:    "warning" | "critical"
@@ -24,13 +22,13 @@ function getMonthBounds(month: string): { start: Date; end: Date } {
 }
 
 // ── 1. Large transaction detector ────────────────────────────────
-async function detectLargeTransactions(): Promise<Alert[]> {
+async function detectLargeTransactions(userId: string): Promise<Alert[]> {
   const month = currentMonth()
   const { start, end } = getMonthBounds(month)
 
   const txs = await prisma.transaction.findMany({
     where: {
-      userId: DEFAULT_USER_ID, deletedAt: null,
+      userId, deletedAt: null,
       pending: false, amount: { gt: 0 },
       date: { gte: start, lt: end },
     },
@@ -38,7 +36,6 @@ async function detectLargeTransactions(): Promise<Alert[]> {
               merchantName: true, cleanName: true, date: true },
   })
 
-  // Build category averages
   const catMap: Record<string, number[]> = {}
   for (const tx of txs) {
     const cat = tx.categoryPrimary ?? "OTHER"
@@ -69,14 +66,13 @@ async function detectLargeTransactions(): Promise<Alert[]> {
 }
 
 // ── 2. New merchant detector ──────────────────────────────────────
-async function detectNewMerchants(): Promise<Alert[]> {
+async function detectNewMerchants(userId: string): Promise<Alert[]> {
   const month = currentMonth()
   const { start, end } = getMonthBounds(month)
 
-  // All merchants ever seen before this month
   const historical = await prisma.transaction.findMany({
     where: {
-      userId: DEFAULT_USER_ID, deletedAt: null,
+      userId, deletedAt: null,
       pending: false, date: { lt: start },
     },
     select: { merchantName: true, cleanName: true },
@@ -85,10 +81,9 @@ async function detectNewMerchants(): Promise<Alert[]> {
     historical.map(t => (t.cleanName || t.merchantName || "").toLowerCase()).filter(Boolean)
   )
 
-  // This month's transactions over $50
   const thisMonth = await prisma.transaction.findMany({
     where: {
-      userId: DEFAULT_USER_ID, deletedAt: null,
+      userId, deletedAt: null,
       pending: false, amount: { gt: 50 },
       date: { gte: start, lt: end },
     },
@@ -116,16 +111,14 @@ async function detectNewMerchants(): Promise<Alert[]> {
 }
 
 // ── 3. Monthly pace detector ──────────────────────────────────────
-async function detectMonthlyPace(): Promise<Alert[]> {
+async function detectMonthlyPace(userId: string): Promise<Alert[]> {
   const now       = new Date()
   const month     = currentMonth()
   const { start, end } = getMonthBounds(month)
 
-  // Days elapsed and total days in month
   const daysElapsed = Math.max(1, Math.floor((now.getTime() - start.getTime()) / 86400000))
   const daysInMonth = Math.floor((end.getTime() - start.getTime()) / 86400000)
 
-  // Last month
   const lastMonthDate = new Date(start)
   lastMonthDate.setMonth(lastMonthDate.getMonth() - 1)
   const lastMonth = lastMonthDate.toISOString().slice(0, 7)
@@ -133,12 +126,12 @@ async function detectMonthlyPace(): Promise<Alert[]> {
 
   const [thisMonthTxs, lastMonthTxs] = await Promise.all([
     prisma.transaction.findMany({
-      where: { userId: DEFAULT_USER_ID, deletedAt: null, pending: false,
+      where: { userId, deletedAt: null, pending: false,
                amount: { gt: 0 }, date: { gte: start, lt: end } },
       select: { amount: true },
     }),
     prisma.transaction.findMany({
-      where: { userId: DEFAULT_USER_ID, deletedAt: null, pending: false,
+      where: { userId, deletedAt: null, pending: false,
                amount: { gt: 0 }, date: { gte: lmStart, lt: lmEnd } },
       select: { amount: true },
     }),
@@ -163,17 +156,17 @@ async function detectMonthlyPace(): Promise<Alert[]> {
 }
 
 // ── 4. Budget exceeded detector ───────────────────────────────────
-async function detectBudgetExceeded(): Promise<Alert[]> {
+async function detectBudgetExceeded(userId: string): Promise<Alert[]> {
   const month = currentMonth()
   const { start, end } = getMonthBounds(month)
 
   const budgets = await prisma.budget.findMany({
-    where: { userId: DEFAULT_USER_ID, month },
+    where: { userId, month },
   })
   if (budgets.length === 0) return []
 
   const txs = await prisma.transaction.findMany({
-    where: { userId: DEFAULT_USER_ID, deletedAt: null, pending: false,
+    where: { userId, deletedAt: null, pending: false,
              amount: { gt: 0 }, date: { gte: start, lt: end } },
     select: { categoryPrimary: true, amount: true },
   })
@@ -203,12 +196,12 @@ async function detectBudgetExceeded(): Promise<Alert[]> {
 }
 
 // ── Main export ───────────────────────────────────────────────────
-export async function fetchAlerts(): Promise<Alert[]> {
+export async function fetchAlerts(userId: string): Promise<Alert[]> {
   const [large, newMerchant, pace, budget] = await Promise.all([
-    detectLargeTransactions(),
-    detectNewMerchants(),
-    detectMonthlyPace(),
-    detectBudgetExceeded(),
+    detectLargeTransactions(userId),
+    detectNewMerchants(userId),
+    detectMonthlyPace(userId),
+    detectBudgetExceeded(userId),
   ])
   return [...budget, ...pace, ...large, ...newMerchant]
 }

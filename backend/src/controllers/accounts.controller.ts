@@ -5,7 +5,7 @@ import { getUserId }         from '../middleware/auth'
 export async function getAccounts(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const accounts = await fetchAccounts()
+    const accounts = await fetchAccounts(userId)
     res.json({ accounts })
   } catch (err: any) {
     console.error('❌ getAccounts:', err.message)

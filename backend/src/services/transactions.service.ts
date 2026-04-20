@@ -1,20 +1,18 @@
 import prisma from '../lib/prisma'
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID!
-
-export async function fetchTransactions() {
+export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
-    where:   { userId: DEFAULT_USER_ID, deletedAt: null },
+    where:   { userId, deletedAt: null },
     orderBy: { date: 'desc' },
     take:    200,
   })
 }
 
-export async function fetchCategoryTotals() {
+export async function fetchCategoryTotals(userId: string) {
   const grouped = await prisma.transaction.groupBy({
     by: ['categoryPrimary'],
     where: {
-      userId:    DEFAULT_USER_ID,
+      userId,
       deletedAt: null,
       pending:   false,
       amount:    { gt: 0 },
@@ -34,19 +32,19 @@ export async function fetchCategoryTotals() {
 }
 
 export interface MonthlyTotal {
-  month:   string   // "2026-01"
-  label:   string   // "Jan 2026"
+  month:   string
+  label:   string
   total:   number
   txCount: number
 }
 
-export async function fetchMonthlyTotals(months: number = 12): Promise<MonthlyTotal[]> {
+export async function fetchMonthlyTotals(userId: string, months: number = 12): Promise<MonthlyTotal[]> {
   const cutoff = new Date()
   cutoff.setMonth(cutoff.getMonth() - months)
 
   const rows = await prisma.transaction.findMany({
     where: {
-      userId:    DEFAULT_USER_ID,
+      userId,
       deletedAt: null,
       pending:   false,
       amount:    { gt: 0 },
@@ -88,7 +86,7 @@ interface SearchFilters {
   minAmount?:  number
   maxAmount?:  number
   tag?:        string
-  sortBy?:     string   // "date-desc" | "date-asc" | "amount-desc" | "amount-asc"
+  sortBy?:     string
   limit?:      number
   offset?:     number
 }
@@ -96,7 +94,6 @@ interface SearchFilters {
 export async function searchTransactions(userId: string, filters: SearchFilters) {
   const where: any = { userId, deletedAt: null }
 
-  // Text search — merchant name, clean name, or original name
   if (filters.q) {
     const q = filters.q.trim()
     where.OR = [
@@ -107,31 +104,26 @@ export async function searchTransactions(userId: string, filters: SearchFilters)
     ]
   }
 
-  // Category filter
   if (filters.category) {
     where.categoryPrimary = filters.category
   }
 
-  // Date range
   if (filters.dateFrom || filters.dateTo) {
     where.date = {}
     if (filters.dateFrom) where.date.gte = new Date(filters.dateFrom)
     if (filters.dateTo)   where.date.lte = new Date(filters.dateTo)
   }
 
-  // Amount range
   if (filters.minAmount !== undefined || filters.maxAmount !== undefined) {
     where.amount = {}
     if (filters.minAmount !== undefined) where.amount.gte = filters.minAmount
     if (filters.maxAmount !== undefined) where.amount.lte = filters.maxAmount
   }
 
-  // Tag filter
   if (filters.tag) {
     where.tags = { has: filters.tag }
   }
 
-  // Sorting
   let orderBy: any = { date: "desc" }
   switch (filters.sortBy) {
     case "date-asc":    orderBy = { date: "asc" };   break
@@ -143,19 +135,13 @@ export async function searchTransactions(userId: string, filters: SearchFilters)
   const offset = filters.offset ?? 0
 
   const [transactions, total] = await Promise.all([
-    prisma.transaction.findMany({
-      where,
-      orderBy,
-      take: limit,
-      skip: offset,
-    }),
+    prisma.transaction.findMany({ where, orderBy, take: limit, skip: offset }),
     prisma.transaction.count({ where }),
   ])
 
   return { transactions, total, limit, offset }
 }
 
-// ── M3.3: Update tags / notes on a single transaction ──────────
 export async function updateTransaction(
   transactionId: string,
   data: { tags?: string[]; notes?: string | null }
