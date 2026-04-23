@@ -37,3 +37,16 @@
     min-width: 0 !important;
   }
 }
+
+/* M5.1 — Hero Overview responsive grid */
+@media (max-width: 900px) {
+  .hero-overview {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-overview {
+    grid-template-columns: 1fr !important;
+  }
+}
