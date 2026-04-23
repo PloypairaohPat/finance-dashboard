@@ -1,4 +1,4 @@
-import { Transaction } from "./types"
+import { EnrichedTransaction } from "./types"
 import TransactionDetail from "./TransactionDetail"
 
 const fmt = (n: number, code = "USD") =>
@@ -8,10 +8,10 @@ const fmt = (n: number, code = "USD") =>
   }).format(n)
 
 interface Props {
-  transaction: Transaction
+  transaction: EnrichedTransaction
   isExpanded: boolean
   onToggle: () => void
-  onUpdated: (updated: Transaction) => void
+  onUpdated: (updated: EnrichedTransaction) => void
 }
 
 export default function TransactionCard({
@@ -57,24 +57,7 @@ export default function TransactionCard({
               lineHeight: 1.3,
             }}
           >
-            {tx.merchantName || tx.name}
-            {tx.pending && (
-              <span
-                style={{
-                  display: "inline-block",
-                  background: "#1a1500",
-                  color: "#ffb347",
-                  fontSize: 10,
-                  fontFamily: "IBM Plex Mono, monospace",
-                  padding: "1px 5px",
-                  borderRadius: 3,
-                  marginLeft: 6,
-                  verticalAlign: "middle",
-                }}
-              >
-                pending
-              </span>
-            )}
+            {tx.displayName}
           </div>
 
           <div
@@ -87,7 +70,7 @@ export default function TransactionCard({
             }}
           >
             {tx.amount > 0 ? "-" : "+"}
-            {fmt(Math.abs(tx.amount), tx.isoCurrencyCode || "USD")}
+            {fmt(Math.abs(tx.amount))}
           </div>
         </div>
 
@@ -109,19 +92,19 @@ export default function TransactionCard({
             {tx.date ? String(tx.date).slice(0, 10) : "—"}
           </span>
 
-          {tx.categoryPrimary && (
+          {tx.category && (
             <span
               style={{
                 display: "inline-block",
                 background: "#1a1a2e",
-                color: "#7b9fff",
+                color: tx.color || "#7b9fff",
                 fontSize: 10,
                 fontFamily: "IBM Plex Mono, monospace",
                 padding: "2px 7px",
                 borderRadius: 3,
               }}
             >
-              {tx.categoryPrimary.replace(/_/g, " ")}
+              {tx.category}
             </span>
           )}
 
@@ -146,7 +129,11 @@ export default function TransactionCard({
       </div>
 
       {isExpanded && (
-        <TransactionDetail transaction={tx} onUpdated={onUpdated} />
+        <TransactionDetail
+          transaction={tx}
+          onClose={onToggle}
+          onUpdate={onUpdated}
+        />
       )}
     </div>
   )
