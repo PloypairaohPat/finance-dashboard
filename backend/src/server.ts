@@ -19,6 +19,7 @@ import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
 import { clerkAuth, requireSession } from "./middleware/auth"
 import { startScheduler } from "./scheduler"
+import insightsRoutes from "./routes/insights.routes"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
@@ -94,10 +95,9 @@ app.use('/budgets', requireSession, budgetsRouter)
 app.use('/alerts', requireSession, alertsRouter)
 app.use('/networth', requireSession, networthRouter)
 app.use('/cashflow', requireSession, cashflowRouter)
-
-// Keep /categories protected too
 app.get('/categories', requireSession, getCategories)
-app.get('/categories/comparison', requireSession, getCategoryComparison)  // ← add this
+app.get('/categories/comparison', requireSession, getCategoryComparison)
+app.use("/insights", insightsRoutes)
 
 // Plaid router still needs route-level auth inside plaid.routes.ts
 app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
