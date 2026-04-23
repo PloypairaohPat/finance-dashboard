@@ -92,3 +92,34 @@ export interface BudgetCategoryOption {
   category: string
   color: string
 }
+
+export type Sentiment = "positive" | "negative" | "neutral"
+
+export interface Insight {
+  type: string
+  headline: string
+  sentiment: Sentiment
+}
+
+export interface InsightsResponse {
+  summary: {
+    month: string
+    monthLabel: string
+    income: number
+    expenses: number
+    netSaved: number
+    savingsRate: number | null
+  }
+  topMerchants: Array<{ merchant: string; total: number; count: number }>
+  largestPurchases: Array<{
+    id: string; merchant: string; amount: number;
+    date: string; category: string; color: string
+  }>
+  runway: {
+    months: number | null
+    cashAvailable: number
+    avgMonthlyExpenses: number
+    monthsOfHistory: number
+  }
+  highlights: Insight[]
+}
