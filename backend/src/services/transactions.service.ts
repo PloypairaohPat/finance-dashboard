@@ -4,6 +4,8 @@ import {
   CATEGORY_COLORS, DISPLAY_CATEGORIES,
   type DisplayCategory,
 } from "../lib/categoryMap"
+import { getSubscriptionMerchants } from "./subscriptions.service"
+import { plaidClient } from "../lib/plaidClient"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -14,6 +16,7 @@ export async function fetchTransactions(userId: string) {
 }
 
 // ── M5.2: Replace fetchCategoryTotals with fetchCategorySpend ────────
+// ── M5.5: Enhanced with subscription merchant override ────────────────
 export async function fetchCategorySpend(userId: string, month?: string) {
   // month = YYYY-MM, defaults to current month
   const now = new Date()
@@ -29,8 +32,18 @@ export async function fetchCategorySpend(userId: string, month?: string) {
       amount: { gt: 0 },             // expenses only (positive = money leaving)
       date: { gte: start, lt: end },
     },
-    select: { amount: true, categoryPrimary: true },
+    // M5.5: add cleanName + name so we can match against subscription merchants
+    select: { amount: true, categoryPrimary: true, cleanName: true, name: true },
   })
+
+  // M5.5: get subscription merchant set — gracefully falls back to empty on error
+  let subMerchants: Set<string>
+  try {
+    subMerchants = await getSubscriptionMerchants(userId, plaidClient)
+  } catch (err) {
+    console.warn("Subscription override unavailable, falling back:", err)
+    subMerchants = new Set()
+  }
 
   // Sum into the 10 display buckets
   const buckets: Record<DisplayCategory, number> = Object.fromEntries(
@@ -39,7 +52,11 @@ export async function fetchCategorySpend(userId: string, month?: string) {
 
   for (const tx of txs) {
     if (!isSpending(tx.categoryPrimary)) continue
-    const display = mapPlaidCategory(tx.categoryPrimary)
+    // M5.5: if the merchant is a known subscription, override its natural category
+    const merchant = (tx.cleanName ?? tx.name ?? "").toLowerCase()
+    const display: DisplayCategory = subMerchants.has(merchant)
+      ? "Subscriptions"
+      : mapPlaidCategory(tx.categoryPrimary)
     buckets[display] += tx.amount.toNumber()
   }
 

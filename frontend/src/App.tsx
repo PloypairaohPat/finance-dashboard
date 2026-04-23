@@ -6,7 +6,7 @@ import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from 
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
-import RecurringCard from "./RecurringCard";
+import SubscriptionTracker from "./SubscriptionTracker";
 import { Account, Transaction, CategorySpend, Budget, Alert } from "./types"
 import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
@@ -1000,14 +1000,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Recurring */}
+        {/* Recurring & Subscriptions */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Recurring</h2>
-              <span style={styles.sectionCount as CSSProperties}>subscriptions &amp; income</span>
+              <h2 style={styles.sectionTitle as CSSProperties}>Subscriptions & Bills</h2>
+              <span style={styles.sectionCount as CSSProperties}>subscriptions &amp; recurring bills</span>
             </div>
-            <RecurringCard key={accounts.length} />
+            <SubscriptionTracker />
           </div>
         )}
 
