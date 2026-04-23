@@ -154,3 +154,31 @@ export interface SubscriptionAnalysis {
     monthlyAll: number
   }
 }
+
+export type Range = "1M" | "3M" | "6M" | "1Y" | "All"
+
+export interface NetWorthPoint {
+  date: string
+  netWorth: number
+  assets: number
+  liabilities: number
+  depository: number
+  investment: number
+  credit: number
+  loan: number
+}
+
+export interface NetWorthSummary {
+  firstNetWorth: number | null
+  lastNetWorth: number | null
+  deltaAbs: number | null
+  deltaPct: number | null
+  rangeApplied: Range
+  dataLimited: boolean
+  daysCovered: number
+}
+
+export interface NetWorthResponse {
+  history: NetWorthPoint[]
+  summary: NetWorthSummary
+}

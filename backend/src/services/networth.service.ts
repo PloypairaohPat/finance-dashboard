@@ -2,6 +2,51 @@ import prisma from "../lib/prisma"
 
 const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
 
+// ── Range types ────────────────────────────────────────────────
+export type Range = "1M" | "3M" | "6M" | "1Y" | "All"
+
+const RANGE_DAYS: Record<Range, number> = {
+  "1M": 30,
+  "3M": 90,
+  "6M": 180,
+  "1Y": 365,
+  "All": Number.POSITIVE_INFINITY,
+}
+
+const normalizeRange = (raw: unknown): Range => {
+  const s = String(raw ?? "").toUpperCase()
+  if (s === "ALL") return "All"
+  if ((["1M", "3M", "6M", "1Y"] as const).includes(s as any)) return s as Range
+  return "6M"
+}
+
+// ── Response types ─────────────────────────────────────────────
+export interface NetWorthPoint {
+  date: string
+  netWorth: number
+  assets: number
+  liabilities: number
+  depository: number
+  investment: number
+  credit: number
+  loan: number
+}
+
+export interface NetWorthSummary {
+  firstNetWorth: number | null
+  lastNetWorth: number | null
+  deltaAbs: number | null
+  deltaPct: number | null
+  rangeApplied: Range
+  dataLimited: boolean
+  daysCovered: number
+}
+
+export interface NetWorthResponse {
+  history: NetWorthPoint[]
+  summary: NetWorthSummary
+}
+
 // ── Capture today's balance snapshot for all accounts ──────────
 export async function captureBalanceSnapshots(userId: string = DEFAULT_USER_ID) {
   const accounts = await prisma.account.findMany({
@@ -61,43 +106,90 @@ export async function captureBalanceSnapshots(userId: string = DEFAULT_USER_ID) 
 // ── Fetch net worth history ────────────────────────────────────
 export async function fetchNetWorthHistory(
   userId: string = DEFAULT_USER_ID,
-  days: number = 90
-) {
-  const since = new Date()
-  since.setDate(since.getDate() - days)
-  since.setUTCHours(0, 0, 0, 0)
+  rawRange?: unknown,
+): Promise<NetWorthResponse> {
+  const range = normalizeRange(rawRange)
+  const days = RANGE_DAYS[range]
+
+  const now = new Date()
+  const cutoff =
+    days === Number.POSITIVE_INFINITY
+      ? new Date(0)
+      : new Date(now.getTime() - days * 86400000)
 
   const snapshots = await prisma.balanceSnapshot.findMany({
     where: {
       userId,
-      date: { gte: since },
+      date: { gte: cutoff },
     },
     orderBy: { date: "asc" },
   })
 
-  const dateMap: Record<string, { assets: number; liabilities: number }> = {}
-
-  for (const snap of snapshots) {
-    const dateKey = snap.date.toISOString().slice(0, 10)
-    if (!dateMap[dateKey]) dateMap[dateKey] = { assets: 0, liabilities: 0 }
-
-    const balance = snap.currentBalance.toNumber()
-
-    if (snap.accountType === "credit") {
-      dateMap[dateKey].liabilities += Math.abs(balance)
-    } else {
-      dateMap[dateKey].assets += balance
-    }
+  // Group by calendar day
+  const byDate = new Map<string, typeof snapshots>()
+  for (const s of snapshots) {
+    const key = s.date.toISOString().slice(0, 10)
+    const arr = byDate.get(key) ?? []
+    arr.push(s)
+    byDate.set(key, arr)
   }
 
-  const history = Object.entries(dateMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, { assets, liabilities }]) => ({
+  // Build history with per-type decomposition
+  const history: NetWorthPoint[] = []
+  for (const [date, rows] of [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    let depository = 0, investment = 0, credit = 0, loan = 0
+    for (const r of rows) {
+      const bal = Number(r.currentBalance ?? 0)
+      switch (r.accountType) {
+        case "depository": depository += bal; break
+        case "investment":  investment += bal; break
+        case "credit":      credit += Math.abs(bal); break
+        case "loan":        loan += Math.abs(bal); break
+      }
+    }
+    const assets = Number((depository + investment).toFixed(2))
+    const liabilities = Number((credit + loan).toFixed(2))
+    history.push({
       date,
-      assets: Math.round(assets * 100) / 100,
-      liabilities: Math.round(liabilities * 100) / 100,
-      netWorth: Math.round((assets - liabilities) * 100) / 100,
-    }))
+      depository: Number(depository.toFixed(2)),
+      investment: Number(investment.toFixed(2)),
+      credit: Number(credit.toFixed(2)),
+      loan: Number(loan.toFixed(2)),
+      assets,
+      liabilities,
+      netWorth: Number((assets - liabilities).toFixed(2)),
+    })
+  }
 
-  return { history }
+  // Summary stats
+  const first = history[0] ?? null
+  const last = history[history.length - 1] ?? null
+  const deltaAbs =
+    first && last ? Number((last.netWorth - first.netWorth).toFixed(2)) : null
+  const deltaPct =
+    first && last && first.netWorth !== 0
+      ? Number((((last.netWorth - first.netWorth) / Math.abs(first.netWorth)) * 100).toFixed(1))
+      : null
+
+  // Is the range wider than available data?
+  const oldestAny = await prisma.balanceSnapshot.findFirst({
+    where: { userId },
+    orderBy: { date: "asc" },
+    select: { date: true },
+  })
+  const dataLimited =
+    days !== Number.POSITIVE_INFINITY && !!oldestAny && oldestAny.date > cutoff
+
+  return {
+    history,
+    summary: {
+      firstNetWorth: first?.netWorth ?? null,
+      lastNetWorth: last?.netWorth ?? null,
+      deltaAbs,
+      deltaPct,
+      rangeApplied: range,
+      dataLimited,
+      daysCovered: history.length,
+    },
+  }
 }

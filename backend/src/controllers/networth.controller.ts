@@ -5,8 +5,7 @@ import { getUserId } from "../middleware/auth"
 export async function getNetWorthHistory(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const days = req.query.days ? parseInt(req.query.days as string, 10) : 90
-    const result = await fetchNetWorthHistory(userId, days)
+    const result = await fetchNetWorthHistory(userId, req.query.range)
     res.json(result)
   } catch (err: any) {
     console.error("getNetWorthHistory:", err.message)
