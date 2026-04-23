@@ -26,6 +26,7 @@ import {
 import { API_URL } from "./config"
 import HeroOverview from "./HeroOverview"
 import InsightsDashboard from "./InsightsDashboard"
+import SavingsTrend from "./SavingsTrend"
 
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -970,20 +971,44 @@ export default function App() {
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
               <h2 style={styles.sectionTitle as CSSProperties}>Net Worth</h2>
-              <span style={styles.sectionCount as CSSProperties}>last 90 days</span>
             </div>
             <NetWorthChart />
           </div>
         )}
 
-        {/* Cash Flow */}
+        {/* Cash Flow + Savings Trend */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
               <h2 style={styles.sectionTitle as CSSProperties}>Cash Flow</h2>
               <span style={styles.sectionCount as CSSProperties}>last 6 months</span>
             </div>
-            <CashFlowChart />
+            <section style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
+              gap: 24, marginBottom: 32,
+            }}>
+              <div style={{
+                background: "#161e14", border: "1px solid #253325",
+                borderRadius: 10, padding: 20,
+              }}>
+                <h3 style={{
+                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
+                }}>Cash flow</h3>
+                <CashFlowChart />
+              </div>
+              <div style={{
+                background: "#161e14", border: "1px solid #253325",
+                borderRadius: 10, padding: 20,
+              }}>
+                <h3 style={{
+                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
+                }}>Monthly savings</h3>
+                <SavingsTrend />
+              </div>
+            </section>
           </div>
         )}
 
