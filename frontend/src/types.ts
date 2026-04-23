@@ -123,3 +123,34 @@ export interface InsightsResponse {
   }
   highlights: Insight[]
 }
+
+export type StreamKind = "subscription" | "bill" | "income"
+export type Frequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "SEMI_MONTHLY" | "ANNUALLY" | "UNKNOWN"
+
+export interface EnrichedStream {
+  merchant: string
+  cleanMerchant: string
+  kind: StreamKind
+  category: string
+  frequency: Frequency
+  lastAmount: number
+  lastDate: string
+  monthlyAmount: number
+  source: "plaid" | "custom"
+  priceChange: { previousAmount: number; pctChange: number } | null
+  isDuplicate: boolean
+  nextChargeDate: string | null
+  daysUntilNextCharge: number | null
+}
+
+export interface SubscriptionAnalysis {
+  subscriptions: EnrichedStream[]
+  bills: EnrichedStream[]
+  upcoming: EnrichedStream[]
+  alerts: Array<{ kind: "price_up" | "duplicate" | "many_streaming"; message: string }>
+  totals: {
+    monthlySubscriptions: number
+    monthlyBills: number
+    monthlyAll: number
+  }
+}
