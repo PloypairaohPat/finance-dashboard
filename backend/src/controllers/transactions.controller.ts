@@ -6,6 +6,7 @@ import {
   fetchMonthlyTotals,
   searchTransactions,
   updateTransaction,
+  fetchUserTags,
 } from '../services/transactions.service'
 import { getUserId } from '../middleware/auth'
 
@@ -23,7 +24,7 @@ export async function getTransactions(req: Request, res: Response): Promise<void
 export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const categories = await fetchCategorySpend(userId)  // M5.2: was fetchCategoryTotals
+    const categories = await fetchCategorySpend(userId)
     res.json({ categories })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
@@ -31,7 +32,6 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
   }
 }
 
-// M5.2: New handler for month-over-month comparison
 export async function getCategoryComparison(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
@@ -56,26 +56,32 @@ export async function getTrends(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function searchTransactionsHandler(req: Request, res: Response): Promise<void> {
+// M5.7 Step 2: cursor pagination + enriched response
+export async function getTransactionSearch(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const filters = {
-      q:          req.query.q         as string | undefined,
-      category:   req.query.category  as string | undefined,
-      dateFrom:   req.query.dateFrom  as string | undefined,
-      dateTo:     req.query.dateTo    as string | undefined,
-      minAmount:  req.query.minAmount ? parseFloat(req.query.minAmount as string) : undefined,
-      maxAmount:  req.query.maxAmount ? parseFloat(req.query.maxAmount as string) : undefined,
-      tag:        req.query.tag       as string | undefined,
-      sortBy:     req.query.sortBy    as string | undefined,
-      limit:      req.query.limit     ? parseInt(req.query.limit  as string, 10) : undefined,
-      offset:     req.query.offset    ? parseInt(req.query.offset as string, 10) : undefined,
-    }
-    const result = await searchTransactions(userId, filters)
+    const { q, category, dateFrom, dateTo, minAmount, maxAmount, tags, cursor, limit } = req.query
+
+    const tagsArr = typeof tags === "string"
+      ? tags.split(",").map(s => s.trim()).filter(Boolean)
+      : undefined
+
+    const result = await searchTransactions(userId, {
+      q:          q         as string | undefined,
+      category:   category  as string | undefined,
+      dateFrom:   dateFrom  as string | undefined,
+      dateTo:     dateTo    as string | undefined,
+      minAmount:  minAmount !== undefined ? Number(minAmount) : undefined,
+      maxAmount:  maxAmount !== undefined ? Number(maxAmount) : undefined,
+      tags:       tagsArr,
+      cursor:     cursor    as string | undefined,
+      limit:      limit     !== undefined ? Number(limit) : undefined,
+    })
+
     res.json(result)
   } catch (err: any) {
-    console.error("searchTransactions:", err.message)
-    res.status(500).json({ error: "Search failed" })
+    console.error("searchTransactions error:", err.message)
+    res.status(500).json({ error: "Failed to search transactions" })
   }
 }
 
@@ -83,11 +89,22 @@ export async function patchTransaction(req: Request, res: Response): Promise<voi
   try {
     const userId = getUserId(req)
     const id = req.params.id as string
-    const { tags, notes } = req.body
-    const updated = await updateTransaction(id, { tags, notes })
+    const { tags, notes, category } = req.body
+    const updated = await updateTransaction(id, { tags, notes, category })
     res.json({ ok: true, transaction: updated })
   } catch (err: any) {
     console.error("patchTransaction:", err.message)
     res.status(500).json({ error: "Update failed" })
+  }
+}
+
+// M5.7 Step 4: Suggested tags for TransactionDetail
+export async function getUserTags(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = getUserId(req)
+    res.json(await fetchUserTags(userId))
+  } catch (err: any) {
+    console.error("getUserTags error:", err.message)
+    res.status(500).json({ error: "Failed to fetch tags" })
   }
 }

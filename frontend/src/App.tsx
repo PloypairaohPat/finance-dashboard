@@ -7,12 +7,12 @@ import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
 import SubscriptionTracker from "./SubscriptionTracker";
-import { Account, Transaction, CategorySpend, Budget, Alert } from "./types"
+import { Account, EnrichedTransaction, CategorySpend, Budget, Alert } from "./types"
 import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
 import TransactionDetail from "./TransactionDetail"
-import TransactionCard from "./TransactionCard"
+import TransactionList from "./TransactionList"
 import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import useMediaQuery from "./useMediaQuery"
@@ -49,15 +49,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   logo:       { fontSize: "20px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8" },
   logoAccent: { color: "#00e5a0" },
-  envBadge: {
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "11px",
-    background: "#1a2e20",
-    color: "#00e5a0",
-    padding: "4px 10px",
-    borderRadius: "4px",
-    border: "1px solid #00e5a020",
-  },
   main:      { maxWidth: "900px", margin: "0 auto", padding: "60px 40px" },
   hero:      { marginBottom: "60px" },
   heroTitle: {
@@ -131,7 +122,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     letterSpacing: "-0.3px",
   },
   hint:       { marginTop: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#555" },
-  hintAccent: { color: "#00e5a080" },
   section:    { marginTop: "60px" },
   sectionHeader: {
     display: "flex",
@@ -170,28 +160,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     fontWeight: 500,
     color: highlight ? "#00e5a0" : "#f0ede8",
   }),
-  txTable: { width: "100%", borderCollapse: "collapse" },
-  txHead: {
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "10px",
-    color: "#555",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-    textAlign: "left",
-    padding: "8px 12px",
-    borderBottom: "1px solid #1a1a1a",
-  },
-  txRow:   (i: number) => ({ borderBottom: "1px solid #111", background: i % 2 === 0 ? "transparent" : "#0d0d0d" }),
-  txCell:  { padding: "10px 12px", fontSize: "13px", fontFamily: "'IBM Plex Mono', monospace", color: "#888" },
-  txName:  { padding: "10px 12px", fontSize: "14px", fontWeight: 600, color: "#d0cdc8" },
-  txAmount: (amount: number) => ({
-    padding: "10px 12px",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "14px",
-    fontWeight: 500,
-    color: amount > 0 ? "#ff6b6b" : "#00e5a0",
-    textAlign: "right",
-  }),
   error: {
     background: "#1a0d0d",
     border: "1px solid #ff6b6b30",
@@ -202,86 +170,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     fontSize: "13px",
     marginTop: "20px",
   },
-  pending: {
-    display: "inline-block",
-    background: "#1a1500",
-    color: "#ffb347",
-    fontSize: "10px",
-    fontFamily: "'IBM Plex Mono', monospace",
-    padding: "2px 6px",
-    borderRadius: "3px",
-    marginLeft: "6px",
-  },
-  tag: {
-    display: "inline-block",
-    background: "#1a1a2e",
-    color: "#7b9fff",
-    fontSize: "10px",
-    fontFamily: "'IBM Plex Mono', monospace",
-    padding: "2px 7px",
-    borderRadius: "3px",
-  },
-  filterBar: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginBottom: "20px",
-    padding: "14px 16px",
-    background: "#111",
-    border: "1px solid #1e1e1e",
-    borderRadius: "10px",
-  },
-  filterInput: {
-    background: "#0d0d0d",
-    border: "1px solid #222",
-    borderRadius: "6px",
-    padding: "7px 12px",
-    color: "#f0ede8",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "12px",
-    width: "200px",
-    outline: "none",
-  },
-  filterSelect: {
-    background: "#0d0d0d",
-    border: "1px solid #222",
-    borderRadius: "6px",
-    padding: "7px 10px",
-    color: "#f0ede8",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "12px",
-    outline: "none",
-    cursor: "pointer",
-  },
-  filterBtn: (active: boolean) => ({
-    background: active ? "#00e5a0" : "#0d0d0d",
-    border: `1px solid ${active ? "#00e5a0" : "#222"}`,
-    borderRadius: "6px",
-    padding: "7px 12px",
-    color: active ? "#000" : "#888",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "11px",
-    cursor: "pointer",
-    transition: "all 0.15s",
-    fontWeight: active ? 600 : 400,
-  }),
-  clearBtn: {
-    background: "transparent",
-    border: "1px solid #333",
-    borderRadius: "6px",
-    padding: "7px 12px",
-    color: "#555",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "11px",
-    cursor: "pointer",
-    marginLeft: "auto",
-  },
-  filterCount: {
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "11px",
-    color: "#555",
-  },
 };
 
 // ── Format currency ───────────────────────────────────────────────
@@ -290,35 +178,8 @@ const fmt = (n: number | null | undefined, code = "USD") =>
     ? "—"
     : new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(n);
 
-// ── Format date ───────────────────────────────────────────────────
-const fmtDate = (d: string | null | undefined) => (d ? String(d).slice(0, 10) : "—");
-
 // ── Component prop types ──────────────────────────────────────────
 type AccountCardProps = { account: Account };
-
-type TxRowProps = {
-  tx: Transaction
-  index: number
-  isExpanded: boolean
-  onToggle: () => void
-  onUpdated: (updated: Transaction) => void
-}
-
-type FilterBarProps = {
-  searchInput:       string;
-  setSearchInput:    React.Dispatch<React.SetStateAction<string>>;
-  dateRange:         number | null;
-  setDateRange:      React.Dispatch<React.SetStateAction<number | null>>;
-  categoryFilter:    string;
-  setCategoryFilter: React.Dispatch<React.SetStateAction<string>>;
-  sortBy:            string;
-  setSortBy:         React.Dispatch<React.SetStateAction<string>>;
-  uniqueCategories:  string[];
-  onClear:           () => void;
-  totalCount:        number;
-  filteredCount:     number;
-  isMobile:          boolean;
-};
 
 // ── Account Card ──────────────────────────────────────────────────
 function AccountCard({ account }: AccountCardProps) {
@@ -344,123 +205,27 @@ function AccountCard({ account }: AccountCardProps) {
   );
 }
 
-// ── Transaction Row ───────────────────────────────────────────────
-function TxRow({ tx, index, isExpanded, onToggle, onUpdated }: TxRowProps) {
-  return (
-    <>
-      <tr
-        style={{ ...(styles.txRow as (i: number) => CSSProperties)(index), cursor: "pointer" }}
-        onClick={onToggle}
-      >
-        <td style={styles.txCell as CSSProperties}>{fmtDate(tx.date)}</td>
-        <td style={styles.txName as CSSProperties}>
-          {tx.merchantName || tx.name}
-          {tx.pending && <span style={styles.pending as CSSProperties}>pending</span>}
-          {tx.tags?.length > 0 && tx.tags.map(tag => (
-            <span key={tag} style={{
-              display: "inline-block",
-              background: "rgba(74,158,255,0.1)",
-              border: "1px solid rgba(74,158,255,0.2)",
-              color: "#4a9eff",
-              fontFamily: "IBM Plex Mono, monospace",
-              fontSize: 10, padding: "1px 6px", borderRadius: 3,
-              marginLeft: 6,
-            }}>{tag}</span>
-          ))}
-        </td>
-        <td style={styles.txCell as CSSProperties}>
-          {tx.categoryPrimary && (
-            <span style={styles.tag as CSSProperties}>{tx.categoryPrimary.replace(/_/g, " ")}</span>
-          )}
-        </td>
-        <td style={(styles.txAmount as (a: number) => CSSProperties)(tx.amount)}>
-          {tx.amount > 0 ? "-" : "+"}
-          {fmt(Math.abs(tx.amount), tx.isoCurrencyCode || "USD")}
-        </td>
-      </tr>
-      {isExpanded && (
-        <tr>
-          <td colSpan={4} style={{ padding: 0 }}>
-            <TransactionDetail transaction={tx} onUpdated={onUpdated} />
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-// ── Filter Bar ────────────────────────────────────────────────────
-function FilterBar({
-  searchInput, setSearchInput, dateRange, setDateRange,
-  categoryFilter, setCategoryFilter, sortBy, setSortBy,
-  uniqueCategories, onClear, totalCount, filteredCount, isMobile,
-}: FilterBarProps) {
-  return (
-    <div style={{
-      ...(styles.filterBar as CSSProperties),
-      flexDirection: isMobile ? "column" : "row",
-      alignItems: isMobile ? "stretch" : "center",
-    }}>
-      <input
-        style={{
-          ...(styles.filterInput as CSSProperties),
-          width: isMobile ? "100%" : "200px",
-        }}
-        placeholder="Search merchants…"
-        value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
-      />
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {[7, 30, 90, null].map((d) => (
-          <button
-            key={d ?? "all"}
-            style={(styles.filterBtn as (a: boolean) => CSSProperties)(dateRange === d)}
-            onClick={() => setDateRange(d)}
-          >
-            {d ? `${d}d` : "All"}
-          </button>
-        ))}
-      </div>
-      <select style={{ ...(styles.filterSelect as CSSProperties), width: isMobile ? "100%" : "auto" }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-        <option value="">All categories</option>
-        {uniqueCategories.map((cat: string) => (
-          <option key={cat} value={cat}>{cat.replace(/_/g, " ")}</option>
-        ))}
-      </select>
-      <select style={{ ...(styles.filterSelect as CSSProperties), width: isMobile ? "100%" : "auto" }} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-        <option value="date-desc">Newest first</option>
-        <option value="date-asc">Oldest first</option>
-        <option value="amount-desc">Highest amount</option>
-        <option value="amount-asc">Lowest amount</option>
-      </select>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
-        <span style={styles.filterCount as CSSProperties}>{filteredCount} / {totalCount}</span>
-        <button style={styles.clearBtn as CSSProperties} onClick={onClear}>✕ Clear</button>
-      </div>
-    </div>
-  );
-}
-
 // ── Main App ──────────────────────────────────────────────────────
 export default function App() {
   const [linkToken,    setLinkToken]    = useState<string | null>(null);
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
-  const [alerts,       setAlerts]      = useState<Alert[]>([]);
-  // M5.1 — Hero Overview: net worth + cash flow series for hero metrics
+  const [alerts,       setAlerts]       = useState<Alert[]>([]);
   const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
   const [cashFlow,        setCashFlow]        = useState<Array<{ month: string; net: number }>>([]);
-  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+
+  // M5.7: selected transaction for the detail modal
+  const [selectedTx, setSelectedTx] = useState<EnrichedTransaction | null>(null)
+
   const isMobile = useMediaQuery("(max-width: 640px)")
   const { getToken, isSignedIn, isLoaded } = useAuth();
 
-  // ── M4.2: Authenticated fetch wrapper ───────────────────────────
+  // ── Authenticated fetch wrapper ──────────────────────────────────
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
       const token = await getToken();
@@ -476,64 +241,16 @@ export default function App() {
     [getToken]
   );
 
-  const handleTxUpdated = useCallback((updated: Transaction) => {
-    setTransactions(prev =>
-      prev.map(tx => tx.id === updated.id ? { ...tx, tags: updated.tags, notes: updated.notes } : tx)
-    )
-  }, [])
-
-  // ── Filter state ────────────────────────────────────────────────
-  const [searchInput,    setSearchInput]    = useState("");
-  const [search,         setSearch]         = useState("");
-  const [dateRange,      setDateRange]      = useState<number | null>(30);
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [sortBy,         setSortBy]         = useState("date-desc");
-
-  useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  const filteredTransactions = useMemo(() => {
-    let result = [...transactions];
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((tx) => (tx.merchantName || tx.name || "").toLowerCase().includes(q));
-    }
-    if (dateRange) {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - dateRange);
-      result = result.filter((tx) => new Date(tx.date) >= cutoff);
-    }
-    if (categoryFilter) result = result.filter((tx) => tx.categoryPrimary === categoryFilter);
-    result.sort((a, b) => {
-      if (sortBy === "date-desc")   return new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (sortBy === "date-asc")    return new Date(a.date).getTime() - new Date(b.date).getTime();
-      if (sortBy === "amount-desc") return b.amount - a.amount;
-      if (sortBy === "amount-asc")  return a.amount - b.amount;
-      return 0;
-    });
-    return result;
-  }, [transactions, search, dateRange, categoryFilter, sortBy]);
-
-  const uniqueCategories = useMemo(
-    () => [...new Set(transactions.map((tx) => tx.categoryPrimary).filter(Boolean))] as string[],
-    [transactions]
-  );
-
   // ── M5.1 — Hero Overview derived values ─────────────────────────
   const heroProps = useMemo(() => {
-    // Cash = depository accounts (savings + checking)
     const cashAvailable = accounts
       .filter(a => a.type === "depository")
       .reduce((sum, a) => sum + (Number(a.currentBalance) || 0), 0)
 
-    // Debt = credit + loan accounts (displayed as positive)
     const debt = accounts
       .filter(a => a.type === "credit" || a.type === "loan")
       .reduce((sum, a) => sum + Math.abs(Number(a.currentBalance) || 0), 0)
 
-    // Net worth = latest snapshot, MoM = vs ~30 entries ago
     const latest = netWorthHistory[netWorthHistory.length - 1]
     const monthAgoIdx = Math.max(0, netWorthHistory.length - 31)
     const monthAgo = netWorthHistory[monthAgoIdx]
@@ -543,31 +260,20 @@ export default function App() {
         ? ((latest.netWorth - monthAgo.netWorth) / Math.abs(monthAgo.netWorth)) * 100
         : null
 
-    // Saved this month = current month net from cash flow
     const now = new Date()
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
     const thisMonth = cashFlow.find(c => c.month === ym)
     const monthSaved = thisMonth?.net ?? null
     const monthLabel = now.toLocaleString("en-US", { month: "long" })
+    const lastSyncAt = null // TransactionList owns transactions now
 
-    // Last sync ≈ most recent transaction date
-    const lastSyncAt = transactions.length
-      ? [...transactions].sort((a, b) => b.date.localeCompare(a.date))[0].date
-      : null
+    return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, lastSyncAt }
+  }, [accounts, netWorthHistory, cashFlow])
 
-    return {
-      netWorth, netWorthMomPct, cashAvailable, debt,
-      monthSaved, monthLabel, lastSyncAt,
-    }
-  }, [accounts, transactions, netWorthHistory, cashFlow])
-
-  // ── M4.1: Auto-connect — check for existing accounts on mount ──
+  // ── Auto-connect check ───────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded) return;          // wait for Clerk to finish
-    if (!isSignedIn) {
-      setInitialLoading(false);
-      return;
-    }
+    if (!isLoaded) return;
+    if (!isSignedIn) { setInitialLoading(false); return; }
 
     (async () => {
       try {
@@ -585,16 +291,12 @@ export default function App() {
     })();
   }, [authFetch, isSignedIn]);
 
-  // ── Fetch link_token on mount ────────────────────────────────────
+  // ── Fetch link token ─────────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) return;
-
+    if (!isLoaded || !isSignedIn) return;
     (async () => {
       try {
-        const res  = await authFetch(`${API_URL}/create_link_token`, {
-          method: "POST",
-        });
+        const res  = await authFetch(`${API_URL}/create_link_token`, { method: "POST" });
         const data = await res.json() as { link_token: string; error?: string };
         if (data.error) throw new Error(data.error);
         setLinkToken(data.link_token);
@@ -617,9 +319,9 @@ export default function App() {
     }
   }, [authFetch]);
 
-  // ── Fetch accounts + transactions + categories + budgets ─────────
+  // ── Fetch all dashboard data ─────────────────────────────────────
   const fetchData = useCallback(async () => {
-    setLoading((l) => ({ ...l, accounts: true, tx: true }));
+    setLoading((l) => ({ ...l, accounts: true }));
 
     try {
       const res  = await authFetch(`${API_URL}/accounts`);
@@ -630,17 +332,6 @@ export default function App() {
       setError(`Accounts fetch failed: ${e.message}`);
     } finally {
       setLoading((l) => ({ ...l, accounts: false }));
-    }
-
-    try {
-      const res  = await authFetch(`${API_URL}/transactions`);
-      const data = await res.json() as { transactions: Transaction[]; error?: string };
-      if (data.error) throw new Error(data.error);
-      setTransactions(data.transactions);
-    } catch (e: any) {
-      setError(`Transactions fetch failed: ${e.message}`);
-    } finally {
-      setLoading((l) => ({ ...l, tx: false }));
     }
 
     try {
@@ -665,7 +356,6 @@ export default function App() {
     }
   }, [authFetch])
 
-  // M5.1 — Hero Overview data sources
   const fetchNetWorth = useCallback(async () => {
     try {
       const res  = await authFetch(`${API_URL}/networth`)
@@ -686,11 +376,8 @@ export default function App() {
     }
   }, [authFetch])
 
-  // ── Auto-load data on mount ──────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) return;
-
+    if (!isLoaded || !isSignedIn) return;
     fetchData();
     fetchBudgets();
     fetchAlerts();
@@ -717,11 +404,6 @@ export default function App() {
     [authFetch, fetchData]
   );
 
-  const clearFilters = useCallback(() => {
-    setSearchInput(""); setSearch(""); setDateRange(30);
-    setCategoryFilter(""); setSortBy("date-desc");
-  }, []);
-
   const { open, ready } = usePlaidLink({
     token: linkToken,
     onSuccess,
@@ -737,35 +419,20 @@ export default function App() {
     { label: "plaid link UI mounted", done: !!linkToken },
     { label: "wells fargo connected", done: connected },
     { label: "balances fetched",      done: accounts.length > 0 },
-    { label: "transactions fetched",  done: transactions.length > 0 },
+    { label: "transactions fetched",  done: connected },
   ];
 
-  // ── M4.1: Loading gate — show spinner while checking for existing accounts
   if (initialLoading) {
     return (
       <div style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        background: "#0a0a0a",
-        gap: "16px",
+        display: "flex", flexDirection: "column",
+        justifyContent: "center", alignItems: "center",
+        height: "100vh", background: "#0a0a0a", gap: "16px",
       }}>
-        <div style={{
-          fontSize: "20px",
-          fontWeight: 800,
-          letterSpacing: "-0.5px",
-          color: "#f0ede8",
-          fontFamily: "'Syne', sans-serif",
-        }}>
+        <div style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8", fontFamily: "'Syne', sans-serif" }}>
           plaid<span style={{ color: "#00e5a0" }}>.</span>app
         </div>
-        <div style={{
-          fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "13px",
-          color: "#555",
-        }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#555" }}>
           Loading your dashboard…
         </div>
       </div>
@@ -774,24 +441,13 @@ export default function App() {
 
   return (
     <>
-    {/* ── M4.2: Auth gate — show login when signed out ────────────── */}
     <SignedOut>
       <div style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        background: "#0a0a0a",
-        gap: "24px",
+        display: "flex", flexDirection: "column",
+        justifyContent: "center", alignItems: "center",
+        height: "100vh", background: "#0a0a0a", gap: "24px",
       }}>
-        <div style={{
-          fontSize: "28px",
-          fontWeight: 800,
-          letterSpacing: "-0.5px",
-          color: "#f0ede8",
-          fontFamily: "'Syne', sans-serif",
-        }}>
+        <div style={{ fontSize: "28px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8", fontFamily: "'Syne', sans-serif" }}>
           plaid<span style={{ color: "#00e5a0" }}>.</span>app
         </div>
         <SignIn />
@@ -800,25 +456,19 @@ export default function App() {
 
     <SignedIn>
     <div style={styles.root as CSSProperties}>
-      <header
-      style={{
-        ...(styles.header as React.CSSProperties),
+      <header style={{
+        ...(styles.header as CSSProperties),
         padding: isMobile ? "16px 20px" : "24px 40px",
-        }}>
-        <div style={styles.logo as CSSProperties}>plaid<span style={styles.logoAccent as CSSProperties}>.</span>app</div>
-        <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+      }}>
+        <div style={styles.logo as CSSProperties}>plaid<span style={{ color: "#00e5a0" }}>.</span>app</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {connected && (
             <button
               onClick={() => setConnected(false)}
               style={{
-                background: "transparent",
-                border: "1px solid #333",
-                color: "#666",
-                padding: "4px 12px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontSize: "11px",
-                fontFamily: "'IBM Plex Mono', monospace",
+                background: "transparent", border: "1px solid #333", color: "#666",
+                padding: "4px 12px", borderRadius: "4px", cursor: "pointer",
+                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
               }}
             >
               + Link Account
@@ -829,10 +479,9 @@ export default function App() {
       </header>
 
       <main style={{
-          ...(styles.main as CSSProperties),
-          padding: isMobile ? "30px 16px" : "60px 40px",
-        }}>
-        {/* M5.1 — Hero Overview: top-of-dashboard metric strip */}
+        ...(styles.main as CSSProperties),
+        padding: isMobile ? "30px 16px" : "60px 40px",
+      }}>
         {connected && <HeroOverview {...heroProps} />}
 
         <div style={styles.hero as CSSProperties}>
@@ -876,12 +525,14 @@ export default function App() {
               >
                 {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
               </button>
-              <p style={styles.hint as CSSProperties}>
-                Link a new bank account via Plaid to get started.
-              </p>
+              <p style={styles.hint as CSSProperties}>Link a new bank account via Plaid to get started.</p>
             </>
           ) : (
-            <button style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: "#00e5a0", ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}) }} onClick={fetchData}>
+            <button style={{
+              ...(styles.connectBtn as CSSProperties),
+              background: "#1a2e20", color: "#00e5a0",
+              ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
+            }} onClick={fetchData}>
               ↻ Refresh Data
             </button>
           )}
@@ -915,15 +566,15 @@ export default function App() {
             </div>
           </div>
         )}
-        
+
         {/* Financial Insights */}
         {accounts.length > 0 && (
           <section style={{ marginBottom: 32 }}>
             <InsightsDashboard />
-            </section>
-          )}
-          
-        {/* M5.2 — Spending Breakdown + Month-over-Month Comparison */}
+          </section>
+        )}
+
+        {/* Spending Breakdown + Month-over-Month */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <section style={{
@@ -931,24 +582,16 @@ export default function App() {
               gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
               gap: 24, marginBottom: 32,
             }}>
-              <div style={{
-                background: "#161e14", border: "1px solid #253325",
-                borderRadius: 10, padding: 20,
-              }}>
-                <h3 style={{
-                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
-                }}>Spending breakdown</h3>
+              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
+                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>
+                  Spending breakdown
+                </h3>
                 <SpendingChart data={categories} />
               </div>
-              <div style={{
-                background: "#161e14", border: "1px solid #253325",
-                borderRadius: 10, padding: 20,
-              }}>
-                <h3 style={{
-                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
-                }}>Month over month</h3>
+              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
+                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>
+                  Month over month
+                </h3>
                 <CategoryComparison />
               </div>
             </section>
@@ -988,24 +631,12 @@ export default function App() {
               gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
               gap: 24, marginBottom: 32,
             }}>
-              <div style={{
-                background: "#161e14", border: "1px solid #253325",
-                borderRadius: 10, padding: 20,
-              }}>
-                <h3 style={{
-                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
-                }}>Cash flow</h3>
+              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
+                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>Cash flow</h3>
                 <CashFlowChart />
               </div>
-              <div style={{
-                background: "#161e14", border: "1px solid #253325",
-                borderRadius: 10, padding: 20,
-              }}>
-                <h3 style={{
-                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
-                }}>Monthly savings</h3>
+              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
+                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>Monthly savings</h3>
                 <SavingsTrend />
               </div>
             </section>
@@ -1036,70 +667,27 @@ export default function App() {
           </div>
         )}
 
-        {/* Transactions */}
-        {transactions.length > 0 && (
+        {/* Transactions — M5.7: TransactionList with cursor pagination + logos */}
+        {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
               <h2 style={styles.sectionTitle as CSSProperties}>Transactions</h2>
-              <span style={styles.sectionCount as CSSProperties}>
-                {filteredTransactions.length} of {transactions.length} · last {dateRange ?? "all"} days
-              </span>
             </div>
-            <FilterBar
-              searchInput={searchInput}       setSearchInput={setSearchInput}
-              dateRange={dateRange}           setDateRange={setDateRange}
-              categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter}
-              sortBy={sortBy}                 setSortBy={setSortBy}
-              uniqueCategories={uniqueCategories}
-              onClear={clearFilters}
-              totalCount={transactions.length}
-              filteredCount={filteredTransactions.length}
-              isMobile={isMobile}
-            />
-            {filteredTransactions.length === 0 ? (
-              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#555", padding: "20px 0" }}>
-                No transactions match your filters.
-              </div>
-            ) : isMobile ? (
-              <div>
-                {filteredTransactions.map((tx) => (
-                  <TransactionCard
-                    key={tx.plaidTransactionId}
-                    transaction={tx}
-                    isExpanded={expandedTxId === tx.id}
-                    onToggle={() => setExpandedTxId(prev => prev === tx.id ? null : tx.id)}
-                    onUpdated={handleTxUpdated}
-                  />
-                ))}
-              </div>
-            ) : (
-              <table style={styles.txTable as CSSProperties}>
-                <thead>
-                  <tr>
-                    <th style={styles.txHead as CSSProperties}>Date</th>
-                    <th style={styles.txHead as CSSProperties}>Name</th>
-                    <th style={styles.txHead as CSSProperties}>Category</th>
-                    <th style={{ ...(styles.txHead as CSSProperties), textAlign: "right" }}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTransactions.map((tx, i) => (
-                    <TxRow
-                      key={tx.plaidTransactionId}
-                      tx={tx}
-                      index={i}
-                      isExpanded={expandedTxId === tx.id}
-                      onToggle={() => setExpandedTxId(prev => prev === tx.id ? null : tx.id)}
-                      onUpdated={handleTxUpdated}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <TransactionList onRowClick={tx => setSelectedTx(tx)} />
           </div>
         )}
       </main>
     </div>
+
+    {/* Transaction Detail modal — rendered outside main flow so it overlays everything */}
+    {selectedTx && (
+      <TransactionDetail
+        transaction={selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onUpdate={updated => setSelectedTx(updated)}
+      />
+    )}
+
     </SignedIn>
     </>
   );

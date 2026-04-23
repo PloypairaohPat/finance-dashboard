@@ -182,3 +182,29 @@ export interface NetWorthResponse {
   history: NetWorthPoint[]
   summary: NetWorthSummary
 }
+
+export interface EnrichedTransaction {
+  id: string
+  name: string
+  displayName: string
+  amount: number
+  date: string
+  category: string
+  rawCategory: string | null
+  color: string
+  logoUrl: string | null
+  tags: string[]
+  notes: string | null
+  account: string
+}
+
+export interface SearchResult {
+  transactions: EnrichedTransaction[]
+  nextCursor: string | null
+  totalCount: number | null
+}
+
+export interface CategoryOption {
+  category: string
+  color: string
+}

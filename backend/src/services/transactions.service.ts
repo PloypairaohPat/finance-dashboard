@@ -6,6 +6,7 @@ import {
 } from "../lib/categoryMap"
 import { getSubscriptionMerchants } from "./subscriptions.service"
 import { plaidClient } from "../lib/plaidClient"
+import { logoUrlFor } from "../lib/merchantLogos"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -15,10 +16,7 @@ export async function fetchTransactions(userId: string) {
   })
 }
 
-// ── M5.2: Replace fetchCategoryTotals with fetchCategorySpend ────────
-// ── M5.5: Enhanced with subscription merchant override ────────────────
 export async function fetchCategorySpend(userId: string, month?: string) {
-  // month = YYYY-MM, defaults to current month
   const now = new Date()
   const ym = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   const [yr, mo] = ym.split("-").map(Number)
@@ -29,14 +27,12 @@ export async function fetchCategorySpend(userId: string, month?: string) {
     where: {
       userId,
       deletedAt: null,
-      amount: { gt: 0 },             // expenses only (positive = money leaving)
+      amount: { gt: 0 },
       date: { gte: start, lt: end },
     },
-    // M5.5: add cleanName + name so we can match against subscription merchants
     select: { amount: true, categoryPrimary: true, cleanName: true, name: true },
   })
 
-  // M5.5: get subscription merchant set — gracefully falls back to empty on error
   let subMerchants: Set<string>
   try {
     subMerchants = await getSubscriptionMerchants(userId, plaidClient)
@@ -45,14 +41,12 @@ export async function fetchCategorySpend(userId: string, month?: string) {
     subMerchants = new Set()
   }
 
-  // Sum into the 10 display buckets
   const buckets: Record<DisplayCategory, number> = Object.fromEntries(
     DISPLAY_CATEGORIES.map(c => [c, 0])
   ) as Record<DisplayCategory, number>
 
   for (const tx of txs) {
     if (!isSpending(tx.categoryPrimary)) continue
-    // M5.5: if the merchant is a known subscription, override its natural category
     const merchant = (tx.cleanName ?? tx.name ?? "").toLowerCase()
     const display: DisplayCategory = subMerchants.has(merchant)
       ? "Subscriptions"
@@ -75,7 +69,6 @@ export async function fetchCategorySpend(userId: string, month?: string) {
     .sort((a, b) => b.amount - a.amount)
 }
 
-// ── M5.2: New comparison endpoint data ───────────────────────────────
 export async function fetchCategoryComparison(userId: string, months = 3) {
   const now = new Date()
   const out: Array<{ month: string; total: number; categories: Record<string, number> }> = []
@@ -137,80 +130,138 @@ function formatMonthLabel(yyyymm: string): string {
   return `${names[parseInt(month) - 1]} ${year}`
 }
 
-// ── M3.3: Server-side search with filters ────────────────────────────
-interface SearchFilters {
+// ── M5.7 Step 2: Search with cursor pagination + enrichment ──────────
+
+export interface SearchParams {
   q?:          string
   category?:   string
   dateFrom?:   string
   dateTo?:     string
   minAmount?:  number
   maxAmount?:  number
-  tag?:        string
-  sortBy?:     string
+  tags?:       string[]
+  cursor?:     string
   limit?:      number
-  offset?:     number
 }
 
-export async function searchTransactions(userId: string, filters: SearchFilters) {
+export interface EnrichedTransaction {
+  id:          string
+  name:        string
+  displayName: string
+  amount:      number
+  date:        string
+  category:    DisplayCategory
+  rawCategory: string | null
+  color:       string
+  logoUrl:     string | null
+  tags:        string[]
+  notes:       string | null
+  account:     string
+}
+
+export interface SearchResult {
+  transactions: EnrichedTransaction[]
+  nextCursor:   string | null
+  totalCount:   number | null
+}
+
+export async function searchTransactions(
+  userId: string,
+  params: SearchParams,
+): Promise<SearchResult> {
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 100)
+
   const where: any = { userId, deletedAt: null }
 
-  if (filters.q) {
-    const q = filters.q.trim()
+  if (params.q) {
     where.OR = [
-      { cleanName:    { contains: q, mode: "insensitive" } },
-      { merchantName: { contains: q, mode: "insensitive" } },
-      { name:         { contains: q, mode: "insensitive" } },
-      { notes:        { contains: q, mode: "insensitive" } },
+      { cleanName: { contains: params.q, mode: "insensitive" } },
+      { name:      { contains: params.q, mode: "insensitive" } },
     ]
   }
 
-  if (filters.category) {
-    where.categoryPrimary = filters.category
-  }
+  if (params.dateFrom)
+    where.date = { ...(where.date ?? {}), gte: new Date(params.dateFrom + "T00:00:00Z") }
+  if (params.dateTo)
+    where.date = { ...(where.date ?? {}), lt: new Date(new Date(params.dateTo + "T00:00:00Z").getTime() + 86400000) }
 
-  if (filters.dateFrom || filters.dateTo) {
-    where.date = {}
-    if (filters.dateFrom) where.date.gte = new Date(filters.dateFrom)
-    if (filters.dateTo)   where.date.lte = new Date(filters.dateTo)
-  }
+  if (params.minAmount !== undefined)
+    where.amount = { ...(where.amount ?? {}), gte: params.minAmount }
+  if (params.maxAmount !== undefined)
+    where.amount = { ...(where.amount ?? {}), lte: params.maxAmount }
 
-  if (filters.minAmount !== undefined || filters.maxAmount !== undefined) {
-    where.amount = {}
-    if (filters.minAmount !== undefined) where.amount.gte = filters.minAmount
-    if (filters.maxAmount !== undefined) where.amount.lte = filters.maxAmount
-  }
+  if (params.tags && params.tags.length > 0)
+    where.tags = { hasSome: params.tags }
 
-  if (filters.tag) {
-    where.tags = { has: filters.tag }
-  }
+  const wantsCategory = params.category && params.category !== "All"
+  const fetchLimit = wantsCategory ? limit * 3 : limit + 1
 
-  let orderBy: any = { date: "desc" }
-  switch (filters.sortBy) {
-    case "date-asc":    orderBy = { date: "asc" };   break
-    case "amount-desc": orderBy = { amount: "desc" }; break
-    case "amount-asc":  orderBy = { amount: "asc" };  break
-  }
+  const rows = await prisma.transaction.findMany({
+    where,
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+    take: fetchLimit,
+    ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
+    include: { account: { select: { name: true } } },
+  })
 
-  const limit  = Math.min(filters.limit  ?? 100, 500)
-  const offset = filters.offset ?? 0
+  const filtered = wantsCategory
+    ? rows.filter(r => mapPlaidCategory(r.categoryPrimary) === params.category)
+    : rows
 
-  const [transactions, total] = await Promise.all([
-    prisma.transaction.findMany({ where, orderBy, take: limit, skip: offset }),
-    prisma.transaction.count({ where }),
-  ])
+  const pageRows = filtered.slice(0, limit)
+  const hasMore  = filtered.length > limit || (wantsCategory && rows.length === fetchLimit)
+  const nextCursor = hasMore && pageRows.length > 0
+    ? pageRows[pageRows.length - 1].id
+    : null
 
-  return { transactions, total, limit, offset }
+  const transactions: EnrichedTransaction[] = pageRows.map(r => {
+    const display  = mapPlaidCategory(r.categoryPrimary)
+    const merchant = r.cleanName ?? r.name ?? "Unknown"
+    return {
+      id:          r.id,
+      name:        r.name ?? "Unknown",
+      displayName: merchant,
+      amount:      Number(Number(r.amount).toFixed(2)),
+      date:        r.date.toISOString().slice(0, 10),
+      category:    display,
+      rawCategory: r.categoryPrimary ?? null,
+      color:       CATEGORY_COLORS[display] ?? "#5a7a5a",
+      logoUrl:     logoUrlFor(merchant),
+      tags:        r.tags ?? [],
+      notes:       r.notes ?? null,
+      account:     r.account?.name ?? "",
+    }
+  })
+
+  return { transactions, nextCursor, totalCount: null }
 }
 
 export async function updateTransaction(
   transactionId: string,
-  data: { tags?: string[]; notes?: string | null }
+  data: { tags?: string[]; notes?: string | null; category?: string }
 ) {
   return prisma.transaction.update({
     where: { id: transactionId },
     data: {
-      ...(data.tags  !== undefined && { tags:  data.tags }),
-      ...(data.notes !== undefined && { notes: data.notes }),
+      ...(data.tags     !== undefined && { tags:            data.tags }),
+      ...(data.notes    !== undefined && { notes:           data.notes }),
+      ...(data.category !== undefined && { categoryPrimary: data.category }),
     },
   })
+}
+
+// ── M5.7 Step 4: Suggested tags endpoint ─────────────────────────────
+export async function fetchUserTags(userId: string): Promise<string[]> {
+  const rows = await prisma.transaction.findMany({
+    where:  { userId, deletedAt: null, tags: { isEmpty: false } },
+    select: { tags: true },
+  })
+  const counts = new Map<string, number>()
+  for (const r of rows) for (const t of (r.tags ?? [])) {
+    counts.set(t, (counts.get(t) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([t]) => t)
 }
