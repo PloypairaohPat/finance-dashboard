@@ -54,16 +54,6 @@ export interface MonthlyTotal {
   txCount: number
 }
 
-export interface Budget {
-  category:     string
-  monthlyLimit: number
-  currentSpend: number
-  percentUsed:  number
-  remaining:    number
-  status:       "on_track" | "warning" | "over"
-  month:        string
-}
-
 export interface Alert {
   type:        "large_transaction" | "new_merchant" | "monthly_pace" | "budget_exceeded"
   severity:    "warning" | "critical"
@@ -79,4 +69,26 @@ export interface CategorySpend {
   amount:     number
   color:      string
   percentage: number
+}
+
+export type BudgetStatus =
+  | "on_track"
+  | "warning"
+  | "over"
+  | "projected_over"
+
+export interface Budget {
+  category: string
+  monthlyLimit: number
+  currentSpend: number
+  percentUsed: number
+  remaining: number
+  projected: number | null
+  status: BudgetStatus
+  month: string
+}
+
+export interface BudgetCategoryOption {
+  category: string
+  color: string
 }

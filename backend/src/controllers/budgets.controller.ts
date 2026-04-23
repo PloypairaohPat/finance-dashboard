@@ -5,6 +5,7 @@ import {
   fetchBudgetStatus,
 } from "../services/budgets.service"
 import { getUserId } from "../middleware/auth"
+import { DISPLAY_CATEGORIES, CATEGORY_COLORS } from "../lib/categoryMap"
 
 export async function createOrUpdateBudget(
   req: Request,
@@ -57,4 +58,13 @@ export async function getBudgetStatus(
     console.error("getBudgetStatus:", err.message)
     res.status(500).json({ error: "Failed to fetch budget status" })
   }
+}
+
+export function getCategoryList(_req: Request, res: Response) {
+  res.json(
+    DISPLAY_CATEGORIES.map(category => ({
+      category,
+      color: CATEGORY_COLORS[category],
+    }))
+  )
 }

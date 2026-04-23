@@ -41,13 +41,15 @@ const PREFIX_MAP: Array<[string, DisplayCategory]> = [
 
 export function mapPlaidCategory(raw: string | null | undefined): DisplayCategory {
   if (!raw) return "Other"
-  const upper = raw.toUpperCase()
+
+  const upper = raw.toUpperCase().replace(/\s+/g, "_")
+
   for (const [prefix, display] of PREFIX_MAP) {
     if (upper.startsWith(prefix)) return display
   }
+
   return "Other"
 }
-
 // Categories to exclude from spending charts — income/transfers are not expenses.
 export const NON_SPENDING_PREFIXES = ["INCOME", "TRANSFER_IN"]
 export function isSpending(raw: string | null | undefined): boolean {
