@@ -23,6 +23,7 @@ import {
   useAuth,
 } from "@clerk/clerk-react";
 import { API_URL } from "./config"
+import HeroOverview from "./HeroOverview"
 
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -446,6 +447,9 @@ export default function App() {
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [alerts,       setAlerts]      = useState<Alert[]>([]);
+  // M5.1 — Hero Overview: net worth + cash flow series for hero metrics
+  const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
+  const [cashFlow,        setCashFlow]        = useState<Array<{ month: string; net: number }>>([]);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
@@ -457,11 +461,16 @@ export default function App() {
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
       const token = await getToken();
+
+      if (!token) {
+        throw new Error("No Clerk token found. User may not be fully authenticated.");
+      }
+
       return fetch(url, {
         ...options,
         headers: {
-          ...options.headers,
           "Content-Type": "application/json",
+          ...(options.headers || {}),
           Authorization: `Bearer ${token}`,
         },
       });
@@ -513,6 +522,46 @@ export default function App() {
     () => [...new Set(transactions.map((tx) => tx.categoryPrimary).filter(Boolean))] as string[],
     [transactions]
   );
+
+  // ── M5.1 — Hero Overview derived values ─────────────────────────
+  const heroProps = useMemo(() => {
+    // Cash = depository accounts (savings + checking)
+  const cashAvailable = accounts
+    .filter((a) => a.type === "depository")
+    .reduce((sum, a) => sum + Number(a.currentBalance || 0), 0)
+
+    // Debt = credit + loan accounts (displayed as positive)
+    const debt = accounts
+      .filter(a => a.type === "credit" || a.type === "loan")
+      .reduce((sum, a) => sum + Math.abs(a.currentBalance ?? 0), 0)
+
+    // Net worth = latest snapshot, MoM = vs ~30 entries ago
+    const latest = netWorthHistory[netWorthHistory.length - 1]
+    const monthAgoIdx = Math.max(0, netWorthHistory.length - 31)
+    const monthAgo = netWorthHistory[monthAgoIdx]
+    const netWorth = latest?.netWorth ?? null
+    const netWorthMomPct =
+      latest && monthAgo && monthAgo.netWorth !== 0
+        ? ((latest.netWorth - monthAgo.netWorth) / Math.abs(monthAgo.netWorth)) * 100
+        : null
+
+    // Saved this month = current month net from cash flow
+    const now = new Date()
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    const thisMonth = cashFlow.find(c => c.month === ym)
+    const monthSaved = thisMonth?.net ?? null
+    const monthLabel = now.toLocaleString("en-US", { month: "long" })
+
+    // Last sync ≈ most recent transaction date
+    const lastSyncAt = transactions.length
+      ? [...transactions].sort((a, b) => b.date.localeCompare(a.date))[0].date
+      : null
+
+    return {
+      netWorth, netWorthMomPct, cashAvailable, debt,
+      monthSaved, monthLabel, lastSyncAt,
+    }
+  }, [accounts, transactions, netWorthHistory, cashFlow])
 
   // ── M4.1: Auto-connect — check for existing accounts on mount ──
   useEffect(() => {
@@ -616,6 +665,27 @@ export default function App() {
     }
   }, [authFetch])
 
+  // M5.1 — Hero Overview data sources
+  const fetchNetWorth = useCallback(async () => {
+    try {
+      const res  = await authFetch(`${API_URL}/networth`)
+      const data = await res.json() as { history?: Array<{ date: string; netWorth: number }> }
+      setNetWorthHistory(data.history ?? [])
+    } catch (e: any) {
+      console.error("Net worth fetch failed:", e.message)
+    }
+  }, [authFetch])
+
+  const fetchCashFlow = useCallback(async () => {
+    try {
+      const res  = await authFetch(`${API_URL}/cashflow`)
+      const data = await res.json() as { cashFlow?: Array<{ month: string; net: number }> }
+      setCashFlow(data.cashFlow ?? [])
+    } catch (e: any) {
+      console.error("Cash flow fetch failed:", e.message)
+    }
+  }, [authFetch])
+
   // ── Auto-load data on mount ──────────────────────────────────────
   useEffect(() => {
     if (!isSignedIn) return;
@@ -623,7 +693,9 @@ export default function App() {
     fetchData();
     fetchBudgets();
     fetchAlerts();
-  }, [fetchData, fetchBudgets, fetchAlerts, isSignedIn])
+    fetchNetWorth();
+    fetchCashFlow();
+  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchCashFlow, isSignedIn])
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
@@ -755,20 +827,29 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{
-          ...(styles.main as CSSProperties),
-          padding: isMobile ? "30px 16px" : "60px 40px",
-        }}>
-        <div style={styles.hero as CSSProperties}>
-          <h1 style={{
-            ...(styles.heroTitle as CSSProperties),
-            fontSize: isMobile ? "32px" : "52px",
-            letterSpacing: isMobile ? "-1px" : "-2px",
-          }}>Connect your<br />bank account.</h1>
-          <p style={styles.heroSub as CSSProperties}>
-            Node.js + React + Plaid Link integration.<br />
-            Production mode — connected to Wells Fargo.
-          </p>
+<main style={{
+  ...(styles.main as CSSProperties),
+  padding: isMobile ? "30px 16px" : "60px 40px",
+}}>
+  {/* M5.1 — Hero Overview: top-of-dashboard metric strip */}
+  {connected && <HeroOverview {...heroProps} />}
+
+  <div style={styles.hero as CSSProperties}>
+    <h1 style={{
+      ...(styles.heroTitle as CSSProperties),
+      fontSize: isMobile ? "32px" : "52px",
+      letterSpacing: isMobile ? "-1px" : "-2px",
+    }}>
+      Connect your
+      <br />
+      bank account.
+    </h1>
+
+    <p style={styles.heroSub as CSSProperties}>
+      Node.js + React + Plaid Link integration.
+      <br />
+      Production mode — connected to Wells Fargo.
+    </p>
 
           <div style={{
             ...(styles.stepList as CSSProperties),
