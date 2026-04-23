@@ -12,7 +12,7 @@ import accountsRouter from './routes/accounts.routes'
 import transactionsRouter from './routes/transactions.routes'
 import { makeRecurringRouter } from './routes/recurring.routes'
 import { makePlaidRouter } from './routes/plaid.routes'
-import { getCategories } from './controllers/transactions.controller'
+import { getCategories, getCategoryComparison} from './controllers/transactions.controller'
 import budgetsRouter from "./routes/budgets.routes"
 import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
@@ -97,6 +97,7 @@ app.use('/cashflow', requireSession, cashflowRouter)
 
 // Keep /categories protected too
 app.get('/categories', requireSession, getCategories)
+app.get('/categories/comparison', requireSession, getCategoryComparison)  // ← add this
 
 // Plaid router still needs route-level auth inside plaid.routes.ts
 app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))

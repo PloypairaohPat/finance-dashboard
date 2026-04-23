@@ -1,4 +1,9 @@
 import prisma from '../lib/prisma'
+import {
+  mapPlaidCategory, isSpending,
+  CATEGORY_COLORS, DISPLAY_CATEGORIES,
+  type DisplayCategory,
+} from "../lib/categoryMap"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -8,27 +13,65 @@ export async function fetchTransactions(userId: string) {
   })
 }
 
-export async function fetchCategoryTotals(userId: string) {
-  const grouped = await prisma.transaction.groupBy({
-    by: ['categoryPrimary'],
+// ── M5.2: Replace fetchCategoryTotals with fetchCategorySpend ────────
+export async function fetchCategorySpend(userId: string, month?: string) {
+  // month = YYYY-MM, defaults to current month
+  const now = new Date()
+  const ym = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  const [yr, mo] = ym.split("-").map(Number)
+  const start = new Date(Date.UTC(yr, mo - 1, 1))
+  const end   = new Date(Date.UTC(yr, mo, 1))
+
+  const txs = await prisma.transaction.findMany({
     where: {
       userId,
       deletedAt: null,
-      pending:   false,
-      amount:    { gt: 0 },
-      categoryPrimary: {
-        not:   null,
-        notIn: ['TRANSFER_OUT', 'TRANSFER_IN'],
-      },
+      amount: { gt: 0 },             // expenses only (positive = money leaving)
+      date: { gte: start, lt: end },
     },
-    _sum:    { amount: true },
-    orderBy: { _sum: { amount: 'desc' } },
+    select: { amount: true, categoryPrimary: true },
   })
 
-  return grouped.map((row) => ({
-    name:  row.categoryPrimary,
-    total: Number(row._sum.amount || 0),
-  }))
+  // Sum into the 10 display buckets
+  const buckets: Record<DisplayCategory, number> = Object.fromEntries(
+    DISPLAY_CATEGORIES.map(c => [c, 0])
+  ) as Record<DisplayCategory, number>
+
+  for (const tx of txs) {
+    if (!isSpending(tx.categoryPrimary)) continue
+    const display = mapPlaidCategory(tx.categoryPrimary)
+    buckets[display] += tx.amount.toNumber()
+  }
+
+  const total = Object.values(buckets).reduce((a, b) => a + b, 0)
+
+  return DISPLAY_CATEGORIES
+    .map(category => ({
+      category,
+      amount: Number(buckets[category].toFixed(2)),
+      color: CATEGORY_COLORS[category],
+      percentage: total > 0
+        ? Number(((buckets[category] / total) * 100).toFixed(1))
+        : 0,
+    }))
+    .filter(c => c.amount > 0)
+    .sort((a, b) => b.amount - a.amount)
+}
+
+// ── M5.2: New comparison endpoint data ───────────────────────────────
+export async function fetchCategoryComparison(userId: string, months = 3) {
+  const now = new Date()
+  const out: Array<{ month: string; total: number; categories: Record<string, number> }> = []
+
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    const spend = await fetchCategorySpend(userId, ym)
+    const categories = Object.fromEntries(spend.map(s => [s.category, s.amount]))
+    const total = spend.reduce((sum, s) => sum + s.amount, 0)
+    out.push({ month: ym, total, categories })
+  }
+  return out
 }
 
 export interface MonthlyTotal {
@@ -77,7 +120,7 @@ function formatMonthLabel(yyyymm: string): string {
   return `${names[parseInt(month) - 1]} ${year}`
 }
 
-// ── M3.3: Server-side search with filters ──────────────────────
+// ── M3.3: Server-side search with filters ────────────────────────────
 interface SearchFilters {
   q?:          string
   category?:   string

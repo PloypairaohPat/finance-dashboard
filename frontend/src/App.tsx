@@ -5,6 +5,7 @@
 import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from "react";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
+import CategoryComparison from "./CategoryComparison"
 import RecurringCard from "./RecurringCard";
 import { Account, Transaction, CategorySpend, Budget, Alert } from "./types"
 import AlertBanner from "./AlertBanner"
@@ -455,22 +456,17 @@ export default function App() {
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const isMobile = useMediaQuery("(max-width: 640px)")
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
 
   // ── M4.2: Authenticated fetch wrapper ───────────────────────────
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
       const token = await getToken();
-
-      if (!token) {
-        throw new Error("No Clerk token found. User may not be fully authenticated.");
-      }
-
       return fetch(url, {
         ...options,
         headers: {
+          ...options.headers,
           "Content-Type": "application/json",
-          ...(options.headers || {}),
           Authorization: `Bearer ${token}`,
         },
       });
@@ -526,14 +522,14 @@ export default function App() {
   // ── M5.1 — Hero Overview derived values ─────────────────────────
   const heroProps = useMemo(() => {
     // Cash = depository accounts (savings + checking)
-  const cashAvailable = accounts
-    .filter((a) => a.type === "depository")
-    .reduce((sum, a) => sum + Number(a.currentBalance || 0), 0)
+    const cashAvailable = accounts
+      .filter(a => a.type === "depository")
+      .reduce((sum, a) => sum + (Number(a.currentBalance) || 0), 0)
 
     // Debt = credit + loan accounts (displayed as positive)
     const debt = accounts
       .filter(a => a.type === "credit" || a.type === "loan")
-      .reduce((sum, a) => sum + Math.abs(a.currentBalance ?? 0), 0)
+      .reduce((sum, a) => sum + Math.abs(Number(a.currentBalance) || 0), 0)
 
     // Net worth = latest snapshot, MoM = vs ~30 entries ago
     const latest = netWorthHistory[netWorthHistory.length - 1]
@@ -565,6 +561,7 @@ export default function App() {
 
   // ── M4.1: Auto-connect — check for existing accounts on mount ──
   useEffect(() => {
+    if (!isLoaded) return;          // wait for Clerk to finish
     if (!isSignedIn) {
       setInitialLoading(false);
       return;
@@ -588,6 +585,7 @@ export default function App() {
 
   // ── Fetch link_token on mount ────────────────────────────────────
   useEffect(() => {
+    if (!isLoaded) return;
     if (!isSignedIn) return;
 
     (async () => {
@@ -688,6 +686,7 @@ export default function App() {
 
   // ── Auto-load data on mount ──────────────────────────────────────
   useEffect(() => {
+    if (!isLoaded) return;
     if (!isSignedIn) return;
 
     fetchData();
@@ -827,29 +826,23 @@ export default function App() {
         </div>
       </header>
 
-<main style={{
-  ...(styles.main as CSSProperties),
-  padding: isMobile ? "30px 16px" : "60px 40px",
-}}>
-  {/* M5.1 — Hero Overview: top-of-dashboard metric strip */}
-  {connected && <HeroOverview {...heroProps} />}
+      <main style={{
+          ...(styles.main as CSSProperties),
+          padding: isMobile ? "30px 16px" : "60px 40px",
+        }}>
+        {/* M5.1 — Hero Overview: top-of-dashboard metric strip */}
+        {connected && <HeroOverview {...heroProps} />}
 
-  <div style={styles.hero as CSSProperties}>
-    <h1 style={{
-      ...(styles.heroTitle as CSSProperties),
-      fontSize: isMobile ? "32px" : "52px",
-      letterSpacing: isMobile ? "-1px" : "-2px",
-    }}>
-      Connect your
-      <br />
-      bank account.
-    </h1>
-
-    <p style={styles.heroSub as CSSProperties}>
-      Node.js + React + Plaid Link integration.
-      <br />
-      Production mode — connected to Wells Fargo.
-    </p>
+        <div style={styles.hero as CSSProperties}>
+          <h1 style={{
+            ...(styles.heroTitle as CSSProperties),
+            fontSize: isMobile ? "32px" : "52px",
+            letterSpacing: isMobile ? "-1px" : "-2px",
+          }}>Connect your<br />bank account.</h1>
+          <p style={styles.heroSub as CSSProperties}>
+            Node.js + React + Plaid Link integration.<br />
+            Production mode — connected to Wells Fargo.
+          </p>
 
           <div style={{
             ...(styles.stepList as CSSProperties),
@@ -921,14 +914,35 @@ export default function App() {
           </div>
         )}
 
-        {/* Spending Breakdown */}
+        {/* M5.2 — Spending Breakdown + Month-over-Month Comparison */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Spending Breakdown</h2>
-              <span style={styles.sectionCount as CSSProperties}>by category</span>
-            </div>
-            <SpendingChart categories={categories} />
+            <section style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
+              gap: 24, marginBottom: 32,
+            }}>
+              <div style={{
+                background: "#161e14", border: "1px solid #253325",
+                borderRadius: 10, padding: 20,
+              }}>
+                <h3 style={{
+                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
+                }}>Spending breakdown</h3>
+                <SpendingChart data={categories} />
+              </div>
+              <div style={{
+                background: "#161e14", border: "1px solid #253325",
+                borderRadius: 10, padding: 20,
+              }}>
+                <h3 style={{
+                  fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+                  fontSize: 18, color: "#e8f4e8", marginBottom: 16,
+                }}>Month over month</h3>
+                <CategoryComparison />
+              </div>
+            </section>
           </div>
         )}
 
