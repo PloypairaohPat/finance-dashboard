@@ -1,5 +1,12 @@
 import { Request, Response } from 'express'
-import { fetchTransactions, fetchCategoryTotals, fetchMonthlyTotals, searchTransactions, updateTransaction } from '../services/transactions.service'
+import {
+  fetchTransactions,
+  fetchCategorySpend,
+  fetchCategoryComparison,
+  fetchMonthlyTotals,
+  searchTransactions,
+  updateTransaction,
+} from '../services/transactions.service'
 import { getUserId } from '../middleware/auth'
 
 export async function getTransactions(req: Request, res: Response): Promise<void> {
@@ -16,11 +23,24 @@ export async function getTransactions(req: Request, res: Response): Promise<void
 export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const categories = await fetchCategoryTotals(userId)
+    const categories = await fetchCategorySpend(userId)  // M5.2: was fetchCategoryTotals
     res.json({ categories })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
     res.status(500).json({ error: 'Failed to fetch categories' })
+  }
+}
+
+// M5.2: New handler for month-over-month comparison
+export async function getCategoryComparison(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = getUserId(req)
+    const months = Math.min(Math.max(Number(req.query.months) || 3, 1), 12)
+    const data = await fetchCategoryComparison(userId, months)
+    res.json(data)
+  } catch (err: any) {
+    console.error('❌ getCategoryComparison:', err.message)
+    res.status(500).json({ error: 'Failed to fetch comparison' })
   }
 }
 

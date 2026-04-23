@@ -73,3 +73,10 @@ export interface Alert {
   category?:   string
   date?:       string
 }
+
+export interface CategorySpend {
+  category:   string
+  amount:     number
+  color:      string
+  percentage: number
+}

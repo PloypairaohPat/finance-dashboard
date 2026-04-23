@@ -9,7 +9,7 @@ import {
 import { CategorySpend } from "./types";
 
 type SpendingChartProps = {
-  categories: CategorySpend[];
+  data: CategorySpend[];
 };
 
 type CustomTooltipProps = {
@@ -19,35 +19,15 @@ type CustomTooltipProps = {
   }>;
 };
 
-const COLORS = [
-  "#00e87a",
-  "#4a9eff",
-  "#f0a030",
-  "#a070ff",
-  "#ff7070",
-  "#00c4d4",
-  "#ffcc44",
-  "#ff8c44",
-  "#c0e860",
-  "#ff70c0",
-];
-
 const formatMoney = (value: number | null | undefined) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   }).format(Number(value || 0));
 
-const formatCategoryName = (name: string | null | undefined) =>
-  String(name || "")
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-
 function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
-
-  const { name, total } = payload[0].payload;
+  const d = payload[0].payload;
 
   return (
     <div
@@ -66,7 +46,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           marginBottom: "4px",
         }}
       >
-        {formatCategoryName(name)}
+        {d.category}
       </div>
       <div
         style={{
@@ -75,16 +55,16 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           color: "#00e87a",
         }}
       >
-        {formatMoney(total)}
+        {formatMoney(d.amount)} ({d.percentage}%)
       </div>
     </div>
   );
 }
 
-export default function SpendingChart({ categories }: SpendingChartProps) {
+export default function SpendingChart({ data }: SpendingChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  if (!Array.isArray(categories) || categories.length === 0) {
+  if (!Array.isArray(data) || data.length === 0) {
     return (
       <div
         style={{
@@ -98,10 +78,7 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
     );
   }
 
-  const totalSpent = categories.reduce(
-    (sum, item) => sum + Number(item.total || 0),
-    0
-  );
+  const totalSpent = data.reduce((sum, item) => sum + item.amount, 0);
 
   return (
     <div
@@ -112,13 +89,14 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
         flexWrap: "wrap",
       }}
     >
+      {/* ── Donut chart ── */}
       <div style={{ width: 260, flexShrink: 0 }}>
         <ResponsiveContainer width={260} height={260}>
           <PieChart>
             <Pie
-              data={categories}
-              dataKey="total"
-              nameKey="name"
+              data={data}
+              dataKey="amount"
+              nameKey="category"
               cx="50%"
               cy="50%"
               innerRadius={72}
@@ -128,13 +106,11 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
               onMouseEnter={(_, index: number) => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
             >
-              {categories.map((_, index) => (
+              {data.map((d, index) => (
                 <Cell
-                  key={index}
-                  fill={COLORS[index % COLORS.length]}
-                  opacity={
-                    activeIndex === null || activeIndex === index ? 1 : 0.35
-                  }
+                  key={d.category}
+                  fill={d.color}
+                  opacity={activeIndex === null || activeIndex === index ? 1 : 0.35}
                 />
               ))}
             </Pie>
@@ -142,6 +118,7 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
           </PieChart>
         </ResponsiveContainer>
 
+        {/* Center label */}
         <div
           style={{
             textAlign: "center",
@@ -174,16 +151,14 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
         <div style={{ height: "110px" }} />
       </div>
 
+      {/* ── Category list ── */}
       <div style={{ flex: 1, minWidth: 220, paddingTop: "8px" }}>
-        {categories.map((category, index) => {
-          const pct =
-            totalSpent > 0 ? (Number(category.total || 0) / totalSpent) * 100 : 0;
-          const color = COLORS[index % COLORS.length];
+        {data.map((d, index) => {
           const isActive = activeIndex === index;
 
           return (
             <div
-              key={`${category.name ?? "uncategorized"}-${index}`}
+              key={d.category}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
               style={{
@@ -200,7 +175,7 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
                   width: "10px",
                   height: "10px",
                   borderRadius: "50%",
-                  background: color,
+                  background: d.color,
                   flexShrink: 0,
                 }}
               />
@@ -214,7 +189,7 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
                   textOverflow: "ellipsis",
                 }}
               >
-                {formatCategoryName(category.name)}
+                {d.category}
               </div>
               <div
                 style={{
@@ -227,9 +202,9 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
               >
                 <div
                   style={{
-                    width: `${pct}%`,
+                    width: `${d.percentage}%`,
                     height: "100%",
-                    background: color,
+                    background: d.color,
                     borderRadius: "2px",
                   }}
                 />
@@ -243,7 +218,7 @@ export default function SpendingChart({ categories }: SpendingChartProps) {
                   textAlign: "right",
                 }}
               >
-                {formatMoney(category.total)}
+                {formatMoney(d.amount)}
               </div>
             </div>
           );
