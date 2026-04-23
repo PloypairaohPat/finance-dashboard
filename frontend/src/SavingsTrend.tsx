@@ -27,15 +27,16 @@ export default function SavingsTrend() {
     ;(async () => {
       try {
         const token = await getToken()
-        const res = await fetch(`${API_URL}/cashflow`, {
+        const res = await fetch(`${API_URL}/cashflow?months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (res.ok) {
           const json = await res.json()
-          // /cashflow may return a bare array or { months: [...] } etc.
+          console.log("💰 cashflow raw response:", json)
           const all: CashFlowRow[] = Array.isArray(json)
             ? json
-            : (json.months ?? json.data ?? json.cashflow ?? [])
+            : (json.cashflow ?? json.cashFlow ?? [])
+          console.log("💰 rows extracted:", all.length)
           setRows(all.slice(-6))
         }
       } finally { setLoading(false) }
