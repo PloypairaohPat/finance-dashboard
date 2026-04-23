@@ -25,6 +25,7 @@ import {
 } from "@clerk/clerk-react";
 import { API_URL } from "./config"
 import HeroOverview from "./HeroOverview"
+import InsightsDashboard from "./InsightsDashboard"
 
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -913,7 +914,14 @@ export default function App() {
             </div>
           </div>
         )}
-
+        
+        {/* Financial Insights */}
+        {accounts.length > 0 && (
+          <section style={{ marginBottom: 32 }}>
+            <InsightsDashboard />
+            </section>
+          )}
+          
         {/* M5.2 — Spending Breakdown + Month-over-Month Comparison */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>

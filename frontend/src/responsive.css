@@ -50,3 +50,10 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* M5.4 — Insights dashboard responsive grid */
+@media (max-width: 900px) {
+  .insights-row {
+    grid-template-columns: 1fr !important;
+  }
+}
