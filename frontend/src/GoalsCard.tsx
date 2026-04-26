@@ -31,14 +31,14 @@ export default function GoalsCard() {
   const [error, setError] = useState<string | null>(null)
 
   const reload = async () => {
-  const token = await getToken()
-  const [g, a] = await Promise.all([
-    fetch(`${API_URL}/goals`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-    fetch(`${API_URL}/accounts`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-  ])
-  setGoals(Array.isArray(g) ? g : [])
-  setAccounts(Array.isArray(a) ? a : (a.accounts ?? []))
-}
+    const token = await getToken()
+    const [g, a] = await Promise.all([
+      fetch(`${API_URL}/goals`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API_URL}/accounts`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ])
+    setGoals(Array.isArray(g) ? g : [])
+    setAccounts(Array.isArray(a) ? a : (a.accounts ?? []))
+  }
 
   useEffect(() => { if (isSignedIn) reload() }, [isSignedIn])  // eslint-disable-line
 
@@ -87,7 +87,7 @@ export default function GoalsCard() {
     <div>
       {goals.length === 0 && !adding && (
         <div style={{ color: "#5a7a5a", fontSize: 13, marginBottom: 14 }}>
-          No goals yet. Start with an emergency fund?
+          Start with an emergency fund.
         </div>
       )}
 
@@ -97,7 +97,7 @@ export default function GoalsCard() {
           : g.status === "complete" ? "#00e87a"
           : "#00a856"
         return (
-          <div key={g.id} style={{
+          <div key={g.id} className="interactive-row" style={{
             display: "grid",
             gridTemplateColumns: "36px 1fr auto",
             gap: 14, padding: "12px 0",

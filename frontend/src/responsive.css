@@ -57,3 +57,30 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* M5.10 — Skeleton pulse animation */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: .5; }
+  50%      { opacity: .15; }
+}
+.skeleton-pulse {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* M5.10 — Global transition for interactive elements
+   (applies as a default; components can override per-property) */
+button, a, .interactive-row {
+  transition: background .15s ease, border-color .15s ease,
+              color .15s ease, opacity .15s ease, transform .15s ease;
+}
+
+/* M5.10 — Hover lift for clickable rows */
+.interactive-row {
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.interactive-row:hover {
+  transform: translateY(-1px);
+  border-color: #253325 !important;
+  background: rgba(255,122,107,0.02);
+}

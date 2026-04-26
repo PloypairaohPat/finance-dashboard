@@ -1,7 +1,7 @@
 {
-  "short_name": "plaid.app",
-  "name": "plaid.app — Personal Finance Dashboard",
-  "description": "Track your bank accounts, spending, budgets, and net worth in real time.",
+  "short_name": "Ledger",
+  "name": "Ledger — Personal Finance",
+  "description": "Lock in little bro",
   "icons": [
     {
       "src": "icon-192.png",
@@ -18,7 +18,7 @@
   ],
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#0a0a0a",
-  "background_color": "#0a0a0a",
+  "theme_color": "#0a0f0c",
+  "background_color": "#0a0f0c",
   "orientation": "portrait"
 }

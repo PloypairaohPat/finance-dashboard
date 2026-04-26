@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { SkeletonList } from "./Skeleton"
 
 interface MonthData {
   month: string
@@ -31,11 +32,12 @@ export default function CategoryComparison() {
     })()
   }, [isSignedIn, getToken])
 
-  if (loading) return <div style={{ color: "#5a7a5a", fontSize: 13 }}>Loading…</div>
+  if (loading) return <SkeletonList rows={4} />
+
   if (data.length < 2) {
     return (
       <div style={{ color: "#5a7a5a", fontSize: 13 }}>
-        Need at least 2 months of data for comparison.
+        Need a full month for comparison.
       </div>
     )
   }

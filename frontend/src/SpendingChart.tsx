@@ -73,7 +73,7 @@ export default function SpendingChart({ data }: SpendingChartProps) {
           fontSize: "13px",
         }}
       >
-        No spending data available yet.
+        No spending yet this month.
       </div>
     );
   }

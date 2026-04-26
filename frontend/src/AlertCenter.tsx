@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import type { Alert, Severity } from "./types"
+import { SkeletonList } from "./Skeleton"
 
 const SEV_ORDER: Record<Severity, number> = { high: 0, medium: 1, positive: 2, low: 3 }
 const SEV_STYLE: Record<Severity, { bg: string; border: string; left: string; text: string; icon: string }> = {
@@ -54,7 +55,8 @@ export default function AlertCenter() {
     })
   }
 
-  if (loading) return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 12 }}>Loading alerts…</div>
+  if (loading) return <SkeletonList rows={2} />
+
   if (alerts.length === 0) {
     return (
       <div style={{
@@ -63,7 +65,7 @@ export default function AlertCenter() {
         textAlign: "center",
         fontFamily: "IBM Plex Mono, monospace", letterSpacing: ".04em",
       }}>
-        No active alerts. Everything's quiet.
+        Nothing needs attention.
       </div>
     )
   }
@@ -76,7 +78,7 @@ export default function AlertCenter() {
       {visible.map(a => {
         const style = SEV_STYLE[a.severity]
         return (
-          <div key={a.id} style={{
+          <div key={a.id} className="interactive-row" style={{
             background: style.bg, border: `1px solid ${style.border}`,
             borderLeft: `3px solid ${style.left}`, borderRadius: 6,
             padding: "12px 14px", marginBottom: 8,

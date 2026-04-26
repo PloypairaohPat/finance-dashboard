@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────
-//  App.tsx  —  Plaid Integration Frontend
+//  App.tsx  —  Ledger Personal Finance Dashboard
 // ─────────────────────────────────────────────────────────────────
 
 import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from "react";
@@ -50,8 +50,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     justifyContent: "space-between",
     background: "#0d0d0d",
   },
-  logo:       { fontSize: "20px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8" },
-  logoAccent: { color: "#00e5a0" },
   main:      { maxWidth: "900px", margin: "0 auto", padding: "60px 40px" },
   hero:      { marginBottom: "60px" },
   heroTitle: {
@@ -425,17 +423,25 @@ export default function App() {
     { label: "transactions fetched",  done: connected },
   ];
 
+  // ── Initial loading splash ───────────────────────────────────────
   if (initialLoading) {
     return (
       <div style={{
         display: "flex", flexDirection: "column",
         justifyContent: "center", alignItems: "center",
-        height: "100vh", background: "#0a0a0a", gap: "16px",
+        height: "100vh", background: "#0a0f0c", gap: "16px",
       }}>
-        <div style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8", fontFamily: "'Syne', sans-serif" }}>
-          plaid<span style={{ color: "#00e5a0" }}>.</span>app
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{
+            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+            fontSize: 24, color: "#e8f4e8", letterSpacing: "-.01em",
+          }}>Ledger</span>
+          <span style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
+            color: "#5a7a5a", letterSpacing: ".06em",
+          }}>v0.5</span>
         </div>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#555" }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#5a7a5a" }}>
           Loading your dashboard…
         </div>
       </div>
@@ -448,10 +454,17 @@ export default function App() {
       <div style={{
         display: "flex", flexDirection: "column",
         justifyContent: "center", alignItems: "center",
-        height: "100vh", background: "#0a0a0a", gap: "24px",
+        height: "100vh", background: "#0a0f0c", gap: "24px",
       }}>
-        <div style={{ fontSize: "28px", fontWeight: 800, letterSpacing: "-0.5px", color: "#f0ede8", fontFamily: "'Syne', sans-serif" }}>
-          plaid<span style={{ color: "#00e5a0" }}>.</span>app
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{
+            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+            fontSize: 28, color: "#e8f4e8", letterSpacing: "-.01em",
+          }}>Ledger</span>
+          <span style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
+            color: "#5a7a5a", letterSpacing: ".06em",
+          }}>v0.5</span>
         </div>
         <SignIn />
       </div>
@@ -463,7 +476,18 @@ export default function App() {
         ...(styles.header as CSSProperties),
         padding: isMobile ? "16px 20px" : "24px 40px",
       }}>
-        <div style={styles.logo as CSSProperties}>plaid<span style={{ color: "#00e5a0" }}>.</span>app</div>
+        {/* Word-mark */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{
+            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+            fontSize: 22, color: "#e8f4e8", letterSpacing: "-.01em",
+          }}>Ledger</span>
+          <span style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 10,
+            color: "#5a7a5a", letterSpacing: ".06em",
+          }}>v0.5</span>
+        </div>
+
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {connected && (
             <button
