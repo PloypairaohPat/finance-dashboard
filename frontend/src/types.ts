@@ -54,16 +54,6 @@ export interface MonthlyTotal {
   txCount: number
 }
 
-export interface Alert {
-  type:        "large_transaction" | "new_merchant" | "monthly_pace" | "budget_exceeded"
-  severity:    "warning" | "critical"
-  title:       string
-  description: string
-  amount?:     number
-  category?:   string
-  date?:       string
-}
-
 export interface CategorySpend {
   category:   string
   amount:     number
@@ -207,4 +197,32 @@ export interface SearchResult {
 export interface CategoryOption {
   category: string
   color: string
+}
+
+export type Severity = "high" | "medium" | "low" | "positive"
+export type AlertKind =
+  | "overspending" | "low_balance" | "missed_paycheck"
+  | "large_transaction" | "subscription_price_up"
+  | "budget_exceeded" | "budget_projected_over" | "positive_milestone"
+
+export interface Alert {
+  id: string
+  kind: AlertKind
+  severity: Severity
+  title: string
+  body: string
+  data: Record<string, unknown>
+  triggeredAt: string         // ISO
+  dismissedAt: string | null
+}
+
+export interface WeeklyDigest {
+  weekStart: string
+  weekEnd: string
+  spent: number
+  income: number
+  netSaved: number
+  newAlertCount: number
+  biggestMover: { category: string; pctChange: number } | null
+  summary: string
 }

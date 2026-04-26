@@ -120,3 +120,22 @@ model BalanceSnapshot {
   @@index([userId, date])
   @@index([date])
 }
+
+model Alert {
+  id           String    @id @default(uuid())
+  userId       String
+  kind         String
+  fingerprint  String
+  severity     String
+  title        String
+  body         String
+  data         Json?
+  triggeredAt  DateTime  @default(now())
+  dismissedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@unique([userId, fingerprint])
+  @@index([userId, triggeredAt(sort: Desc)])
+}

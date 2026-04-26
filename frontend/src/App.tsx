@@ -8,7 +8,6 @@ import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
 import SubscriptionTracker from "./SubscriptionTracker";
 import { Account, EnrichedTransaction, CategorySpend, Budget, Alert } from "./types"
-import AlertBanner from "./AlertBanner"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
 import TransactionDetail from "./TransactionDetail"
@@ -27,6 +26,8 @@ import { API_URL } from "./config"
 import HeroOverview from "./HeroOverview"
 import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
+import WeeklyDigestCard from "./WeeklyDigestCard"
+import AlertCenter from "./AlertCenter"
 
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -219,7 +220,6 @@ export default function App() {
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // M5.7: selected transaction for the detail modal
   const [selectedTx, setSelectedTx] = useState<EnrichedTransaction | null>(null)
 
   const isMobile = useMediaQuery("(max-width: 640px)")
@@ -265,7 +265,7 @@ export default function App() {
     const thisMonth = cashFlow.find(c => c.month === ym)
     const monthSaved = thisMonth?.net ?? null
     const monthLabel = now.toLocaleString("en-US", { month: "long" })
-    const lastSyncAt = null // TransactionList owns transactions now
+    const lastSyncAt = null
 
     return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, lastSyncAt }
   }, [accounts, netWorthHistory, cashFlow])
@@ -319,6 +319,37 @@ export default function App() {
     }
   }, [authFetch]);
 
+  // ── Fetch alerts — backend returns Alert[] directly ──────────────
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res  = await authFetch(`${API_URL}/alerts`)
+      const data = await res.json() as Alert[]
+      setAlerts(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      console.error("Alerts fetch failed:", e.message)
+    }
+  }, [authFetch])
+
+  const fetchNetWorth = useCallback(async () => {
+    try {
+      const res  = await authFetch(`${API_URL}/networth`)
+      const data = await res.json() as { history?: Array<{ date: string; netWorth: number }> }
+      setNetWorthHistory(data.history ?? [])
+    } catch (e: any) {
+      console.error("Net worth fetch failed:", e.message)
+    }
+  }, [authFetch])
+
+  const fetchCashFlow = useCallback(async () => {
+    try {
+      const res  = await authFetch(`${API_URL}/cashflow`)
+      const data = await res.json() as { cashFlow?: Array<{ month: string; net: number }> }
+      setCashFlow(data.cashFlow ?? [])
+    } catch (e: any) {
+      console.error("Cash flow fetch failed:", e.message)
+    }
+  }, [authFetch])
+
   // ── Fetch all dashboard data ─────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading((l) => ({ ...l, accounts: true }));
@@ -345,36 +376,6 @@ export default function App() {
 
     fetchBudgets();
   }, [authFetch, fetchBudgets]);
-
-  const fetchAlerts = useCallback(async () => {
-    try {
-      const res  = await authFetch(`${API_URL}/alerts`)
-      const data = await res.json() as { alerts: Alert[] }
-      setAlerts(data.alerts ?? [])
-    } catch (e: any) {
-      console.error("Alerts fetch failed:", e.message)
-    }
-  }, [authFetch])
-
-  const fetchNetWorth = useCallback(async () => {
-    try {
-      const res  = await authFetch(`${API_URL}/networth`)
-      const data = await res.json() as { history?: Array<{ date: string; netWorth: number }> }
-      setNetWorthHistory(data.history ?? [])
-    } catch (e: any) {
-      console.error("Net worth fetch failed:", e.message)
-    }
-  }, [authFetch])
-
-  const fetchCashFlow = useCallback(async () => {
-    try {
-      const res  = await authFetch(`${API_URL}/cashflow`)
-      const data = await res.json() as { cashFlow?: Array<{ month: string; net: number }> }
-      setCashFlow(data.cashFlow ?? [])
-    } catch (e: any) {
-      console.error("Cash flow fetch failed:", e.message)
-    }
-  }, [authFetch])
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
@@ -540,14 +541,19 @@ export default function App() {
           {error && <div style={styles.error as CSSProperties}>⚠ {error}</div>}
         </div>
 
-        {/* Smart Alerts */}
-        {alerts.length > 0 && (
+        {/* Weekly Digest + Smart Alerts (M5.8) */}
+        {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Alerts</h2>
-              <span style={styles.sectionCount as CSSProperties}>{alerts.length} active</span>
+            <WeeklyDigestCard />
+            <div style={{ marginTop: 24 }}>
+              <div style={styles.sectionHeader as CSSProperties}>
+                <h2 style={styles.sectionTitle as CSSProperties}>Alerts</h2>
+                <span style={styles.sectionCount as CSSProperties}>
+                  {alerts.filter(a => !a.dismissedAt).length} active
+                </span>
+              </div>
+              <AlertCenter />
             </div>
-            <AlertBanner alerts={alerts} />
           </div>
         )}
 
@@ -667,7 +673,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Transactions — M5.7: TransactionList with cursor pagination + logos */}
+        {/* Transactions */}
         {accounts.length > 0 && (
           <div style={styles.section as CSSProperties}>
             <div style={styles.sectionHeader as CSSProperties}>
@@ -679,7 +685,6 @@ export default function App() {
       </main>
     </div>
 
-    {/* Transaction Detail modal — rendered outside main flow so it overlays everything */}
     {selectedTx && (
       <TransactionDetail
         transaction={selectedTx}
