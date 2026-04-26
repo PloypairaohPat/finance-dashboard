@@ -139,3 +139,21 @@ model Alert {
   @@unique([userId, fingerprint])
   @@index([userId, triggeredAt(sort: Desc)])
 }
+
+model Goal {
+  id            String    @id @default(uuid())
+  userId        String
+  type          String
+  name          String
+  targetAmount  Decimal?  @db.Decimal(12, 2)
+  startAmount   Decimal?  @db.Decimal(12, 2)
+  deadline      DateTime? @db.Date
+  accountId     String?
+  data          Json      @default("{}")
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([userId, createdAt(sort: Desc)])
+}

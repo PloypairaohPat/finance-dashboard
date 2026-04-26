@@ -28,6 +28,8 @@ import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
 import WeeklyDigestCard from "./WeeklyDigestCard"
 import AlertCenter from "./AlertCenter"
+import FinancialScoreCard from "./FinancialScoreCard"
+import GoalsCard from "./GoalsCard"
 
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -613,6 +615,27 @@ export default function App() {
             </div>
             <TrendChart />
           </div>
+        )}
+
+        {/* Financial Score + Goals (M5.9) */}
+        {accounts.length > 0 && (
+          <section style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1.2fr",
+            gap: 24, marginBottom: 32,
+          }}>
+            <FinancialScoreCard />
+            <div style={{
+              background: "#161e14", border: "1px solid #253325",
+              borderRadius: 10, padding: 20,
+            }}>
+              <h3 style={{
+                fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+                fontSize: 18, color: "#e8f4e8", marginBottom: 16,
+              }}>Goals</h3>
+              <GoalsCard />
+            </div>
+          </section>
         )}
 
         {/* Net Worth */}

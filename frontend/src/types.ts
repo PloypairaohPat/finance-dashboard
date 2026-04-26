@@ -226,3 +226,38 @@ export interface WeeklyDigest {
   biggestMover: { category: string; pctChange: number } | null
   summary: string
 }
+
+export type GoalType = "savings" | "emergency_fund" | "vacation" | "debt_payoff"
+export type GoalStatus = "on_track" | "behind" | "ahead" | "complete" | "new"
+
+export interface EnrichedGoal {
+  id: string
+  type: GoalType
+  name: string
+  targetAmount: number | null
+  startAmount: number | null
+  currentAmount: number
+  progressPct: number
+  deadline: string | null
+  accountId: string | null
+  data: Record<string, unknown>
+  status: GoalStatus
+  hint: string | null
+  createdAt: string
+}
+
+export type ScoreGrade = "excellent" | "good" | "fair" | "needs_work" | "at_risk"
+export type ScoreComponentKey = "savingsRate" | "spendingControl" | "debtLoad" | "growthTrend"
+
+export interface ScoreComponent {
+  value: number | null
+  weight: number
+  hint: string
+  dataLimited: boolean
+}
+
+export interface FinancialScore {
+  total: number
+  grade: ScoreGrade
+  components: Record<ScoreComponentKey, ScoreComponent>
+}

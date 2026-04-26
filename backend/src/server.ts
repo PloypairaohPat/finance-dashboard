@@ -21,6 +21,8 @@ import { clerkAuth, requireSession } from "./middleware/auth"
 import { startScheduler } from "./scheduler"
 import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
+import goalsRoutes from "./routes/goals.routes"
+import scoreRoutes from "./routes/score.routes"
 
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
@@ -100,6 +102,8 @@ app.get('/categories', requireSession, getCategories)
 app.get('/categories/comparison', requireSession, getCategoryComparison)
 app.use("/insights", insightsRoutes)
 app.use("/subscriptions", subscriptionsRoutes)
+app.use("/goals", goalsRoutes)
+app.use("/score", scoreRoutes)
 
 // Plaid router still needs route-level auth inside plaid.routes.ts
 app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
