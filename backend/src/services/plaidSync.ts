@@ -10,16 +10,15 @@ import prisma        from '../lib/prisma'
 import { decrypt }   from '../utils/encrypt'
 import { cleanTransactions } from './cleaner'
 import { captureBalanceSnapshots } from "./networth.service"
+import { runDetectors } from "./alerts/dispatcher"
 
 async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
-  // Load PlaidItem from DB to get the cursor + encrypted token
   const item = await prisma.plaidItem.findUnique({
     where: { id: plaidItemId },
   });
 
   if (!item) throw new Error(`PlaidItem not found: ${plaidItemId}`);
 
-  // Decrypt token only for this call — never stored decrypted
   const access_token = decrypt(item.accessToken);
   let   cursor       = item.cursor ?? null;
 
@@ -28,12 +27,11 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
   let removed:  any[] = [];
   let hasMore  = true;
 
-  // Loop through pages — Plaid paginates sync results
   while (hasMore) {
     const response = await plaidClient.transactionsSync({
       access_token,
       cursor: cursor ?? undefined,
-      count: 500,  // max per page
+      count: 500,
     });
 
     const data = response.data;
@@ -41,7 +39,7 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
     modified = modified.concat(data.modified);
     removed  = removed.concat(data.removed);
     hasMore  = data.has_more;
-    cursor   = data.next_cursor; // advance cursor for next page
+    cursor   = data.next_cursor;
   }
 
   // ── Persist ADDED transactions ──────────────────────────────────
@@ -59,7 +57,6 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
         merchantName:     txn.merchant_name                       ?? null,
         categoryPrimary:  txn.personal_finance_category?.primary  ?? null,
         categoryDetailed: txn.personal_finance_category?.detailed ?? null,
-        // rawJson intentionally NOT updated — immutable after first insert
       },
       create: {
         userId:             item.userId,
@@ -73,13 +70,12 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
         categoryPrimary:    txn.personal_finance_category?.primary  ?? null,
         categoryDetailed:   txn.personal_finance_category?.detailed ?? null,
         pending:            txn.pending,
-        rawJson:            txn, // immutable — never update this column
+        rawJson:            txn,
       },
     });
   }
 
   // ── Update MODIFIED transactions ────────────────────────────────
-  // Pending → posted transitions, amount corrections, category updates
   for (const txn of modified) {
     await prisma.transaction.updateMany({
       where: { plaidTransactionId: txn.transaction_id },
@@ -94,8 +90,6 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
   }
 
   // ── Soft-delete REMOVED transactions ───────────────────────────
-  // Never hard-delete — set deletedAt timestamp instead.
-  // Raw data stays in DB as audit trail + future ML training data.
   for (const removedTxn of removed) {
     await prisma.transaction.updateMany({
       where: { plaidTransactionId: removedTxn.transaction_id },
@@ -109,23 +103,26 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
     data:  { cursor, lastSyncedAt: new Date() },
   });
 
-console.log(
-  `✅ Sync complete — added: ${added.length}, ` +
-  `modified: ${modified.length}, removed: ${removed.length}`
-);
+  console.log(
+    `✅ Sync complete — added: ${added.length}, ` +
+    `modified: ${modified.length}, removed: ${removed.length}`
+  );
 
-// ── Clean after every sync ────────────────────────────────────
-const clean = await cleanTransactions(prisma, item.userId)
-console.log(`   🧹 cleaned: ${clean.normalized} names, ${clean.resolved} pending resolved`)
+  // ── Clean after every sync ────────────────────────────────────
+  const clean = await cleanTransactions(prisma, item.userId)
+  console.log(`   🧹 cleaned: ${clean.normalized} names, ${clean.resolved} pending resolved`)
 
-// ── Capture balance snapshot after sync ───────────────────────
-await captureBalanceSnapshots(item.userId)
+  // ── Capture balance snapshot after sync ───────────────────────
+  await captureBalanceSnapshots(item.userId)
 
-return {
-  added:    added.length,
-  modified: modified.length,
-  removed:  removed.length,
-};
+  // ── Run alert detectors after sync ───────────────────────────
+  await runDetectors(item.userId)
+
+  return {
+    added:    added.length,
+    modified: modified.length,
+    removed:  removed.length,
+  };
 }
 
 export { syncTransactions };
