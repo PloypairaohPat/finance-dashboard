@@ -3,6 +3,7 @@ import {
   upsertBudget,
   fetchBudgetsWithSpend,
   fetchBudgetStatus,
+  deleteBudget,
 } from "../services/budgets.service"
 import { getUserId } from "../middleware/auth"
 import { DISPLAY_CATEGORIES, CATEGORY_COLORS } from "../lib/categoryMap"
@@ -67,4 +68,23 @@ export function getCategoryList(_req: Request, res: Response) {
       color: CATEGORY_COLORS[category],
     }))
   )
+}
+
+export async function removeBudget(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = getUserId(req)
+    const id = req.params.id as string
+    if (!id) {
+      res.status(400).json({ error: "Budget id is required" })
+      return
+    }
+    await deleteBudget(userId, id)
+    res.json({ ok: true })
+  } catch (err: any) {
+    console.error("removeBudget:", err.message)
+    res.status(500).json({ error: "Failed to delete budget" })
+  }
 }

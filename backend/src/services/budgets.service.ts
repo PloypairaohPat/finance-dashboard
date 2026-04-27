@@ -11,6 +11,7 @@ export type BudgetStatus =
   | "projected_over"
 
 export interface BudgetWithSpend {
+  id: string
   category: string
   monthlyLimit: number
   currentSpend: number
@@ -41,6 +42,15 @@ export async function upsertBudget(
     },
     update: { monthlyLimit },
     create: { userId, category, monthlyLimit, month },
+  })
+}
+
+export async function deleteBudget(
+  userId: string,
+  budgetId: string
+): Promise<void> {
+  await prisma.budget.deleteMany({
+    where: { id: budgetId, userId },
   })
 }
 
@@ -88,39 +98,27 @@ export async function fetchBudgetsWithSpend(
 
   for (const tx of transactions) {
     const mapped = mapPlaidCategory(tx.categoryPrimary)
-
-    spendMap[mapped] =
-      (spendMap[mapped] ?? 0) + tx.amount.toNumber()
+    spendMap[mapped] = (spendMap[mapped] ?? 0) + tx.amount.toNumber()
   }
 
   return budgets.map((b) => {
     const limit = b.monthlyLimit.toNumber()
-
-    const spend =
-      Math.round((spendMap[b.category] ?? 0) * 100) / 100
-
-    const pct =
-      limit > 0
-        ? Math.round((spend / limit) * 1000) / 10
-        : 0
-
-    const remaining =
-      Math.round((limit - spend) * 100) / 100
-
+    const spend = Math.round((spendMap[b.category] ?? 0) * 100) / 100
+    const pct = limit > 0 ? Math.round((spend / limit) * 1000) / 10 : 0
+    const remaining = Math.round((limit - spend) * 100) / 100
     const projected =
       projectionAllowed && day > 0
         ? Math.round(((spend / day) * daysInMonth) * 100) / 100
         : null
 
     let status: BudgetStatus
-
     if (pct >= 100) status = "over"
-    else if (projected !== null && projected > limit)
-      status = "projected_over"
+    else if (projected !== null && projected > limit) status = "projected_over"
     else if (pct >= 75) status = "warning"
     else status = "on_track"
 
     return {
+      id: b.id,
       category: b.category,
       monthlyLimit: limit,
       currentSpend: spend,
@@ -142,18 +140,10 @@ export async function fetchBudgetStatus(
   return {
     month,
     total: budgets.length,
-    on_track: budgets.filter(
-      (b) => b.status === "on_track"
-    ).length,
-    warning: budgets.filter(
-      (b) => b.status === "warning"
-    ).length,
-    over: budgets.filter(
-      (b) => b.status === "over"
-    ).length,
-    projected_over: budgets.filter(
-      (b) => b.status === "projected_over"
-    ).length,
+    on_track: budgets.filter((b) => b.status === "on_track").length,
+    warning: budgets.filter((b) => b.status === "warning").length,
+    over: budgets.filter((b) => b.status === "over").length,
+    projected_over: budgets.filter((b) => b.status === "projected_over").length,
     budgets,
   }
 }
