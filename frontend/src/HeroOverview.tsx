@@ -1,4 +1,5 @@
 import React from "react"
+import useMediaQuery from "./useMediaQuery"
 
 export interface HeroOverviewProps {
   netWorth: number | null
@@ -77,6 +78,8 @@ export default function HeroOverview(props: HeroOverviewProps) {
     lastSyncAt,
   } = props
 
+  const isMobile = useMediaQuery("(max-width: 640px)")
+
   const momText =
     netWorthMomPct === null
       ? "—"
@@ -91,7 +94,7 @@ export default function HeroOverview(props: HeroOverviewProps) {
       className="hero-overview"
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(5, 1fr)",
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
         gap: 12,
         marginBottom: 28,
       }}
@@ -122,7 +125,10 @@ export default function HeroOverview(props: HeroOverviewProps) {
         <div style={sub}>{monthLabel}</div>
       </div>
 
-      <div style={card}>
+      <div style={{
+        ...card,
+        ...(isMobile ? { gridColumn: "1 / -1" } : {}),
+      }}>
         <div style={label}>Last Sync</div>
         <div style={{ ...value, fontSize: 18 }}>{fmtRelative(lastSyncAt)}</div>
         <div style={sub}>

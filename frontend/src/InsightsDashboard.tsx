@@ -6,6 +6,7 @@ import TopMerchants from "./TopMerchants"
 import LargestPurchases from "./LargestPurchases"
 import Skeleton, { SkeletonStat, SkeletonRow } from "./Skeleton"
 import { card } from "./tokens"
+import useMediaQuery from "./useMediaQuery"
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -56,13 +57,11 @@ const statValue: React.CSSProperties = {
   fontSize: 20,
 }
 
-function InsightsSkeleton() {
+function InsightsSkeleton({ isMobile }: { isMobile: boolean }) {
+  const cols = isMobile ? "1fr" : "1fr 1fr"
   return (
     <div style={{ display: "grid", gap: 24 }}>
-      <div
-        className="insights-row"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 24 }}>
         <div style={card}>
           <Skeleton width="45%" height={16} style={{ marginBottom: 14 }} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -72,7 +71,6 @@ function InsightsSkeleton() {
             <SkeletonStat />
           </div>
         </div>
-
         <div style={card}>
           <Skeleton width="35%" height={16} style={{ marginBottom: 18 }} />
           <Skeleton width="45%" height={34} style={{ marginBottom: 10 }} />
@@ -82,17 +80,13 @@ function InsightsSkeleton() {
         </div>
       </div>
 
-      <div
-        className="insights-row"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 24 }}>
         <div style={card}>
           <Skeleton width="45%" height={16} style={{ marginBottom: 14 }} />
           <SkeletonRow />
           <SkeletonRow />
           <SkeletonRow />
         </div>
-
         <div style={card}>
           <Skeleton width="45%" height={16} style={{ marginBottom: 14 }} />
           <SkeletonRow />
@@ -115,6 +109,7 @@ export default function InsightsDashboard() {
   const { getToken, isSignedIn } = useAuth()
   const [data, setData] = useState<InsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const isMobile = useMediaQuery("(max-width: 640px)")
 
   useEffect(() => {
     if (!isSignedIn) return
@@ -134,18 +129,16 @@ export default function InsightsDashboard() {
   }, [isSignedIn, getToken])
 
   if (loading || !data) {
-    return <InsightsSkeleton />
+    return <InsightsSkeleton isMobile={isMobile} />
   }
 
   const { summary, runway, highlights } = data
   const netColor = summary.netSaved >= 0 ? "#00a856" : "#ff7a6b"
+  const cols = isMobile ? "1fr" : "1fr 1fr"
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
-      <div
-        className="insights-row"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 24 }}>
         <div style={card}>
           <div style={cardTitle}>Monthly summary · {summary.monthLabel}</div>
 
@@ -179,45 +172,29 @@ export default function InsightsDashboard() {
 
           {runway.months === null ? (
             <div>
-              <div
-                style={{
-                  fontFamily: "Fraunces, Georgia, serif",
-                  fontSize: 28,
-                  color: "#5a7a5a",
-                  fontWeight: 300,
-                }}
-              >
-                —
-              </div>
-
+              <div style={{
+                fontFamily: "Fraunces, Georgia, serif",
+                fontSize: 28, color: "#5a7a5a", fontWeight: 300,
+              }}>—</div>
               <div style={{ fontSize: 12, color: "#5a7a5a", marginTop: 8 }}>
                 Need at least 30 days of expense data.
               </div>
             </div>
           ) : (
             <div>
-              <div
-                style={{
-                  fontFamily: "Fraunces, Georgia, serif",
-                  fontWeight: 300,
-                  fontSize: 32,
-                  color: "#e8f4e8",
-                  lineHeight: 1.1,
-                }}
-              >
+              <div style={{
+                fontFamily: "Fraunces, Georgia, serif",
+                fontWeight: 300, fontSize: 32,
+                color: "#e8f4e8", lineHeight: 1.1,
+              }}>
                 {runway.months} months
               </div>
 
-              <div
-                style={{
-                  fontFamily: "IBM Plex Mono, monospace",
-                  fontSize: 10,
-                  color: "#5a7a5a",
-                  marginTop: 6,
-                  textTransform: "uppercase",
-                  letterSpacing: ".08em",
-                }}
-              >
+              <div style={{
+                fontFamily: "IBM Plex Mono, monospace",
+                fontSize: 10, color: "#5a7a5a", marginTop: 6,
+                textTransform: "uppercase", letterSpacing: ".08em",
+              }}>
                 {fmt(runway.cashAvailable)} cash · {fmt(runway.avgMonthlyExpenses)}/mo avg
               </div>
 
@@ -233,10 +210,7 @@ export default function InsightsDashboard() {
         </div>
       </div>
 
-      <div
-        className="insights-row"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 24 }}>
         <div style={card}>
           <div style={cardTitle}>This month · insights</div>
 
@@ -249,24 +223,18 @@ export default function InsightsDashboard() {
               <div
                 key={idx}
                 style={{
-                  display: "flex",
-                  gap: 10,
-                  padding: "10px 0",
+                  display: "flex", gap: 10, padding: "10px 0",
                   borderBottom: idx < highlights.length - 1 ? "1px solid #1e2b1e" : "none",
                   alignItems: "flex-start",
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: "IBM Plex Mono, monospace",
-                    color: SENT_COLOR[h.sentiment],
-                    width: 14,
-                    flexShrink: 0,
-                  }}
-                >
+                <span style={{
+                  fontFamily: "IBM Plex Mono, monospace",
+                  color: SENT_COLOR[h.sentiment],
+                  width: 14, flexShrink: 0,
+                }}>
                   {SENT_ICON[h.sentiment]}
                 </span>
-
                 <span style={{ fontSize: 12.5, color: "#d4e8d4", lineHeight: 1.55 }}>
                   {h.headline}
                 </span>
