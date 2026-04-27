@@ -29,6 +29,7 @@ const STATUS_COLORS = {
 interface Props {
   budget: Budget
   onUpdated: () => void
+  onDeleted: () => void
 }
 
 function fmt(n: number) {
@@ -39,10 +40,11 @@ function fmt(n: number) {
   }).format(n)
 }
 
-export default function BudgetCard({ budget, onUpdated }: Props) {
+export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
   const [editing, setEditing] = useState(false)
   const [limitInput, setLimitInput] = useState(String(budget.monthlyLimit))
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const { getToken } = useAuth()
 
   const colors = STATUS_COLORS[budget.status]
@@ -62,7 +64,6 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
       setEditing(false)
       return
     }
-
     setSaving(true)
     try {
       const token = await getToken()
@@ -82,6 +83,21 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
     } finally {
       setSaving(false)
       setEditing(false)
+    }
+  }
+
+  async function deleteBudget() {
+    if (!window.confirm(`Remove budget for ${budget.category}?`)) return
+    setDeleting(true)
+    try {
+      const token = await getToken()
+      await fetch(`${API_URL}/budgets/${budget.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      onDeleted()
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -108,35 +124,25 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
       : `Remaining: ${fmt(budget.remaining)}`
 
   return (
-    <div
-      style={{
-        background: "#111710",
-        border: "1px solid #1e2b1e",
-        borderRadius: 10,
-        padding: "16px 18px",
+    <div style={{
+      background: "#111710",
+      border: "1px solid #1e2b1e",
+      borderRadius: 10,
+      padding: "16px 18px",
+      marginBottom: 10,
+    }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
         marginBottom: 10,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 10,
-        }}
-      >
-        <span
-          style={{
-            fontWeight: 500,
-            fontSize: 13.5,
-            color: "#d4e8d4",
-          }}
-        >
+      }}>
+        <span style={{ fontWeight: 500, fontSize: 13.5, color: "#d4e8d4" }}>
           {budget.category}
         </span>
 
-        <span
-          style={{
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
             fontFamily: "IBM Plex Mono, monospace",
             fontSize: 10,
             padding: "2px 8px",
@@ -146,92 +152,98 @@ export default function BudgetCard({ budget, onUpdated }: Props) {
             border: `1px solid ${colors.bar}33`,
             textTransform: "uppercase",
             letterSpacing: "0.08em",
-          }}
-        >
-          {badgeText}
-        </span>
+          }}>
+            {badgeText}
+          </span>
+
+          <button
+            onClick={deleteBudget}
+            disabled={deleting}
+            title="Remove budget"
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "#5a7a5a",
+              fontSize: 14,
+              lineHeight: 1,
+              padding: "2px 4px",
+              borderRadius: 4,
+              opacity: deleting ? 0.4 : 1,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#e85555" }}
+            onMouseLeave={e => { e.currentTarget.style.color = "#5a7a5a" }}
+          >
+            ×
+          </button>
+        </div>
       </div>
 
-      <div
-        style={{
-          background: "#1e2b1e",
-          borderRadius: 3,
-          height: 6,
-          marginBottom: 10,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
+      <div style={{
+        background: "#1e2b1e",
+        borderRadius: 3,
+        height: 6,
+        marginBottom: 10,
+        overflow: "hidden",
+        position: "relative",
+      }}>
         {showProjection && (
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: `${projectedPct}%`,
-              height: "100%",
-              background:
-                "repeating-linear-gradient(45deg, rgba(240,160,48,.45) 0, rgba(240,160,48,.45) 3px, transparent 3px, transparent 6px)",
-              borderRadius: 3,
-            }}
-          />
+          <div style={{
+            position: "absolute",
+            top: 0, left: 0,
+            width: `${projectedPct}%`,
+            height: "100%",
+            background:
+              "repeating-linear-gradient(45deg, rgba(240,160,48,.45) 0, rgba(240,160,48,.45) 3px, transparent 3px, transparent 6px)",
+            borderRadius: 3,
+          }} />
         )}
 
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: colors.bar,
-            borderRadius: 3,
-            transition: "width 0.4s ease",
-            position: "relative",
-          }}
-        />
+        <div style={{
+          width: `${pct}%`,
+          height: "100%",
+          background: colors.bar,
+          borderRadius: 3,
+          transition: "width 0.4s ease",
+          position: "relative",
+        }} />
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}>
         <div>
-          <div
-            style={{
-              fontFamily: "IBM Plex Mono, monospace",
-              fontSize: 11,
-              color: "#8a7a5a",
-              marginBottom: 2,
-            }}
-          >
+          <div style={{
+            fontFamily: "IBM Plex Mono, monospace",
+            fontSize: 11,
+            color: "#8a7a5a",
+            marginBottom: 2,
+          }}>
             {fmt(budget.currentSpend)} / {fmt(budget.monthlyLimit)}
           </div>
-          <div
-            style={{
-              fontFamily: "IBM Plex Mono, monospace",
-              fontSize: 10.5,
-              color:
-                budget.status === "over"
-                  ? "#e85555"
-                  : budget.status === "projected_over"
-                  ? "#f0a030"
-                  : "#5a7a5a",
-            }}
-          >
+          <div style={{
+            fontFamily: "IBM Plex Mono, monospace",
+            fontSize: 10.5,
+            color:
+              budget.status === "over"
+                ? "#e85555"
+                : budget.status === "projected_over"
+                ? "#f0a030"
+                : "#5a7a5a",
+          }}>
             {subText}
           </div>
         </div>
 
         {editing ? (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              style={{
-                fontFamily: "IBM Plex Mono, monospace",
-                fontSize: 11,
-                color: "#5a7a5a",
-              }}
-            >
+            <span style={{
+              fontFamily: "IBM Plex Mono, monospace",
+              fontSize: 11,
+              color: "#5a7a5a",
+            }}>
               limit $
             </span>
             <input

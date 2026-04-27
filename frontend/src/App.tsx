@@ -30,7 +30,7 @@ import WeeklyDigestCard from "./WeeklyDigestCard"
 import AlertCenter from "./AlertCenter"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
-
+import AddBudgetRow from "./AddBudgetRow"
 
 // ── Styles ────────────────────────────────────────────────────────
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
@@ -697,17 +697,19 @@ export default function App() {
         )}
 
         {/* Monthly Budgets */}
-        {budgets.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Monthly Budgets</h2>
-              <span style={styles.sectionCount as CSSProperties}>this month</span>
+        <div style={styles.section as CSSProperties}>
+          <div style={styles.sectionHeader as CSSProperties}>
+            <h2 style={styles.sectionTitle as CSSProperties}>Monthly Budgets</h2>
+            <span style={styles.sectionCount as CSSProperties}>this month</span>
             </div>
             {budgets.map((b) => (
-              <BudgetCard key={b.category} budget={b} onUpdated={fetchBudgets} />
-            ))}
-          </div>
-        )}
+              <BudgetCard key={b.category} budget={b} onUpdated={fetchBudgets} onDeleted={fetchBudgets} />
+              ))}
+              <AddBudgetRow
+              existingCategories={budgets.map(b => b.category)}
+              onAdded={fetchBudgets}
+              />
+            </div>
 
         {/* Recurring & Subscriptions */}
         {accounts.length > 0 && (

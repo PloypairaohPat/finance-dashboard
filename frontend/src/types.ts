@@ -68,6 +68,7 @@ export type BudgetStatus =
   | "projected_over"
 
 export interface Budget {
+  id: string
   category: string
   monthlyLimit: number
   currentSpend: number
