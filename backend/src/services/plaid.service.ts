@@ -2,6 +2,7 @@ import { PlaidApi, CountryCode, Products } from 'plaid'
 import prisma              from '../lib/prisma'
 import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
+import { captureBalanceSnapshots } from './networth.service'
 
 function sanitizeAccountName(name: string): string {
   // Plaid sends ® as a lone ISO-8859-1 byte (0xAE) inside a UTF-8 JSON response;
@@ -181,6 +182,15 @@ export async function triggerSync(
     added    += result.added
     modified += result.modified
     removed  += result.removed
+  }
+
+  // Belt-and-suspenders: write a snapshot after ALL items are synced so
+  // the chart gets a point even when individual item syncs partially fail.
+  try {
+    const snap = await captureBalanceSnapshots(userId)
+    console.log(`📸 [sync] net-worth snapshot: ${snap.captured} account(s) for user ${userId}`)
+  } catch (snapErr: any) {
+    console.warn(`⚠️  [sync] final snapshot failed for user ${userId}:`, snapErr.message)
   }
 
   return { added, modified, removed }

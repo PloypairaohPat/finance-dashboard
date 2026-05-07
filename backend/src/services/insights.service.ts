@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma"
 import { mapPlaidCategory, isSpending, CATEGORY_COLORS } from "../lib/categoryMap"
+import { filterInternalTransfers } from "../utils/transferFilter"
 
 export type Sentiment = "positive" | "negative" | "neutral"
 export interface Insight {
@@ -48,59 +49,79 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
 
   const { start: thisStart, end: thisEnd } = monthBounds(thisYM)
   const { start: lastStart, end: lastEnd } = monthBounds(lastYM)
+  const ninetyAgo = new Date(now); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
 
-  // Pull this-month transactions (need full rows for merchants, largest, etc.)
-  const thisMonthTxs = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, date: { gte: thisStart, lt: thisEnd } },
-    select: {
-      id: true, name: true, cleanName: true, amount: true,
-      categoryPrimary: true, date: true,
-    },
-  })
+  const [rawAccounts, rawThisMonth, rawLastMonth, rawRecent, plaidItems] = await Promise.all([
+    prisma.account.findMany({
+      where: { userId },
+      select: { id: true, type: true, currentBalance: true },
+    }),
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: thisStart, lt: thisEnd } },
+      select: {
+        id: true, name: true, cleanName: true, amount: true,
+        categoryPrimary: true, date: true, accountId: true,
+      },
+    }),
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: lastStart, lt: lastEnd } },
+      select: { id: true, amount: true, categoryPrimary: true, date: true, accountId: true },
+    }),
+    // All amounts needed so TRANSFER_IN pairs can be matched against TRANSFER_OUT
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: ninetyAgo } },
+      select: { id: true, amount: true, categoryPrimary: true, date: true, accountId: true },
+    }),
+    prisma.plaidItem.findMany({
+      where: { userId },
+      select: { institutionName: true },
+    }),
+  ])
 
-  // Last-month txs only need amount + categoryPrimary for comparison
-  const lastMonthTxs = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, date: { gte: lastStart, lt: lastEnd } },
-    select: { amount: true, categoryPrimary: true },
-  })
+  // Convert Decimals to numbers
+  const thisMonthNums = rawThisMonth.map(tx => ({ ...tx, amount: tx.amount.toNumber() }))
+  const lastMonthNums = rawLastMonth.map(tx => ({ ...tx, amount: tx.amount.toNumber() }))
+  const recentNums    = rawRecent.map(tx => ({ ...tx, amount: tx.amount.toNumber() }))
+
+  // Filter internal transfers (between user's own linked accounts)
+  const userAccountIds = new Set(rawAccounts.map(a => a.id))
+  const linkedInstitutionNames = plaidItems
+    .map(i => i.institutionName)
+    .filter(Boolean) as string[]
+
+  const [thisResult, lastResult, recentResult] = await Promise.all([
+    filterInternalTransfers(userId, thisMonthNums, userAccountIds, linkedInstitutionNames),
+    filterInternalTransfers(userId, lastMonthNums, userAccountIds, linkedInstitutionNames),
+    filterInternalTransfers(userId, recentNums,    userAccountIds, linkedInstitutionNames),
+  ])
+
+  const filteredThis   = thisMonthNums.filter(tx => !thisResult.internalIds.has(tx.id))
+  const filteredLast   = lastMonthNums.filter(tx => !lastResult.internalIds.has(tx.id))
+  const filteredRecent = recentNums.filter(tx => !recentResult.internalIds.has(tx.id))
+
+  const totalSolo   = thisResult.soloCount + lastResult.soloCount + recentResult.soloCount
+  const totalPaired = thisResult.pairedCount + lastResult.pairedCount + recentResult.pairedCount
+  if (totalSolo > 0 || totalPaired > 0) {
+    console.log(`🔁 [insights] filtered ${totalSolo} solo (counterparty), ${totalPaired} paired`)
+  }
 
   // Cash available — depository balances
-  const accounts = await prisma.account.findMany({
-    where: { userId },
-    select: { type: true, currentBalance: true },
-  })
-  const cashAvailable = accounts
+  const cashAvailable = rawAccounts
     .filter(a => a.type === "depository")
     .reduce((s, a) => s + (a.currentBalance ? Number(a.currentBalance) : 0), 0)
 
-  // Avg monthly expenses — last 90 days of expense data
-  const ninetyAgo = new Date(now); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
-  const recentExpenses = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, amount: { gt: 0 }, date: { gte: ninetyAgo } },
-    select: { amount: true, categoryPrimary: true, date: true },
-  })
-  const expenseSum = recentExpenses
-    .filter(t => isSpending(t.categoryPrimary))
-    .reduce((s, t) => s + t.amount.toNumber(), 0)
-  // Number of distinct YYYY-MM in the recent window
-  const monthsOfHistory = new Set(recentExpenses.map(t => ymOf(t.date))).size
+  // Avg monthly expenses — last 90 days (transfer-filtered)
+  const expenseSum = filteredRecent
+    .filter(t => t.amount > 0 && isSpending(t.categoryPrimary))
+    .reduce((s, t) => s + t.amount, 0)
+  const monthsOfHistory = new Set(filteredRecent.map(t => ymOf(t.date))).size
   const avgMonthlyExpenses = monthsOfHistory > 0
     ? Number((expenseSum / monthsOfHistory).toFixed(2))
     : 0
 
-  // Convert Decimal to number up front for all tx arrays
-  const thisMonthNums = thisMonthTxs.map(tx => ({
-    ...tx,
-    amount: tx.amount.toNumber(),
-  }))
-  const lastMonthNums = lastMonthTxs.map(tx => ({
-    ...tx,
-    amount: tx.amount.toNumber(),
-  }))
-
-  // Monthly summary
+  // Monthly summary (transfer-filtered)
   let income = 0, expenses = 0
-  for (const tx of thisMonthNums) {
+  for (const tx of filteredThis) {
     if (tx.amount < 0) income += Math.abs(tx.amount)
     else if (isSpending(tx.categoryPrimary)) expenses += tx.amount
   }
@@ -111,7 +132,7 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
 
   // Top merchants — group by cleanName, fall back to name
   const merchantMap = new Map<string, { total: number; count: number }>()
-  for (const tx of thisMonthNums) {
+  for (const tx of filteredThis) {
     if (tx.amount <= 0) continue
     if (!isSpending(tx.categoryPrimary)) continue
     const key = tx.cleanName ?? tx.name ?? "Unknown"
@@ -126,8 +147,8 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
     .sort((a, b) => b.total - a.total)
     .slice(0, 5)
 
-  // Largest individual purchases this month
-  const largestPurchases = thisMonthNums
+  // Largest individual purchases this month (transfer-filtered)
+  const largestPurchases = filteredThis
     .filter(tx => tx.amount > 0 && isSpending(tx.categoryPrimary))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5)
@@ -143,15 +164,15 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
       }
     })
 
-  // Cash runway — months until cash runs out at avg expense rate
+  // Cash runway
   const runwayMonths = avgMonthlyExpenses > 0 && monthsOfHistory >= 1
     ? Number((cashAvailable / avgMonthlyExpenses).toFixed(1))
     : null
 
   // Highlights
   const highlights = generateHighlights({
-    thisMonthTxs: thisMonthNums,
-    lastMonthTxs: lastMonthNums,
+    thisMonthTxs: filteredThis,
+    lastMonthTxs: filteredLast,
     income, expenses,
     runwayMonths, monthsOfHistory,
   })

@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma"
 import { isSpending, mapPlaidCategory } from "../lib/categoryMap"
+import { filterInternalTransfers } from "../utils/transferFilter"
 
 const WEIGHTS = {
   savingsRate:     0.30,
@@ -37,16 +38,31 @@ const gradeFor = (total: number): FinancialScore["grade"] =>
 async function scoreSavingsRate(userId: string): Promise<ScoreComponent> {
   const weight = WEIGHTS.savingsRate
   const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
-  const txs = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, date: { gte: ninetyAgo } },
-    select: { amount: true, categoryPrimary: true, date: true },
-  })
+
+  const [rawTxs, accounts] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: ninetyAgo } },
+      select: { id: true, amount: true, categoryPrimary: true, date: true, accountId: true },
+    }),
+    prisma.account.findMany({
+      where: { userId },
+      select: { id: true },
+    }),
+  ])
+
+  const userAccountIds = new Set(accounts.map(a => a.id))
+  const txNums = rawTxs.map(t => ({ ...t, amount: Number(t.amount) }))
+  const { internalIds, soloCount, pairedCount } = await filterInternalTransfers(userId, txNums, userAccountIds)
+  const txs = txNums.filter(t => !internalIds.has(t.id))
+
+  if (soloCount > 0 || pairedCount > 0) {
+    console.log(`🔁 [score/savingsRate] filtered ${soloCount} solo (counterparty), ${pairedCount} paired`)
+  }
 
   let income = 0, expenses = 0
   for (const tx of txs) {
-    const amt = Number(tx.amount)
-    if (amt < 0) income += Math.abs(amt)
-    else if (isSpending(tx.categoryPrimary)) expenses += amt
+    if (tx.amount < 0) income += Math.abs(tx.amount)
+    else if (isSpending(tx.categoryPrimary)) expenses += tx.amount
   }
   const monthsCovered = new Set(txs.map(t =>
     `${t.date.getFullYear()}-${t.date.getMonth() + 1}`
@@ -152,30 +168,23 @@ async function scoreGrowthTrend(userId: string): Promise<ScoreComponent> {
   const weight = WEIGHTS.growthTrend
   const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
 
-  // Fetch snapshots and account types separately to avoid include relation issues
-  const [snapshots, accounts] = await Promise.all([
-    prisma.balanceSnapshot.findMany({
-      where: { userId, date: { gte: ninetyAgo } },
-      select: { accountId: true, date: true, currentBalance: true },
-      orderBy: { date: "asc" },
-    }),
-    prisma.account.findMany({
-      where: { userId },
-      select: { id: true, type: true },
-    }),
-  ])
+  // Use stored accountType from each snapshot row — identical logic to fetchNetWorthHistory.
+  // Looking up type from the Account table would silently mis-classify snapshots for
+  // accounts that were deleted/re-linked (orphaned rows whose plaidAccountId no longer
+  // exists in the Account table would return undefined and get treated as assets).
+  const snapshots = await prisma.balanceSnapshot.findMany({
+    where: { userId, date: { gte: ninetyAgo } },
+    select: { date: true, currentBalance: true, accountType: true },
+    orderBy: { date: "asc" },
+  })
 
-  // Build a lookup map for account types
-  const typeMap = Object.fromEntries(accounts.map(a => [a.id, a.type]))
-
-  // Group by date, compute daily net worth
+  // Group by date, compute daily net worth (same formula as the chart)
   const byDate = new Map<string, number>()
   for (const s of snapshots) {
     const key = s.date.toISOString().slice(0, 10)
     let nw = byDate.get(key) ?? 0
     const bal = Number(s.currentBalance ?? 0)
-    const accountType = typeMap[s.accountId]
-    if (accountType === "credit" || accountType === "loan") nw -= Math.abs(bal)
+    if (s.accountType === "credit" || s.accountType === "loan") nw -= Math.abs(bal)
     else nw += bal
     byDate.set(key, nw)
   }

@@ -1,9 +1,10 @@
 import prisma from '../lib/prisma'
 import {
-  mapPlaidCategory, isSpending,
+  mapPlaidCategory, labelForPrimary, isSpending,
   CATEGORY_COLORS, DISPLAY_CATEGORIES,
   type DisplayCategory,
 } from "../lib/categoryMap"
+import { filterInternalTransfers } from "../utils/transferFilter"
 import { getSubscriptionMerchants } from "./subscriptions.service"
 import { plaidClient } from "../lib/plaidClient"
 import { logoUrlFor } from "../lib/merchantLogos"
@@ -23,15 +24,29 @@ export async function fetchCategorySpend(userId: string, month?: string) {
   const start = new Date(Date.UTC(yr, mo - 1, 1))
   const end   = new Date(Date.UTC(yr, mo, 1))
 
-  const txs = await prisma.transaction.findMany({
-    where: {
-      userId,
-      deletedAt: null,
-      amount: { gt: 0 },
-      date: { gte: start, lt: end },
-    },
-    select: { amount: true, categoryPrimary: true, cleanName: true, name: true },
-  })
+  // Fetch all transactions for the month (both legs needed for pair-match in Tier 2)
+  const [allTxsRaw, rawAccounts, plaidItems] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: start, lt: end } },
+      select: { id: true, amount: true, categoryPrimary: true, cleanName: true, name: true, accountId: true, date: true },
+    }),
+    prisma.account.findMany({ where: { userId }, select: { id: true } }),
+    prisma.plaidItem.findMany({ where: { userId }, select: { institutionName: true } }),
+  ])
+
+  const userAccountIds = new Set(rawAccounts.map(a => a.id))
+  const linkedInstitutionNames = plaidItems.map(i => i.institutionName).filter(Boolean) as string[]
+  const allNums = allTxsRaw.map(tx => ({ ...tx, amount: tx.amount.toNumber() }))
+
+  const { internalIds, soloCount, pairedCount } = await filterInternalTransfers(
+    userId, allNums, userAccountIds, linkedInstitutionNames,
+  )
+  if (soloCount > 0 || pairedCount > 0) {
+    console.log(`🔁 [breakdown] filtered ${soloCount} solo (counterparty), ${pairedCount} paired`)
+  }
+
+  // Only positive-amount, non-internal transactions feed the spending buckets
+  const txs = allNums.filter(tx => tx.amount > 0 && !internalIds.has(tx.id))
 
   let subMerchants: Set<string>
   try {
@@ -51,7 +66,7 @@ export async function fetchCategorySpend(userId: string, month?: string) {
     const display: DisplayCategory = subMerchants.has(merchant)
       ? "Subscriptions"
       : mapPlaidCategory(tx.categoryPrimary)
-    buckets[display] += tx.amount.toNumber()
+    buckets[display] += tx.amount
   }
 
   const total = Object.values(buckets).reduce((a, b) => a + b, 0)
@@ -150,7 +165,7 @@ export interface EnrichedTransaction {
   displayName: string
   amount:      number
   date:        string
-  category:    DisplayCategory
+  category:    string
   rawCategory: string | null
   color:       string
   logoUrl:     string | null
@@ -215,7 +230,8 @@ export async function searchTransactions(
     : null
 
   const transactions: EnrichedTransaction[] = pageRows.map(r => {
-    const display  = mapPlaidCategory(r.categoryPrimary)
+    const bucket  = mapPlaidCategory(r.categoryPrimary)   // for color lookup
+    const label   = labelForPrimary(r.categoryPrimary)    // for badge display
     const merchant = r.cleanName ?? r.name ?? "Unknown"
     return {
       id:          r.id,
@@ -223,9 +239,9 @@ export async function searchTransactions(
       displayName: merchant,
       amount:      Number(Number(r.amount).toFixed(2)),
       date:        r.date.toISOString().slice(0, 10),
-      category:    display,
+      category:    label,
       rawCategory: r.categoryPrimary ?? null,
-      color:       CATEGORY_COLORS[display] ?? "#5a7a5a",
+      color:       CATEGORY_COLORS[bucket] ?? "#5a7a5a",
       logoUrl:     logoUrlFor(merchant),
       tags:        r.tags ?? [],
       notes:       r.notes ?? null,

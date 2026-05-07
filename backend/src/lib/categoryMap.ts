@@ -57,3 +57,29 @@ export function isSpending(raw: string | null | undefined): boolean {
   const upper = raw.toUpperCase()
   return !NON_SPENDING_PREFIXES.some(p => upper.startsWith(p))
 }
+
+// Granular per-transaction badge labels — covers all 16 Plaid primary categories.
+// Used by the Transactions list; separate from the rolled-up chart buckets above.
+const PRIMARY_LABEL_MAP: Record<string, string> = {
+  INCOME:                    "Income",
+  TRANSFER_IN:               "Transfer In",
+  TRANSFER_OUT:              "Transfer Out",
+  LOAN_PAYMENTS:             "Loan Payment",
+  BANK_FEES:                 "Bank Fees",
+  ENTERTAINMENT:             "Entertainment",
+  FOOD_AND_DRINK:            "Food & Dining",
+  GENERAL_MERCHANDISE:       "Shopping",
+  HOME_IMPROVEMENT:          "Home",
+  MEDICAL:                   "Medical",
+  PERSONAL_CARE:             "Personal Care",
+  GENERAL_SERVICES:          "Services",
+  GOVERNMENT_AND_NON_PROFIT: "Gov/Charity",
+  TRANSPORTATION:            "Transportation",
+  TRAVEL:                    "Travel",
+  RENT_AND_UTILITIES:        "Bills & Utilities",
+}
+
+export function labelForPrimary(raw: string | null | undefined): string {
+  if (!raw) return "Other"
+  return PRIMARY_LABEL_MAP[raw.toUpperCase()] ?? "Other"
+}

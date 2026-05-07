@@ -36,17 +36,24 @@ export interface EnrichedGoal {
 async function computeEmergencyProgress(userId: string) {
   const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
   const [accounts, txs] = await Promise.all([
-    prisma.account.findMany({ where: { userId, type: "depository" } }),
+    prisma.account.findMany({
+      where: { userId, type: "depository" },
+      select: { availableBalance: true, currentBalance: true },
+    }),
     prisma.transaction.findMany({
       where: { userId, deletedAt: null, amount: { gt: 0 }, date: { gte: ninetyAgo } },
-      select: { amount: true, category: true, date: true },
+      select: { amount: true, categoryPrimary: true, date: true },
     }),
   ])
 
-  const current = accounts.reduce((s, a) => s + Number(a.currentBalance ?? 0), 0)
+  // Use availableBalance so pending holds are excluded
+  const current = accounts.reduce(
+    (s, a) => s + Number(a.availableBalance ?? a.currentBalance ?? 0),
+    0,
+  )
 
   const expenseTotal = txs
-    .filter(t => isSpending(t.category))
+    .filter(t => isSpending(t.categoryPrimary))
     .reduce((s, t) => s + Number(t.amount), 0)
   const monthsOfData = new Set(txs.map(t =>
     `${t.date.getFullYear()}-${t.date.getMonth() + 1}`
@@ -60,8 +67,17 @@ async function computeAccountBalance(userId: string, accountId: string | null) {
   if (!accountId) return null
   const account = await prisma.account.findFirst({
     where: { id: accountId, userId },
+    select: { type: true, currentBalance: true, availableBalance: true },
   })
-  return account ? Number(account.currentBalance ?? 0) : null
+  if (!account) return null
+
+  if (account.type === "credit" || account.type === "loan") {
+    // For credit/loan: currentBalance = what you owe
+    return Math.abs(Number(account.currentBalance ?? 0))
+  }
+  // For depository/investment: availableBalance excludes pending holds
+  // Fall back to currentBalance if availableBalance is not set
+  return Number(account.availableBalance ?? account.currentBalance ?? 0)
 }
 
 // — — — Enrichment — — —
