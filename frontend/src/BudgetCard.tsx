@@ -76,7 +76,6 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
         body: JSON.stringify({
           category: budget.category,
           monthlyLimit: val,
-          month: budget.month,
         }),
       })
       onUpdated()

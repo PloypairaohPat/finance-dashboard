@@ -3,6 +3,13 @@ import prisma              from '../lib/prisma'
 import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 
+function sanitizeAccountName(name: string): string {
+  // Plaid sends ® as a lone ISO-8859-1 byte (0xAE) inside a UTF-8 JSON response;
+  // Node's JSON parser replaces each invalid byte with U+FFFD. Two consecutive
+  // replacement chars = ® pattern; lone ones are stripped.
+  return name.replace(/��/g, '®').replace(/�/g, '').trim()
+}
+
 export async function createLinkToken(
   plaidClient:   PlaidApi,
   products:      Products[],
@@ -86,8 +93,8 @@ export async function exchangePublicToken(
       update: {
         userId,
         plaidItemId:      plaidItem.id,
-        name:             acct.name,
-        officialName:     acct.official_name              ?? null,
+        name:             sanitizeAccountName(acct.name),
+        officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
         type:             acct.type,
         subtype:          acct.subtype                    ?? null,
         mask:             acct.mask                       ?? null,
@@ -99,8 +106,8 @@ export async function exchangePublicToken(
         userId,
         plaidItemId:      plaidItem.id,
         plaidAccountId:   acct.account_id,
-        name:             acct.name,
-        officialName:     acct.official_name              ?? null,
+        name:             sanitizeAccountName(acct.name),
+        officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
         type:             acct.type,
         subtype:          acct.subtype                    ?? null,
         mask:             acct.mask                       ?? null,
@@ -115,6 +122,30 @@ export async function exchangePublicToken(
   return { institutionName }
 }
 
+export async function createUpdateLinkToken(
+  plaidClient:  PlaidApi,
+  userId:       string,
+  countryCodes: CountryCode[]
+): Promise<string> {
+  const item = await prisma.plaidItem.findFirst({ where: { userId } })
+  if (!item) throw new Error('No linked account found for this user')
+
+  const accessToken = decrypt(item.accessToken)
+
+  // Update mode: pass access_token, omit products.
+  // Plaid re-authenticates the user against the institution which resolves
+  // ITEM_LOGIN_REQUIRED errors and refreshes the item so balance/get succeeds.
+  const response = await plaidClient.linkTokenCreate({
+    user:          { client_user_id: userId },
+    client_name:   'My Finance App',
+    access_token:  accessToken,
+    country_codes: countryCodes,
+    language:      'en',
+    webhook:       process.env.WEBHOOK_URL,
+  })
+  return response.data.link_token
+}
+
 export async function triggerSync(
   plaidClient: PlaidApi,
   userId: string
@@ -125,6 +156,27 @@ export async function triggerSync(
 
   let added = 0, modified = 0, removed = 0
   for (const item of items) {
+    const accessToken = decrypt(item.accessToken)
+    let acctResp: Awaited<ReturnType<typeof plaidClient.accountsBalanceGet>>
+    try {
+      acctResp = await plaidClient.accountsBalanceGet({ access_token: accessToken })
+      console.log(`💰 [sync] balance/get succeeded for item ${item.id}`)
+    } catch (balErr: any) {
+      const code = balErr.response?.data?.error_code ?? balErr.message
+      console.warn(`⚠️  [sync] balance/get failed (${code}) — falling back to accounts/get for item ${item.id}`)
+      acctResp = await plaidClient.accountsGet({ access_token: accessToken })
+    }
+    for (const acct of acctResp.data.accounts) {
+      await prisma.account.updateMany({
+        where: { plaidAccountId: acct.account_id },
+        data: {
+          name:             sanitizeAccountName(acct.name),
+          officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
+          currentBalance:   acct.balances.current,
+          availableBalance: acct.balances.available,
+        },
+      })
+    }
     const result = await syncTransactions(plaidClient, item.id)
     added    += result.added
     modified += result.modified

@@ -36,15 +36,13 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
     setSaving(true)
     try {
       const token = await getToken()
-      const now = new Date()
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
       await fetch(`${API_URL}/budgets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ category, monthlyLimit: val, month }),
+        body: JSON.stringify({ category, monthlyLimit: val }),
       })
       setCategory("")
       setLimit("")

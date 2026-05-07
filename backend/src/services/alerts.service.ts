@@ -161,7 +161,7 @@ async function detectBudgetExceeded(userId: string): Promise<Alert[]> {
   const { start, end } = getMonthBounds(month)
 
   const budgets = await prisma.budget.findMany({
-    where: { userId, month },
+    where: { userId },
   })
   if (budgets.length === 0) return []
 

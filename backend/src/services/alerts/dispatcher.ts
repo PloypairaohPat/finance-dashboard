@@ -35,12 +35,7 @@ async function loadContext(userId: string): Promise<DetectorContext> {
       where: { userId, deletedAt: null, date: { gte: since } },
       orderBy: { date: "desc" },
     }),
-    prisma.budget.findMany({
-      where: {
-        userId,
-        month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
-      },
-    }),
+    prisma.budget.findMany({ where: { userId } }),
     fetchSubscriptionAnalysis(userId, plaidClient).catch(() => null),
   ])
 

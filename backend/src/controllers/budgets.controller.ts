@@ -23,7 +23,7 @@ export async function createOrUpdateBudget(
       res.status(400).json({ error: "category and monthlyLimit are required" })
       return
     }
-    await upsertBudget(userId, category, monthlyLimit, month)
+    await upsertBudget(userId, category, monthlyLimit)
     res.json({ ok: true })
   } catch (err: any) {
     console.error("createOrUpdateBudget:", err.message)

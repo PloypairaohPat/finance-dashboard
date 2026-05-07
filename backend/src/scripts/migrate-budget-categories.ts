@@ -20,7 +20,6 @@ async function main() {
     total: number
     mapped: DisplayCategory
     userId: string
-    month: string
   }
 
   const groups = new Map<string, Group>()
@@ -30,14 +29,13 @@ async function main() {
       ? (b.category as DisplayCategory)
       : mapPlaidCategory(b.category)
 
-    const key = `${b.userId}|${b.month}|${mapped}`
+    const key = `${b.userId}|${mapped}`
 
     const g = groups.get(key) ?? {
       ids: [],
       total: 0,
       mapped,
       userId: b.userId,
-      month: b.month,
     }
 
     g.ids.push(b.id)

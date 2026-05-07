@@ -29,8 +29,7 @@ function currentMonth(): string {
 export async function upsertBudget(
   userId: string,
   category: string,
-  monthlyLimit: number,
-  month: string = currentMonth()
+  monthlyLimit: number
 ): Promise<void> {
   if (!(DISPLAY_CATEGORIES as readonly string[]).includes(category)) {
     throw new Error("Invalid category")
@@ -38,10 +37,10 @@ export async function upsertBudget(
 
   await prisma.budget.upsert({
     where: {
-      userId_category_month: { userId, category, month },
+      userId_category: { userId, category },
     },
     update: { monthlyLimit },
-    create: { userId, category, monthlyLimit, month },
+    create: { userId, category, monthlyLimit },
   })
 }
 
@@ -59,24 +58,22 @@ export async function fetchBudgetsWithSpend(
   month: string = currentMonth()
 ): Promise<BudgetWithSpend[]> {
   const budgets = await prisma.budget.findMany({
-    where: { userId, month },
+    where: { userId },
   })
 
   if (budgets.length === 0) return []
 
   const monthStart = new Date(`${month}-01T00:00:00.000Z`)
   const monthEnd = new Date(monthStart)
-  monthEnd.setMonth(monthEnd.getMonth() + 1)
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1)
 
   const now = new Date()
   const isCurrentMonth = month === currentMonth()
 
-  const day = isCurrentMonth ? now.getDate() : 0
+  const day = isCurrentMonth ? now.getUTCDate() : 0
   const daysInMonth = new Date(
-    monthStart.getFullYear(),
-    monthStart.getMonth() + 1,
-    0
-  ).getDate()
+    Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)
+  ).getUTCDate()
 
   const projectionAllowed = isCurrentMonth && day >= 7
 

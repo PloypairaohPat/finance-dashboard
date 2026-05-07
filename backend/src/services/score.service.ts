@@ -71,7 +71,7 @@ async function scoreSpendingControl(userId: string): Promise<ScoreComponent> {
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 
   const [budgets, txs] = await Promise.all([
-    prisma.budget.findMany({ where: { userId, month: ym } }),
+    prisma.budget.findMany({ where: { userId } }),
     prisma.transaction.findMany({
       where: {
         userId, deletedAt: null,

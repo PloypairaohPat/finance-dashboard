@@ -12,6 +12,7 @@ export function makePlaidRouter(
   const controller = makePlaidController(plaidClient, products, countryCodes)
 
   router.post('/create_link_token', requireSession, controller.getLinkToken.bind(controller))
+  router.post('/create-update-link-token', requireSession, controller.getUpdateLinkToken.bind(controller))
   router.post('/exchange_public_token', requireSession, controller.exchangeToken.bind(controller))
   router.post('/sync', requireSession, controller.sync.bind(controller))
   router.post('/webhook', controller.webhook.bind(controller))

@@ -2,6 +2,7 @@ import { Request, Response }  from 'express'
 import { PlaidApi, Products, CountryCode } from 'plaid'
 import {
   createLinkToken,
+  createUpdateLinkToken,
   exchangePublicToken,
   triggerSync,
 } from '../services/plaid.service'
@@ -22,6 +23,18 @@ export function makePlaidController(
       } catch (err: any) {
         console.error('❌ getLinkToken:', err.response?.data || err.message)
         res.status(500).json({ error: err.response?.data || err.message })
+      }
+    },
+
+    async getUpdateLinkToken(req: Request, res: Response) {
+      try {
+        const userId = getUserId(req)
+        const link_token = await createUpdateLinkToken(plaidClient, userId, countryCodes)
+        console.log(`✅ update link_token created for user: ${userId}`)
+        res.json({ link_token })
+      } catch (err: any) {
+        console.error('❌ getUpdateLinkToken:', err.response?.data || err.message)
+        res.status(500).json({ error: err.message })
       }
     },
 

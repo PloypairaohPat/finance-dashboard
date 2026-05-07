@@ -2,7 +2,7 @@
 //  App.tsx  —  Ledger Personal Finance Dashboard
 // ─────────────────────────────────────────────────────────────────
 
-import React, { useState, useCallback, useEffect, useMemo, CSSProperties } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef, CSSProperties } from "react";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
@@ -215,12 +215,17 @@ export default function App() {
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [alerts,       setAlerts]       = useState<Alert[]>([]);
   const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
-  const [cashFlow,        setCashFlow]        = useState<Array<{ month: string; net: number }>>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  const [selectedTx, setSelectedTx] = useState<EnrichedTransaction | null>(null)
+  const [selectedTx,   setSelectedTx]   = useState<EnrichedTransaction | null>(null)
+  const [monthSaved,   setMonthSaved]   = useState<number | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  const [syncing,        setSyncing]        = useState(false)
+  const [updateLinkToken, setUpdateLinkToken] = useState<string | null>(null)
+  const [updatingBalance, setUpdatingBalance] = useState(false)
+  const hasAutoSynced = useRef(false)
 
   const isMobile = useMediaQuery("(max-width: 640px)")
   const { getToken, isSignedIn, isLoaded } = useAuth();
@@ -261,14 +266,11 @@ export default function App() {
         : null
 
     const now = new Date()
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-    const thisMonth = cashFlow.find(c => c.month === ym)
-    const monthSaved = thisMonth?.net ?? null
     const monthLabel = now.toLocaleString("en-US", { month: "long" })
-    const lastSyncAt = null
+    const lastSyncAt = lastSyncedAt
 
     return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, lastSyncAt }
-  }, [accounts, netWorthHistory, cashFlow])
+  }, [accounts, netWorthHistory, monthSaved, lastSyncedAt])
 
   // ── Auto-connect check ───────────────────────────────────────────
   useEffect(() => {
@@ -278,10 +280,11 @@ export default function App() {
     (async () => {
       try {
         const res = await authFetch(`${API_URL}/accounts`);
-        const data = await res.json() as { accounts: Account[]; error?: string };
+        const data = await res.json() as { accounts: Account[]; lastSyncedAt?: string | null; error?: string };
         if (data.accounts && data.accounts.length > 0) {
           setConnected(true);
           setAccounts(data.accounts);
+          setLastSyncedAt(data.lastSyncedAt ?? null);
         }
       } catch (err) {
         console.error("Auto-connect check failed:", err);
@@ -340,13 +343,13 @@ export default function App() {
     }
   }, [authFetch])
 
-  const fetchCashFlow = useCallback(async () => {
+  const fetchInsightsSummary = useCallback(async () => {
     try {
-      const res  = await authFetch(`${API_URL}/cashflow`)
-      const data = await res.json() as { cashFlow?: Array<{ month: string; net: number }> }
-      setCashFlow(data.cashFlow ?? [])
+      const res  = await authFetch(`${API_URL}/insights`)
+      const data = await res.json() as { summary?: { netSaved: number } }
+      setMonthSaved(data.summary?.netSaved ?? null)
     } catch (e: any) {
-      console.error("Cash flow fetch failed:", e.message)
+      console.error("Insights summary fetch failed:", e.message)
     }
   }, [authFetch])
 
@@ -356,9 +359,10 @@ export default function App() {
 
     try {
       const res  = await authFetch(`${API_URL}/accounts`);
-      const data = await res.json() as { accounts: Account[]; error?: string };
+      const data = await res.json() as { accounts: Account[]; lastSyncedAt?: string | null; error?: string };
       if (data.error) throw new Error(data.error);
       setAccounts(data.accounts);
+      setLastSyncedAt(data.lastSyncedAt ?? null);
     } catch (e: any) {
       setError(`Accounts fetch failed: ${e.message}`);
     } finally {
@@ -377,14 +381,45 @@ export default function App() {
     fetchBudgets();
   }, [authFetch, fetchBudgets]);
 
+  const triggerRefresh = useCallback(async () => {
+    setSyncing(true)
+    try {
+      const syncRes = await authFetch(`${API_URL}/sync`, { method: "POST" })
+      if (!syncRes.ok) {
+        const body = await syncRes.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? `Sync failed (${syncRes.status})`)
+      }
+      await Promise.all([
+        fetchData(),
+        fetchBudgets(),
+        fetchAlerts(),
+        fetchNetWorth(),
+        fetchInsightsSummary(),
+      ])
+    } catch (e: any) {
+      console.error("Sync failed:", e.message)
+      setError(`Sync failed: ${e.message}`)
+    } finally {
+      setSyncing(false)
+    }
+  }, [authFetch, fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary])
+
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     fetchData();
     fetchBudgets();
     fetchAlerts();
     fetchNetWorth();
-    fetchCashFlow();
-  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchCashFlow, isSignedIn])
+    fetchInsightsSummary();
+  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn])
+
+  useEffect(() => {
+    if (!lastSyncedAt || !connected || hasAutoSynced.current) return
+    if (Date.now() - new Date(lastSyncedAt).getTime() > 4 * 60 * 60 * 1000) {
+      hasAutoSynced.current = true
+      triggerRefresh()
+    }
+  }, [lastSyncedAt, connected, triggerRefresh])
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
@@ -412,6 +447,44 @@ export default function App() {
       if (err) setError(`Plaid Link exited with error`);
     },
   });
+
+  // ── Update mode — adds balance product to existing Item ──────────
+  const onUpdateSuccess = useCallback(
+    async (_publicToken: string, _metadata: PlaidLinkOnSuccessMetadata) => {
+      // In update mode the access_token is unchanged — no token exchange needed.
+      setUpdateLinkToken(null)
+      setUpdatingBalance(false)
+      await triggerRefresh()
+    },
+    [triggerRefresh]
+  )
+
+  const { open: openUpdate, ready: readyUpdate } = usePlaidLink({
+    token: updateLinkToken,
+    onSuccess: onUpdateSuccess,
+    onExit: () => {
+      setUpdateLinkToken(null)
+      setUpdatingBalance(false)
+    },
+  })
+
+  useEffect(() => {
+    if (updateLinkToken && readyUpdate) openUpdate()
+  }, [updateLinkToken, readyUpdate, openUpdate])
+
+  const startBalanceUpdate = useCallback(async () => {
+    setUpdatingBalance(true)
+    try {
+      const res  = await authFetch(`${API_URL}/create-update-link-token`, { method: 'POST' })
+      const data = await res.json() as { link_token: string; error?: string }
+      if (data.error) throw new Error(data.error)
+      setUpdateLinkToken(data.link_token)
+    } catch (e: any) {
+      console.error('Balance update failed:', e.message)
+      setError(`Balance refresh failed: ${e.message}`)
+      setUpdatingBalance(false)
+    }
+  }, [authFetch])
 
   const steps = [
     { label: "backend scaffolded",    done: true },
@@ -499,6 +572,41 @@ export default function App() {
               }}
             >
               + Link Account
+            </button>
+          )}
+          {connected && (
+            <button
+              onClick={triggerRefresh}
+              disabled={syncing}
+              style={{
+                background: "transparent",
+                border: `1px solid ${syncing ? "#00e5a040" : "#333"}`,
+                color: syncing ? "#00e5a0" : "#666",
+                padding: "4px 12px", borderRadius: "4px",
+                cursor: syncing ? "not-allowed" : "pointer",
+                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
+                transition: "color 0.2s, border-color 0.2s",
+              }}
+            >
+              {syncing ? "syncing…" : "↻ Sync"}
+            </button>
+          )}
+          {connected && (
+            <button
+              onClick={startBalanceUpdate}
+              disabled={updatingBalance}
+              title="Re-authenticate with your bank to enable real-time balance fetching"
+              style={{
+                background: "transparent",
+                border: `1px solid ${updatingBalance ? "#f59e0b40" : "#333"}`,
+                color: updatingBalance ? "#f59e0b" : "#666",
+                padding: "4px 12px", borderRadius: "4px",
+                cursor: updatingBalance ? "not-allowed" : "pointer",
+                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
+                transition: "color 0.2s, border-color 0.2s",
+              }}
+            >
+              {updatingBalance ? "opening…" : "⚡ Live Balances"}
             </button>
           )}
           <UserButton afterSignOutUrl="/" />

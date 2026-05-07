@@ -21,18 +21,18 @@ export const detectBudgetExceeded: Detector = (ctx) => {
   const ym = `${ctx.now.getFullYear()}-${String(ctx.now.getMonth() + 1).padStart(2, "0")}`
 
   for (const b of ctx.budgets) {
-    const spent = computeSpent(ctx, b.category, b.month)
+    const spent = computeSpent(ctx, b.category, ym)
     const amount = Number(b.monthlyLimit)
     if (spent < amount) continue
 
     const over = spent - amount
     out.push({
       kind: "budget_exceeded" as const,
-      fingerprint: `budget_exceeded:${b.category}:${b.month}`,
+      fingerprint: `budget_exceeded:${b.category}:${ym}`,
       severity: "high" as const,
       title: `${b.category} budget exceeded`,
       body: `You've spent $${spent.toFixed(0)} against a $${amount.toFixed(0)} budget — over by $${over.toFixed(0)}.`,
-      data: { category: b.category, month: b.month, spent, amount, over },
+      data: { category: b.category, month: ym, spent, amount, over },
     })
   }
   return out
@@ -47,8 +47,7 @@ export const detectBudgetProjectedOver: Detector = (ctx) => {
   const ym = `${ctx.now.getFullYear()}-${String(ctx.now.getMonth() + 1).padStart(2, "0")}`
 
   for (const b of ctx.budgets) {
-    if (b.month !== ym) continue
-    const spent = computeSpent(ctx, b.category, b.month)
+    const spent = computeSpent(ctx, b.category, ym)
     const amount = Number(b.monthlyLimit)
     if (spent >= amount) continue
     const projected = (spent / day) * daysInMonth
@@ -57,11 +56,11 @@ export const detectBudgetProjectedOver: Detector = (ctx) => {
     const projectedOver = projected - amount
     out.push({
       kind: "budget_projected_over" as const,
-      fingerprint: `budget_proj:${b.category}:${b.month}`,
+      fingerprint: `budget_proj:${b.category}:${ym}`,
       severity: "medium" as const,
       title: `${b.category} pacing over budget`,
       body: `At your current pace you'll hit $${projected.toFixed(0)} by month-end — $${projectedOver.toFixed(0)} over the $${amount.toFixed(0)} budget.`,
-      data: { category: b.category, month: b.month, spent, amount, projected, projectedOver },
+      data: { category: b.category, month: ym, spent, amount, projected, projectedOver },
     })
   }
   return out
