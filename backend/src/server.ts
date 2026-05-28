@@ -63,16 +63,24 @@ const plaidCountryCodes = (process.env.PLAID_COUNTRY_CODES || 'US')
 // ── App setup ─────────────────────────────────────────────────────
 const app = express()
 
+const allowedOrigins: (string | RegExp)[] = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+]
+// ALLOWED_ORIGIN env var takes precedence; falls back to regex matching all
+// finance-dashboard Vercel preview/production deploys.
+const envOrigin = process.env.ALLOWED_ORIGIN
+if (envOrigin) {
+  allowedOrigins.push(envOrigin)
+} else {
+  allowedOrigins.push(/https:\/\/finance-dashboard.*\.vercel\.app$/)
+}
+
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
-    const allowed: (string | RegExp)[] = [
-      'http://localhost:3000',
-      /https:\/\/finance-dashboard.*\.vercel\.app$/,
-    ]
-
     if (
       !origin ||
-      allowed.some((o) =>
+      allowedOrigins.some((o) =>
         typeof o === 'string' ? o === origin : o.test(origin)
       )
     ) {
@@ -84,8 +92,14 @@ const corsOptions: CorsOptions = {
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 }
 
+// Explicitly terminate preflight OPTIONS before any auth middleware runs.
+// Without this, complex requests (Authorization header, PATCH/DELETE) can
+// leak into clerkAuth before CORS headers are written.
+app.options('*', cors(corsOptions))
 app.use(cors(corsOptions))
 app.use(express.json())
 app.use(clerkAuth)
