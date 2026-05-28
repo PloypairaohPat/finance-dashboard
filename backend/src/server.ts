@@ -19,6 +19,7 @@ import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
 import { clerkAuth, requireSession } from "./middleware/auth"
 import { startScheduler } from "./scheduler"
+import prisma from "./lib/prisma"
 import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
 import goalsRoutes from "./routes/goals.routes"
@@ -123,9 +124,17 @@ app.use("/score", scoreRoutes)
 app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
 
 // ── Health ────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) =>
-  res.json({ status: 'ok', env: process.env.PLAID_ENV })
-)
+app.get('/health', async (_req: Request, res: Response) => {
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ])
+    res.json({ status: 'ok', db: 'ok' })
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'unreachable' })
+  }
+})
 
 // ── Start ─────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001

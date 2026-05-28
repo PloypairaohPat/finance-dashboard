@@ -32,5 +32,15 @@ export function startScheduler(plaidClient: PlaidApi) {
     }
   })
 
-  console.log("⏰ Scheduler started — sync every 6 hours")
+  // Independent keepalive — prevents Supabase free-tier auto-pause after 7 days inactivity
+  cron.schedule("0 0 * * *", async () => {
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      console.log("💓 [Cron] DB keepalive ping OK")
+    } catch (err: any) {
+      console.error("❌ [Cron] DB keepalive failed:", err.message)
+    }
+  })
+
+  console.log("⏰ Scheduler started — sync every 6 hours, keepalive every 24 hours")
 }
