@@ -1,16 +1,18 @@
+import os
 import psycopg2
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def get_connection():
     return psycopg2.connect(
-        host="aws-1-us-east-2.pooler.supabase.com",
-        port=6543,
-        dbname="postgres",
-        user="postgres.tppviuuhbyqwskebigdx",
-        password="REDACTED",
+        os.environ["DATABASE_URL"],
         sslmode="require",
-        connect_timeout=10
+        connect_timeout=10,
     )
+
 
 def load_transactions(months: int = 24) -> pd.DataFrame:
     sql = """
@@ -36,6 +38,7 @@ def load_transactions(months: int = 24) -> pd.DataFrame:
         return df
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     df = load_transactions()
