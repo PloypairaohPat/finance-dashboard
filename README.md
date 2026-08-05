@@ -4,6 +4,8 @@ A full-stack personal finance platform that connects to a real bank via **Plaid 
 
 **🔗 [Live demo](https://finance-dashboard-tau-two.vercel.app)** · Sign in with Clerk to view the full dashboard.
 
+> Note: the live demo requires Clerk sign-in — there is currently no read-only guest view.
+
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
 ![Node.js](https://img.shields.io/badge/Node.js-43853D?logo=node.js&logoColor=white)
@@ -30,15 +32,13 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 
 ## Screenshots
 
-> _Placeholder — screenshots will be added soon._
-
 | Hero Overview | Spending Donut | Net Worth Trend |
 | :---: | :---: | :---: |
-| _coming soon_ | _coming soon_ | _coming soon_ |
+| ![Hero Overview](assets/screenshots/hero-overview.png) | ![Spending Donut](assets/screenshots/spending-donut.png) | ![Net Worth Trend](assets/screenshots/net-worth.png) |
 
 | Subscriptions | Smart Alerts | Goals + Health Score |
 | :---: | :---: | :---: |
-| _coming soon_ | _coming soon_ | _coming soon_ |
+| ![Subscriptions](assets/screenshots/subscriptions.png) | ![Smart Alerts](assets/screenshots/alerts.png) | ![Goals + Health Score](assets/screenshots/goals-health.png) |
 
 ---
 
