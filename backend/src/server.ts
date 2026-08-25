@@ -17,7 +17,7 @@ import budgetsRouter from "./routes/budgets.routes"
 import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
-import { clerkAuth, requireSession } from "./middleware/auth"
+import { clerkAuth, requireSession, demoReadOnly } from "./middleware/auth"
 import { startScheduler } from "./scheduler"
 import prisma from "./lib/prisma"
 import insightsRoutes from "./routes/insights.routes"
@@ -104,6 +104,7 @@ app.options('*', cors(corsOptions))
 app.use(cors(corsOptions))
 app.use(express.json())
 app.use(clerkAuth)
+app.use(demoReadOnly)
 
 // ── Routes ────────────────────────────────────────────────────────
 app.use('/accounts', requireSession, accountsRouter)
