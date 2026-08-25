@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { Alert, Severity } from "./types"
 import { SkeletonList } from "./Skeleton"
 
@@ -15,19 +17,18 @@ const SEV_STYLE: Record<Severity, { bg: string; border: string; left: string; te
 const COLLAPSED_COUNT = 2
 
 export default function AlertCenter() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/alerts`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/alerts`)
         if (res.ok) {
           const data: Alert[] = await res.json()
           // Sort by severity, then triggeredAt desc
@@ -40,16 +41,12 @@ export default function AlertCenter() {
         }
       } finally { setLoading(false) }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   const dismiss = async (id: string) => {
     // Optimistic update
     setAlerts(prev => prev.filter(a => a.id !== id))
-    const token = await getToken()
-    await fetch(`${API_URL}/alerts/${id}/dismiss`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    }).catch(() => {
+    await apiFetch(`${API_URL}/alerts/${id}/dismiss`, { method: "POST" }).catch(() => {
       // Rollback on failure — re-fetch
       // For v1 we silently accept; at scale, surface an error toast
     })

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { EnrichedGoal, GoalType, GoalStatus, Account } from "./types"
 
 const TYPE_META: Record<GoalType, { icon: string; color: string; label: string }> = {
@@ -18,7 +20,9 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 
 export default function GoalsCard() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [goals, setGoals] = useState<EnrichedGoal[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [adding, setAdding] = useState(false)
@@ -31,16 +35,15 @@ export default function GoalsCard() {
   const [error, setError] = useState<string | null>(null)
 
   const reload = async () => {
-    const token = await getToken()
     const [g, a] = await Promise.all([
-      fetch(`${API_URL}/goals`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`${API_URL}/accounts`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      apiFetch(`${API_URL}/goals`).then(r => r.json()),
+      apiFetch(`${API_URL}/accounts`).then(r => r.json()),
     ])
     setGoals(Array.isArray(g) ? g : [])
     setAccounts(Array.isArray(a) ? a : (a.accounts ?? []))
   }
 
-  useEffect(() => { if (isSignedIn) reload() }, [isSignedIn])  // eslint-disable-line
+  useEffect(() => { if (demoMode || isSignedIn) reload() }, [demoMode, isSignedIn])  // eslint-disable-line
 
   const resetForm = () => {
     setAdding(false); setError(null)
@@ -50,16 +53,15 @@ export default function GoalsCard() {
 
   const submit = async () => {
     setError(null)
-    const token = await getToken()
     const body: any = { type, name: name.trim() }
     if (type !== "emergency_fund" && type !== "debt_payoff") body.targetAmount = Number(target) || 0
     if (type === "vacation") body.deadline = deadline
     if (type === "debt_payoff" || accountId) body.accountId = accountId
     if (type === "emergency_fund") body.data = { months: Number(months) || 6 }
 
-    const res = await fetch(`${API_URL}/goals`, {
+    const res = await apiFetch(`${API_URL}/goals`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
     if (!res.ok) {
@@ -72,11 +74,7 @@ export default function GoalsCard() {
   }
 
   const remove = async (id: string) => {
-    const token = await getToken()
-    await fetch(`${API_URL}/goals/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    await apiFetch(`${API_URL}/goals/${id}`, { method: "DELETE" })
     setGoals(prev => prev.filter(g => g.id !== id))
   }
 

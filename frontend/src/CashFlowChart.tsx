@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts"
-import { useAuth } from "@clerk/clerk-react"
+import { useApiFetch } from "./lib/useApiFetch"
 import { API_URL } from "./config"
 
 interface CashFlowMonth {
@@ -71,15 +71,12 @@ function CustomTooltip({ active, payload }: any) {
 export default function CashFlowChart() {
   const [data, setData] = useState<CashFlowMonth[]>([])
   const [loading, setLoading] = useState(true)
-  const { getToken } = useAuth()
+  const apiFetch = useApiFetch()
 
   useEffect(() => {
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/cashflow?months=6`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/cashflow?months=6`)
         const json = await res.json()
         setData(json.cashflow ?? [])
       } catch (e: any) {
@@ -88,7 +85,7 @@ export default function CashFlowChart() {
         setLoading(false)
       }
     })()
-  }, [getToken])
+  }, [apiFetch])
 
   if (loading) {
     return (

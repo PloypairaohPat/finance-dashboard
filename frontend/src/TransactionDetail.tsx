@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
 import type { EnrichedTransaction, CategoryOption } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 
@@ -16,7 +16,7 @@ const fmtDate = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
 
 export default function TransactionDetail({ transaction, onClose, onUpdate }: Props) {
-  const { getToken } = useAuth()
+  const apiFetch = useApiFetch()
   const [tags, setTags] = useState<string[]>(transaction.tags)
   const [notes, setNotes] = useState(transaction.notes ?? "")
   const [category, setCategory] = useState(transaction.category)
@@ -27,25 +27,23 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
   // Fetch suggested tags + category list once on open
   useEffect(() => {
     ;(async () => {
-      const token = await getToken()
       const [tagRes, catRes] = await Promise.all([
-        fetch(`${API_URL}/transactions/tags`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/categories/list`,   { headers: { Authorization: `Bearer ${token}` } }),
+        apiFetch(`${API_URL}/transactions/tags`),
+        apiFetch(`${API_URL}/categories/list`),
       ])
       if (tagRes.ok) setSuggestedTags(await tagRes.json())
       if (catRes.ok) setCategoryOptions(await catRes.json())
     })()
-  }, [getToken])
+  }, [apiFetch])
 
   // Auto-save on change (debounced 500ms)
   useEffect(() => {
     const t = setTimeout(async () => {
-      const token = await getToken()
       const body: any = { tags, notes }
       if (category !== transaction.category) body.category = category
-      const res = await fetch(`${API_URL}/transactions/${transaction.id}`, {
+      const res = await apiFetch(`${API_URL}/transactions/${transaction.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
       if (res.ok) {

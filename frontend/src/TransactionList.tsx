@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { EnrichedTransaction, SearchResult, CategoryOption } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 
@@ -21,7 +23,9 @@ const fmtDate = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
 
 export default function TransactionList({ onRowClick }: Props) {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [filters, setFilters] = useState<Filters>(EMPTY)
   const [searchInput, setSearchInput] = useState("")
   const [showDrawer, setShowDrawer] = useState(false)
@@ -41,19 +45,15 @@ export default function TransactionList({ onRowClick }: Props) {
 
   // Fetch categories once for the dropdown
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
-      const token = await getToken()
-      const res = await fetch(`${API_URL}/categories/list`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await apiFetch(`${API_URL}/categories/list`)
       if (res.ok) setCategories(await res.json())
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   // Main search — re-runs when any filter changes
   const runSearch = useCallback(async (cursor: string | null) => {
-    const token = await getToken()
     const qs = new URLSearchParams()
     if (filters.q) qs.set("q", filters.q)
     if (filters.category !== "All") qs.set("category", filters.category)
@@ -61,14 +61,12 @@ export default function TransactionList({ onRowClick }: Props) {
     if (filters.dateTo)   qs.set("dateTo", filters.dateTo)
     if (cursor) qs.set("cursor", cursor)
     qs.set("limit", "50")
-    const res = await fetch(`${API_URL}/transactions/search?${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const res = await apiFetch(`${API_URL}/transactions/search?${qs}`)
     return res.ok ? (await res.json() as SearchResult) : null
-  }, [getToken, filters])
+  }, [apiFetch, filters])
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     setLoading(true)
     runSearch(null).then(result => {
       if (result) {
@@ -77,7 +75,7 @@ export default function TransactionList({ onRowClick }: Props) {
       }
       setLoading(false)
     })
-  }, [isSignedIn, runSearch])
+  }, [demoMode, isSignedIn, runSearch])
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return

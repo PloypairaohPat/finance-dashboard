@@ -11,6 +11,8 @@ import {
 } from "recharts"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { Range, NetWorthResponse } from "./types"
 import { colors, fonts } from "./tokens"
 import { SkeletonChart } from "./Skeleton"
@@ -28,29 +30,28 @@ import {
 const RANGES: Range[] = ["1M", "3M", "6M", "1Y", "All"]
 
 export default function NetWorthChart() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [range, setRange] = useState<Range>("6M")
   const [data, setData] = useState<NetWorthResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
 
     setLoading(true)
 
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/networth?range=${range}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/networth?range=${range}`)
 
         if (res.ok) setData(await res.json())
       } finally {
         setLoading(false)
       }
     })()
-  }, [isSignedIn, getToken, range])
+  }, [demoMode, isSignedIn, apiFetch, range])
 
   if (loading || !data) {
     return <SkeletonChart height={240} />

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import { SkeletonList } from "./Skeleton"
 
 interface MonthData {
@@ -13,24 +15,23 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 
 export default function CategoryComparison() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [data, setData] = useState<MonthData[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/categories/comparison?months=3`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/categories/comparison?months=3`)
         if (res.ok) setData(await res.json())
       } finally {
         setLoading(false)
       }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading) return <SkeletonList rows={4} />
 

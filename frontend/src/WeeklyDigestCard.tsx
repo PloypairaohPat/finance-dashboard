@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { WeeklyDigest } from "./types"
 
 const fmt = (n: number) =>
@@ -13,22 +15,21 @@ const fmtRangeShort = (startISO: string, endISO: string) => {
 }
 
 export default function WeeklyDigestCard() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/alerts/digest`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/alerts/digest`)
         if (res.ok) setDigest(await res.json())
       } finally { setLoading(false) }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading || !digest) return null       // silent if not ready — fine at top of page
 

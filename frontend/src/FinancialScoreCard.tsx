@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { FinancialScore, ScoreComponentKey, ScoreGrade } from "./types"
 
 const GRADE_COLOR: Record<ScoreGrade, string> = {
@@ -26,22 +28,21 @@ function barColor(value: number): string {
 }
 
 export default function FinancialScoreCard() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [score, setScore] = useState<FinancialScore | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/score`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/score`)
         if (res.ok) setScore(await res.json())
       } finally { setLoading(false) }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading || !score) return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading score…</div>
 

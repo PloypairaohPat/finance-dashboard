@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 
 interface CashFlowRow {
   month: string    // YYYY-MM
@@ -18,18 +20,17 @@ const monthName = (ym: string) => {
 }
 
 export default function SavingsTrend() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [rows, setRows] = useState<CashFlowRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/cashflow?months=6`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/cashflow?months=6`)
         if (res.ok) {
           const json = await res.json()
           console.log("💰 cashflow raw response:", json)
@@ -41,7 +42,7 @@ export default function SavingsTrend() {
         }
       } finally { setLoading(false) }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading) return <div style={{ color: "#5a7a5a", fontSize: 13 }}>Loading…</div>
   if (rows.length === 0) {

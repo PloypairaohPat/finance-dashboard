@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { SubscriptionAnalysis, EnrichedStream, Frequency } from "./types"
 
 const fmt = (n: number) =>
@@ -106,22 +108,21 @@ function UpcomingRow({ s }: { s: EnrichedStream }) {
 }
 
 export default function SubscriptionTracker() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [data, setData] = useState<SubscriptionAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!demoMode && !isSignedIn) return
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/subscriptions`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(`${API_URL}/subscriptions`)
         if (res.ok) setData(await res.json())
       } finally { setLoading(false) }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading || !data) {
     return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading subscriptions…</div>

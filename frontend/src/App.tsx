@@ -23,6 +23,7 @@ import {
   useAuth,
 } from "@clerk/clerk-react";
 import { API_URL } from "./config"
+import { DemoContext } from "./lib/DemoContext"
 import HeroOverview from "./HeroOverview"
 import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
@@ -230,9 +231,24 @@ export default function App() {
   const isMobile = useMediaQuery("(max-width: 640px)")
   const { getToken, isSignedIn, isLoaded } = useAuth();
 
+  // ── Demo mode — lets visitors view the dashboard without logging in ──
+  const [demoMode, setDemoMode] = useState(
+    () => new URLSearchParams(window.location.search).get("demo") === "1"
+  );
+
   // ── Authenticated fetch wrapper ──────────────────────────────────
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
+      if (demoMode) {
+        return fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            "Content-Type": "application/json",
+            "X-Demo-Mode": "1",
+          },
+        });
+      }
       const token = await getToken();
       return fetch(url, {
         ...options,
@@ -243,7 +259,7 @@ export default function App() {
         },
       });
     },
-    [getToken]
+    [getToken, demoMode]
   );
 
   // ── M5.1 — Hero Overview derived values ─────────────────────────
@@ -274,8 +290,8 @@ export default function App() {
 
   // ── Auto-connect check ───────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) { setInitialLoading(false); return; }
+    if (!demoMode && !isLoaded) return;
+    if (!demoMode && !isSignedIn) { setInitialLoading(false); return; }
 
     (async () => {
       try {
@@ -292,7 +308,7 @@ export default function App() {
         setInitialLoading(false);
       }
     })();
-  }, [authFetch, isSignedIn]);
+  }, [authFetch, isSignedIn, demoMode]);
 
   // ── Fetch link token ─────────────────────────────────────────────
   useEffect(() => {
@@ -405,13 +421,13 @@ export default function App() {
   }, [authFetch, fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary])
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!demoMode && (!isLoaded || !isSignedIn)) return;
     fetchData();
     fetchBudgets();
     fetchAlerts();
     fetchNetWorth();
     fetchInsightsSummary();
-  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn])
+  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
 
   useEffect(() => {
     if (!lastSyncedAt || !connected || hasAutoSynced.current) return
@@ -521,29 +537,10 @@ export default function App() {
     );
   }
 
-  return (
+  // ── Shared dashboard JSX — rendered for real signed-in users and for
+  // demo visitors alike, so there is no duplicated markup between the two.
+  const dashboard = (
     <>
-    <SignedOut>
-      <div style={{
-        display: "flex", flexDirection: "column",
-        justifyContent: "center", alignItems: "center",
-        height: "100vh", background: "#0a0f0c", gap: "24px",
-      }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{
-            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-            fontSize: 28, color: "#e8f4e8", letterSpacing: "-.01em",
-          }}>Ledger</span>
-          <span style={{
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
-            color: "#5a7a5a", letterSpacing: ".06em",
-          }}>v0.5</span>
-        </div>
-        <SignIn />
-      </div>
-    </SignedOut>
-
-    <SignedIn>
     <div style={styles.root as CSSProperties}>
       <header style={{
         ...(styles.header as CSSProperties),
@@ -609,7 +606,20 @@ export default function App() {
               {updatingBalance ? "opening…" : "⚡ Live Balances"}
             </button>
           )}
-          <UserButton afterSignOutUrl="/" />
+          {demoMode ? (
+            <button
+              onClick={() => setDemoMode(false)}
+              style={{
+                background: "transparent", border: "1px solid #333", color: "#888",
+                padding: "6px 14px", borderRadius: "4px", cursor: "pointer",
+                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
+              }}
+            >
+              Exit demo
+            </button>
+          ) : (
+            <UserButton afterSignOutUrl="/" />
+          )}
         </div>
       </header>
 
@@ -849,8 +859,80 @@ export default function App() {
         onUpdate={updated => setSelectedTx(updated)}
       />
     )}
-
-    </SignedIn>
     </>
+  );
+
+  // ── Demo banner — slim persistent bar shown only while in demo mode ──
+  const demoBanner = (
+    <div style={{
+      background: "#1a2e20",
+      borderBottom: "1px solid #00e5a030",
+      padding: "10px 20px",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      gap: "16px", flexWrap: "wrap",
+    }}>
+      <span style={{
+        fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#00e5a0",
+      }}>
+        Demo mode — sample data, changes aren't saved.
+      </span>
+      <button
+        onClick={() => setDemoMode(false)}
+        style={{
+          background: "#00e5a0", color: "#000", border: "none",
+          padding: "4px 14px", borderRadius: "4px", cursor: "pointer",
+          fontSize: "11px", fontWeight: 700, fontFamily: "'Syne', sans-serif",
+        }}
+      >
+        Sign in
+      </button>
+    </div>
+  );
+
+  if (demoMode) {
+    return (
+      <DemoContext.Provider value={{ demoMode }}>
+        {demoBanner}
+        {dashboard}
+      </DemoContext.Provider>
+    );
+  }
+
+  return (
+    <DemoContext.Provider value={{ demoMode }}>
+    <SignedOut>
+      <div style={{
+        display: "flex", flexDirection: "column",
+        justifyContent: "center", alignItems: "center",
+        height: "100vh", background: "#0a0f0c", gap: "24px",
+      }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{
+            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+            fontSize: 28, color: "#e8f4e8", letterSpacing: "-.01em",
+          }}>Ledger</span>
+          <span style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
+            color: "#5a7a5a", letterSpacing: ".06em",
+          }}>v0.5</span>
+        </div>
+        <SignIn />
+        <button
+          onClick={() => setDemoMode(true)}
+          style={{
+            background: "transparent", color: "#00e5a0", border: "1px solid #00e5a040",
+            padding: "10px 24px", borderRadius: "8px", cursor: "pointer",
+            fontSize: "13px", fontFamily: "'IBM Plex Mono', monospace", letterSpacing: "0.3px",
+          }}
+        >
+          View demo — no login required
+        </button>
+      </div>
+    </SignedOut>
+
+    <SignedIn>
+    {dashboard}
+    </SignedIn>
+    </DemoContext.Provider>
   );
 }
