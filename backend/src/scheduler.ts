@@ -2,6 +2,7 @@ import cron from "node-cron"
 import { PlaidApi } from "plaid"
 import prisma from "./lib/prisma"
 import { triggerSync } from "./services/plaid.service"
+import { DEMO_USER_ID } from "./middleware/auth"
 
 export function startScheduler(plaidClient: PlaidApi) {
   // Run every 6 hours — daily-at-6am missed syncs when the process wasn't alive at that exact time
@@ -9,7 +10,9 @@ export function startScheduler(plaidClient: PlaidApi) {
     console.log("⏰ [Cron] Scheduled sync starting...")
 
     try {
-      const items = await prisma.plaidItem.findMany()
+      const items = await prisma.plaidItem.findMany({
+        where: { userId: { not: DEMO_USER_ID } },
+      })
 
       if (items.length === 0) {
         console.log("⏰ [Cron] No Plaid items found, skipping.")
