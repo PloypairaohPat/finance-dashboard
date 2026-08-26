@@ -2,9 +2,7 @@
 
 A full-stack personal finance platform that connects to a real bank via **Plaid Production**, normalizes and enriches transactions through a custom TypeScript pipeline, and surfaces actionable financial intelligence — budgets, subscription detection, a 7-detector alerts engine, goals, and a composite 0–100 Financial Health Score.
 
-**🔗 [Live demo](https://finance-dashboard-tau-two.vercel.app)** · Sign in with Clerk to view the full dashboard.
-
-> Note: the live demo requires Clerk sign-in — there is currently no read-only guest view.
+**🔗 [Live demo — no login required](https://finance-dashboard-tau-two.vercel.app/?demo=1)** · Explore the full dashboard instantly with realistic sample data — no sign-up. Or [sign in with Clerk](https://finance-dashboard-tau-two.vercel.app) to connect a real bank.
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
@@ -108,8 +106,9 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 
 ### Security model
 - **AES-256-GCM encryption** for Plaid access tokens at rest. The 32-byte key lives in Railway environment variables only; tokens are encrypted before insert and decrypted on demand inside the Plaid service. Tokens are never logged, never returned in API responses, and never written to disk in plaintext.
-- **Clerk JWT authentication** end-to-end. Every backend route is wrapped in middleware that verifies the Clerk JWT and resolves it to a `userId` before any service-layer call. The original hardcoded `demo-user` was removed in Phase 4.
-- **Per-user data isolation** — every Prisma query is scoped by the `userId` *derived from the verified JWT*, never from a request param. There is no path that lets a client specify whose data to read.
+- **Clerk JWT authentication** end-to-end. Every backend route is wrapped in middleware that verifies the Clerk JWT and resolves it to a `userId` before any service-layer call. The original hardcoded `demo-user` auth-bypass was removed in Phase 4; the current demo mode (below) is a deliberately isolated, read-only account, not an auth shortcut.
+- **Per-user data isolation** — every Prisma query is scoped to a server-resolved `userId`, never one supplied in a request param or body. For authenticated users that id comes from the verified Clerk JWT; the only other path, read-only demo mode, resolves to a single fixed public user. No request can name whose data to read.
+- **Read-only demo mode** — an `X-Demo-Mode` header maps a request to one pre-seeded demo user with entirely synthetic data. A global guard blocks every mutating request (and every Plaid call) for it, so it exposes no real financial data and can never resolve to a real account — it exists purely so the dashboard can be explored without a login.
 - **Secrets posture** — `.env` files gitignored; production secrets live only in Railway/Vercel/Supabase/Clerk dashboards. The Python analytics environment connects directly to Supabase via a separate read connection and is never deployed.
 
 ### Data pipeline
@@ -336,7 +335,7 @@ Each phase had an explicit milestone roadmap and acceptance criteria before any 
 | **Phase 4** | Production hardening | Clerk authentication, PWA (installable), centralized API config, daily cron sync + balance snapshots |
 | **Phase 5** | Intelligence + polish | Hero overview, redesigned spending donut, budgeting 2.0, insights dashboard, subscription detection, transaction UX rebuild, smart alerts 2.0 (7 detectors), goals + 0–100 financial score, design token system |
 
-**Phase 6 (in progress):** security/isolation hardening, custom domain, Hetzner VPS migration.
+**Phase 6 (in progress):** security/isolation hardening, a read-only public demo mode (no-login sample data), custom domain, Hetzner VPS migration.
 
 ---
 
