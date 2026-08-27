@@ -1,7 +1,32 @@
 import crypto from 'crypto'
 
 const ALGORITHM = 'aes-256-gcm'
-const KEY       = Buffer.from(process.env.ENCRYPTION_KEY!,  'hex')
+
+function loadEncryptionKey(raw: string | undefined): Buffer {
+  if (!raw) {
+    throw new Error(
+      'ENCRYPTION_KEY is not set. Expected a 64-character hex string (32 bytes) for AES-256-GCM.'
+    )
+  }
+
+  if (!/^[0-9a-fA-F]+$/.test(raw)) {
+    throw new Error(
+      'ENCRYPTION_KEY is invalid: it must contain only hexadecimal characters (0-9, a-f). ' +
+      'Expected 64 hex characters (32 bytes) for AES-256-GCM.'
+    )
+  }
+
+  if (raw.length !== 64) {
+    throw new Error(
+      `ENCRYPTION_KEY is invalid: expected exactly 64 hex characters (32 bytes) for ` +
+      `AES-256-GCM, but got ${raw.length} characters.`
+    )
+  }
+
+  return Buffer.from(raw, 'hex')
+}
+
+const KEY = loadEncryptionKey(process.env.ENCRYPTION_KEY)
 
 export function encrypt(text: string): string {
   const iv         = crypto.randomBytes(12)
