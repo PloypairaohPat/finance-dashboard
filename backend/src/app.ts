@@ -90,7 +90,7 @@ const corsOptions: CorsOptions = {
     }
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Demo-Mode'],
   credentials: true,
   preflightContinue: false,
   optionsSuccessStatus: 204,
