@@ -47,7 +47,7 @@ export default function TransactionList({ onRowClick }: Props) {
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     ;(async () => {
-      const res = await apiFetch(`${API_URL}/categories/list`)
+      const res = await apiFetch(`${API_URL}/budgets/categories`)
       if (res.ok) setCategories(await res.json())
     })()
   }, [demoMode, isSignedIn, apiFetch])

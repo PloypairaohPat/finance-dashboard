@@ -29,7 +29,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
     ;(async () => {
       const [tagRes, catRes] = await Promise.all([
         apiFetch(`${API_URL}/transactions/tags`),
-        apiFetch(`${API_URL}/categories/list`),
+        apiFetch(`${API_URL}/budgets/categories`),
       ])
       if (tagRes.ok) setSuggestedTags(await tagRes.json())
       if (catRes.ok) setCategoryOptions(await catRes.json())

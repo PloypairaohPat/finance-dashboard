@@ -33,7 +33,7 @@ export default function AlertCenter() {
           const data: Alert[] = await res.json()
           // Sort by severity, then triggeredAt desc
           data.sort((a, b) => {
-            const s = SEV_ORDER[a.severity] - SEV_ORDER[b.severity]
+            const s = (SEV_ORDER[a.severity] ?? SEV_ORDER.low) - (SEV_ORDER[b.severity] ?? SEV_ORDER.low)
             if (s !== 0) return s
             return b.triggeredAt.localeCompare(a.triggeredAt)
           })
@@ -73,7 +73,7 @@ export default function AlertCenter() {
   return (
     <div>
       {visible.map(a => {
-        const style = SEV_STYLE[a.severity]
+        const style = SEV_STYLE[a.severity] ?? SEV_STYLE.low
         return (
           <div key={a.id} className="interactive-row" style={{
             background: style.bg, border: `1px solid ${style.border}`,
