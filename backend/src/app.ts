@@ -7,6 +7,8 @@ dotenv.config()
 
 import express, { Request, Response } from 'express'
 import cors, { CorsOptions } from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid'
 import accountsRouter from './routes/accounts.routes'
 import transactionsRouter from './routes/transactions.routes'
@@ -71,6 +73,11 @@ const plaidCountryCodes = (process.env.PLAID_COUNTRY_CODES || 'US')
 // ── App setup ─────────────────────────────────────────────────────
 const app = express()
 
+// Required for correct client IPs behind Railway's proxy — without this,
+// req.ip (and therefore rate limiting) would see Railway's edge IP for
+// every request instead of the real client, collapsing all users into one bucket.
+app.set('trust proxy', 1)
+
 const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -109,11 +116,42 @@ const corsOptions: CorsOptions = {
 // leak into clerkAuth before CORS headers are written.
 app.options('*', cors(corsOptions))
 app.use(cors(corsOptions))
+// crossOriginResourcePolicy is relaxed to cross-origin so the Vercel frontend can
+// still fetch from this API; no CSP is set since this is a JSON API, not a page.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 app.use(express.json({
   verify: (req, _res, buf) => { (req as any).rawBody = buf }
 }))
 app.use(clerkAuth)
 app.use(demoReadOnly)
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 150,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again shortly.' },
+  // GET /health must stay available for uptime checks and the DB keepalive.
+  // POST /webhook may legitimately burst from Plaid's servers and is already
+  // protected by JWT signature verification (M6.3).
+  skip: (req) =>
+    (req.method === 'GET' && req.path === '/health') ||
+    (req.method === 'POST' && req.path === '/webhook'),
+})
+app.use(generalLimiter)
+
+// Plaid endpoints cost real money and quota per call, so they get a tighter
+// limit in addition to the general one above.
+const plaidLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again shortly.' },
+})
 
 // ── Routes ────────────────────────────────────────────────────────
 app.use('/accounts', requireSession, accountsRouter)
@@ -129,6 +167,11 @@ app.use("/insights", insightsRoutes)
 app.use("/subscriptions", subscriptionsRoutes)
 app.use("/goals", goalsRoutes)
 app.use("/score", scoreRoutes)
+
+app.use(
+  ['/create_link_token', '/create-update-link-token', '/exchange_public_token', '/sync'],
+  plaidLimiter
+)
 
 // Plaid router still needs route-level auth inside plaid.routes.ts
 app.use('/', makePlaidRouter(plaidClient, plaidProducts, plaidCountryCodes))
