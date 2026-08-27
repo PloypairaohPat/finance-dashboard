@@ -90,11 +90,12 @@ export async function patchTransaction(req: Request, res: Response): Promise<voi
     const userId = getUserId(req)
     const id = req.params.id as string
     const { tags, notes, category } = req.body
-    const updated = await updateTransaction(id, { tags, notes, category })
+    const updated = await updateTransaction(userId, id, { tags, notes, category })
     res.json({ ok: true, transaction: updated })
   } catch (err: any) {
     console.error("patchTransaction:", err.message)
-    res.status(500).json({ error: "Update failed" })
+    res.status(err.message === "Transaction not found" ? 404 : 500)
+       .json({ error: err.message === "Transaction not found" ? err.message : "Update failed" })
   }
 }
 

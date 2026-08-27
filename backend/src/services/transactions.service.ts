@@ -253,9 +253,16 @@ export async function searchTransactions(
 }
 
 export async function updateTransaction(
+  userId: string,
   transactionId: string,
   data: { tags?: string[]; notes?: string | null; category?: string }
 ) {
+  const owned = await prisma.transaction.findFirst({
+    where: { id: transactionId, userId },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("Transaction not found")
+
   return prisma.transaction.update({
     where: { id: transactionId },
     data: {
