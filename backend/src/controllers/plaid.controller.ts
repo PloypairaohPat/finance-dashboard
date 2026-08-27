@@ -7,6 +7,7 @@ import {
   triggerSync,
 } from '../services/plaid.service'
 import { getUserId } from '../middleware/auth'
+import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
 
 export function makePlaidController(
   plaidClient:  PlaidApi,
@@ -69,6 +70,17 @@ export function makePlaidController(
       }>,
       res: Response
     ) {
+      const verified = await verifyPlaidWebhook(
+        plaidClient,
+        req.header('Plaid-Verification'),
+        (req as any).rawBody
+      )
+      if (!verified) {
+        console.warn('⚠️  Webhook rejected: invalid signature')
+        res.status(401).json({ error: 'Invalid webhook signature' })
+        return
+      }
+
       const { webhook_type, webhook_code, item_id } = req.body
       console.log(`📨 Webhook: ${webhook_type}/${webhook_code} — item: ${item_id}`)
       res.json({ received: true })

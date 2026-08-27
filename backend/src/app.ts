@@ -24,6 +24,14 @@ import subscriptionsRoutes from "./routes/subscriptions.routes"
 import goalsRoutes from "./routes/goals.routes"
 import scoreRoutes from "./routes/score.routes"
 
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: Buffer
+    }
+  }
+}
+
 // ── Env validation ────────────────────────────────────────────────
 const REQUIRED_ENV = [
   'PLAID_CLIENT_ID',
@@ -101,7 +109,9 @@ const corsOptions: CorsOptions = {
 // leak into clerkAuth before CORS headers are written.
 app.options('*', cors(corsOptions))
 app.use(cors(corsOptions))
-app.use(express.json())
+app.use(express.json({
+  verify: (req, _res, buf) => { (req as any).rawBody = buf }
+}))
 app.use(clerkAuth)
 app.use(demoReadOnly)
 
