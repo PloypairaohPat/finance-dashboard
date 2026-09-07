@@ -3,6 +3,7 @@ import prisma              from '../lib/prisma'
 import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 import { captureBalanceSnapshots } from './networth.service'
+import { ensureUser } from './user.service'
 
 function sanitizeAccountName(name: string): string {
   // Plaid sends ® as a lone ISO-8859-1 byte (0xAE) inside a UTF-8 JSON response;
@@ -33,6 +34,10 @@ export async function exchangePublicToken(
   publicToken:  string,
   userId:       string
 ): Promise<{ institutionName: string | null }> {
+  // 0. Clerk authenticates the user but never creates our own User row —
+  // do that first so every downstream write (PlaidItem, Account, Transaction) has a valid FK.
+  await ensureUser(userId)
+
   // 1. Exchange for permanent access token
   const tokenResponse = await plaidClient.itemPublicTokenExchange({ public_token: publicToken })
   const { access_token, item_id } = tokenResponse.data
