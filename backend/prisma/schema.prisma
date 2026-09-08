@@ -29,6 +29,9 @@ model PlaidItem {
   institutionName String?
   cursor          String?
   lastSyncedAt    DateTime?
+  status          String    @default("healthy") // healthy | login_required | pending_expiration | revoked | error
+  errorCode       String?
+  lastErrorAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   accounts        Account[]

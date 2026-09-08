@@ -9,6 +9,7 @@ import {
 } from '../services/plaid.service'
 import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
+import { classifyPlaidError } from '../utils/plaidErrors'
 
 export function makePlaidController(
   plaidClient:  PlaidApi,
@@ -31,12 +32,14 @@ export function makePlaidController(
     async getUpdateLinkToken(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const link_token = await createUpdateLinkToken(plaidClient, userId, countryCodes)
+        const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : undefined
+        const link_token = await createUpdateLinkToken(plaidClient, userId, countryCodes, itemId)
         console.log(`✅ update link_token created for user: ${userId}`)
         res.json({ link_token })
       } catch (err: any) {
         console.error('❌ getUpdateLinkToken:', err.response?.data || err.message)
-        res.status(500).json({ error: err.message })
+        res.status(err.message === 'PlaidItem not found' ? 404 : 500)
+           .json({ error: err.message })
       }
     },
 
@@ -107,8 +110,41 @@ export function makePlaidController(
         }
       }
 
-      if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
-        console.error(`❌ Plaid item error for ${item_id}:`, req.body.error)
+      if (
+        webhook_type === 'ITEM' &&
+        (webhook_code === 'ERROR' ||
+          webhook_code === 'PENDING_EXPIRATION' ||
+          webhook_code === 'USER_PERMISSION_REVOKED')
+      ) {
+        if (item_id) {
+          const prisma = (await import('../lib/prisma')).default
+          const plaidItem = await prisma.plaidItem.findUnique({ where: { itemId: item_id } })
+          if (plaidItem) {
+            let status: 'login_required' | 'pending_expiration' | 'revoked' | 'error'
+            let errorCode: string | null = null
+
+            if (webhook_code === 'ERROR') {
+              const classified = classifyPlaidError(req.body.error)
+              status    = classified.status
+              errorCode = classified.errorCode ?? null
+            } else if (webhook_code === 'PENDING_EXPIRATION') {
+              status = 'pending_expiration'
+            } else {
+              status = 'revoked'
+            }
+
+            await prisma.plaidItem.update({
+              where: { id: plaidItem.id },
+              data:  { status, errorCode, lastErrorAt: new Date() },
+            })
+
+            Sentry.captureMessage(
+              `Plaid ITEM/${webhook_code} for item ${item_id} → status=${status}${errorCode ? ` (${errorCode})` : ''}`,
+              webhook_code === 'PENDING_EXPIRATION' ? 'warning' : 'error'
+            )
+            console.error(`❌ Plaid ITEM/${webhook_code} for ${item_id} → status=${status}`, req.body.error ?? '')
+          }
+        }
       }
     },
   }

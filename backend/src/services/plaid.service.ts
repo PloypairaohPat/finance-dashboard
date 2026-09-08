@@ -1,9 +1,11 @@
 import { PlaidApi, CountryCode, Products } from 'plaid'
+import * as Sentry from '@sentry/node'
 import prisma              from '../lib/prisma'
 import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 import { captureBalanceSnapshots } from './networth.service'
 import { ensureUser } from './user.service'
+import { classifyPlaidError } from '../utils/plaidErrors'
 
 function sanitizeAccountName(name: string): string {
   // Plaid sends ® as a lone ISO-8859-1 byte (0xAE) inside a UTF-8 JSON response;
@@ -131,10 +133,17 @@ export async function exchangePublicToken(
 export async function createUpdateLinkToken(
   plaidClient:  PlaidApi,
   userId:       string,
-  countryCodes: CountryCode[]
+  countryCodes: CountryCode[],
+  itemId?:      string
 ): Promise<string> {
-  const item = await prisma.plaidItem.findFirst({ where: { userId } })
-  if (!item) throw new Error('No linked account found for this user')
+  // Ownership check: an explicit itemId must belong to this user. With no itemId,
+  // fall back to the user's oldest item — deterministic, but callers with more than
+  // one linked institution should pass itemId to target a specific connection.
+  const item = itemId
+    ? await prisma.plaidItem.findFirst({ where: { id: itemId, userId } })
+    : await prisma.plaidItem.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } })
+
+  if (!item) throw new Error('PlaidItem not found')
 
   const accessToken = decrypt(item.accessToken)
 
@@ -162,31 +171,47 @@ export async function triggerSync(
 
   let added = 0, modified = 0, removed = 0
   for (const item of items) {
-    const accessToken = decrypt(item.accessToken)
-    let acctResp: Awaited<ReturnType<typeof plaidClient.accountsBalanceGet>>
+    // Isolate each item's sync — one broken connection must not abort the rest.
     try {
-      acctResp = await plaidClient.accountsBalanceGet({ access_token: accessToken })
-      console.log(`💰 [sync] balance/get succeeded for item ${item.id}`)
-    } catch (balErr: any) {
-      const code = balErr.response?.data?.error_code ?? balErr.message
-      console.warn(`⚠️  [sync] balance/get failed (${code}) — falling back to accounts/get for item ${item.id}`)
-      acctResp = await plaidClient.accountsGet({ access_token: accessToken })
-    }
-    for (const acct of acctResp.data.accounts) {
-      await prisma.account.updateMany({
-        where: { plaidAccountId: acct.account_id },
-        data: {
-          name:             sanitizeAccountName(acct.name),
-          officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
-          currentBalance:   acct.balances.current,
-          availableBalance: acct.balances.available,
-        },
+      const accessToken = decrypt(item.accessToken)
+      let acctResp: Awaited<ReturnType<typeof plaidClient.accountsBalanceGet>>
+      try {
+        acctResp = await plaidClient.accountsBalanceGet({ access_token: accessToken })
+        console.log(`💰 [sync] balance/get succeeded for item ${item.id}`)
+      } catch (balErr: any) {
+        const code = balErr.response?.data?.error_code ?? balErr.message
+        console.warn(`⚠️  [sync] balance/get failed (${code}) — falling back to accounts/get for item ${item.id}`)
+        acctResp = await plaidClient.accountsGet({ access_token: accessToken })
+      }
+      for (const acct of acctResp.data.accounts) {
+        await prisma.account.updateMany({
+          where: { plaidAccountId: acct.account_id },
+          data: {
+            name:             sanitizeAccountName(acct.name),
+            officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
+            currentBalance:   acct.balances.current,
+            availableBalance: acct.balances.available,
+          },
+        })
+      }
+      const result = await syncTransactions(plaidClient, item.id)
+      added    += result.added
+      modified += result.modified
+      removed  += result.removed
+
+      await prisma.plaidItem.update({
+        where: { id: item.id },
+        data:  { status: 'healthy', errorCode: null, lastErrorAt: null },
       })
+    } catch (err: any) {
+      const { status, errorCode } = classifyPlaidError(err)
+      await prisma.plaidItem.update({
+        where: { id: item.id },
+        data:  { status, errorCode: errorCode ?? null, lastErrorAt: new Date() },
+      })
+      Sentry.captureException(err)
+      console.error(`❌ [sync] item ${item.id} failed (status=${status}, code=${errorCode ?? 'n/a'}):`, err.message)
     }
-    const result = await syncTransactions(plaidClient, item.id)
-    added    += result.added
-    modified += result.modified
-    removed  += result.removed
   }
 
   // Belt-and-suspenders: write a snapshot after ALL items are synced so
