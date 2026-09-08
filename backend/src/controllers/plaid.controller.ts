@@ -1,4 +1,5 @@
 import { Request, Response }  from 'express'
+import * as Sentry from '@sentry/node'
 import { PlaidApi, Products, CountryCode } from 'plaid'
 import {
   createLinkToken,
@@ -97,9 +98,10 @@ export function makePlaidController(
               where: { itemId: item_id },
             })
             if (plaidItem) {
-              triggerSync(plaidClient, plaidItem.userId).catch((err: any) =>
+              triggerSync(plaidClient, plaidItem.userId).catch((err: any) => {
+                Sentry.captureException(err)
                 console.error('❌ Webhook sync error:', err.message)
-              )
+              })
             }
           }
         }

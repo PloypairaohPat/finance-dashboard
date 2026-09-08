@@ -1,4 +1,5 @@
 import cron from "node-cron"
+import * as Sentry from "@sentry/node"
 import { PlaidApi } from "plaid"
 import prisma from "./lib/prisma"
 import { triggerSync } from "./services/plaid.service"
@@ -25,12 +26,14 @@ export function startScheduler(plaidClient: PlaidApi) {
           const result = await triggerSync(plaidClient, userId)
           console.log(`⏰ [Cron] Synced user ${userId}: +${result.added} ~${result.modified} -${result.removed}`)
         } catch (err: any) {
+          Sentry.captureException(err)
           console.error(`⏰ [Cron] Sync failed for user ${userId}:`, err.message)
         }
       }
 
       console.log("⏰ [Cron] Scheduled sync complete.")
     } catch (err: any) {
+      Sentry.captureException(err)
       console.error("⏰ [Cron] Unexpected error:", err.message)
     }
   })

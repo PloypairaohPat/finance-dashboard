@@ -5,7 +5,26 @@
 import dotenv from 'dotenv'
 dotenv.config()
 
-import express, { Request, Response } from 'express'
+// Sentry must be initialised before the rest of the app is imported so its
+// instrumentation can attach first, per Sentry's Express setup docs.
+// SENTRY_DSN is intentionally NOT in REQUIRED_ENV — the app must boot fine without it
+// (local dev, tests, or a deploy that hasn't configured Sentry yet).
+import * as Sentry from '@sentry/node'
+import { scrubSentryEvent } from './utils/sentryScrub'
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    sendDefaultPii: false,
+    // Explicit scrubbing, not reliance on SDK defaults: strip bodies/cookies/auth
+    // headers and deep-scrub anything token- or key-shaped from the whole event.
+    beforeSend(event) {
+      return scrubSentryEvent(event)
+    },
+  })
+}
+
+import express, { Request, Response, NextFunction } from 'express'
 import cors, { CorsOptions } from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
@@ -187,6 +206,17 @@ app.get('/health', async (_req: Request, res: Response) => {
   } catch {
     res.status(503).json({ status: 'degraded', db: 'unreachable' })
   }
+})
+
+// ── Error handling ────────────────────────────────────────────────
+// Must be registered after all route mounts. Sentry's handler captures the
+// error (already scrubbed by beforeSend above) and calls next(err); our
+// handler then logs it and returns a generic 500 without leaking internals.
+Sentry.setupExpressErrorHandler(app)
+
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('❌ Unhandled error:', err)
+  res.status(500).json({ error: 'Internal server error' })
 })
 
 export { app, plaidClient }
