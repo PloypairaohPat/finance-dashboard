@@ -29,6 +29,7 @@ import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
 import WeeklyDigestCard from "./WeeklyDigestCard"
 import AlertCenter from "./AlertCenter"
+import ConnectedBanks from "./ConnectedBanks"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
 import AddBudgetRow from "./AddBudgetRow"
@@ -713,6 +714,12 @@ export default function App() {
               gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(260px, 1fr))",
             }}>
               {accounts.map((a) => <AccountCard key={a.plaidAccountId} account={a} />)}
+            </div>
+            <div style={{ marginTop: 24 }}>
+              <div style={styles.sectionHeader as CSSProperties}>
+                <h2 style={styles.sectionTitle as CSSProperties}>Connected Banks</h2>
+              </div>
+              <ConnectedBanks />
             </div>
           </div>
         )}

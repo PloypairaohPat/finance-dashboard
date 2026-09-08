@@ -13,7 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
-import { app } from '../src/app'
+import { app, plaidClient } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
 
@@ -212,24 +212,42 @@ const READ_ENDPOINTS = [
   '/transactions/categories',
   '/budgets/status',
   '/alerts/digest',
+  '/plaid-items',
 ]
 
 // ── Fixtures ──────────────────────────────────────────────────────
 
 let userA: UserFixture
 let userB: UserFixture
+let demoItem: { id: string; institutionName: string }
 
 beforeAll(async () => {
   // Clean slate — in case a previous run crashed mid-suite.
   await cleanupUser(USER_A)
   await cleanupUser(USER_B)
+  await cleanupUser(DEMO_USER_ID)
   userA = await seedUser(USER_A, true)
   userB = await seedUser(USER_B, false)
+
+  // M6.7 — a demo PlaidItem, mirroring prisma/seed-demo.ts's shape, so the
+  // demo-mode /plaid-items tests have something concrete to assert against.
+  await prisma.user.create({ data: { id: DEMO_USER_ID, email: 'demo@isolation-test.local' } })
+  const createdDemoItem = await prisma.plaidItem.create({
+    data: {
+      userId: DEMO_USER_ID,
+      itemId: 'demo-item-1',
+      accessToken: 'DEMO-NO-TOKEN',
+      institutionId: 'ins_demo',
+      institutionName: 'Demo Bank',
+    },
+  })
+  demoItem = { id: createdDemoItem.id, institutionName: createdDemoItem.institutionName! }
 })
 
 afterAll(async () => {
   await cleanupUser(USER_A)
   await cleanupUser(USER_B)
+  await cleanupUser(DEMO_USER_ID)
   await prisma.$disconnect()
 })
 
@@ -239,6 +257,15 @@ describe('A. Read isolation — user-b must never see user-a data', () => {
   it.each(READ_ENDPOINTS)('GET %s does not leak user-a records to user-b', async (path) => {
     const res = await request(app).get(path).set('X-Test-User', USER_B)
     assertNoLeak(res, userA.markers, `GET ${path} (as user-b)`)
+  })
+
+  it('GET /plaid-items never includes accessToken or cursor for either user', async () => {
+    for (const userId of [USER_A, USER_B]) {
+      const res = await request(app).get('/plaid-items').set('X-Test-User', userId)
+      const text = JSON.stringify(res.body)
+      expect(text.includes('"accessToken"'), `GET /plaid-items (as ${userId}) leaked an accessToken field`).toBe(false)
+      expect(text.includes('"cursor"'), `GET /plaid-items (as ${userId}) leaked a cursor field`).toBe(false)
+    }
   })
 })
 
@@ -315,6 +342,79 @@ describe('B. IDOR re-test — user-b cannot mutate user-a rows by id', () => {
     const after = await prisma.alert.findUniqueOrThrow({ where: { id: alertId } })
     expect(after.dismissedAt).toBeNull()
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+  })
+
+  it('DELETE /plaid-items/:id (user-a item) as user-b -> 404, rows unchanged, Plaid never called', async () => {
+    const itemBefore = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
+    const accountBefore = await prisma.account.findUniqueOrThrow({ where: { id: userA.accountId } })
+    const txCountBefore = await prisma.transaction.count({ where: { accountId: userA.accountId } })
+    const itemRemoveCallsBefore = (plaidClient.itemRemove as any).mock.calls.length
+
+    const res = await request(app)
+      .delete(`/plaid-items/${userA.plaidItemId}`)
+      .set('X-Test-User', USER_B)
+
+    expect(res.status).toBe(404)
+
+    const itemAfter = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
+    expect(JSON.stringify(itemAfter)).toBe(JSON.stringify(itemBefore))
+
+    const accountAfter = await prisma.account.findUniqueOrThrow({ where: { id: userA.accountId } })
+    expect(JSON.stringify(accountAfter)).toBe(JSON.stringify(accountBefore))
+
+    const txCountAfter = await prisma.transaction.count({ where: { accountId: userA.accountId } })
+    expect(txCountAfter).toBe(txCountBefore)
+    expect(txCountAfter).toBe(userA.transactionIds.length)
+
+    // Ownership check must reject before ever reaching Plaid.
+    expect((plaidClient.itemRemove as any).mock.calls.length).toBe(itemRemoveCallsBefore)
+  })
+
+  it('DELETE /plaid-items/:id (own item) as user-a -> succeeds, rows deleted', async () => {
+    // A throwaway item, separate from userA's shared fixture (which later
+    // tests in this file still depend on), so this destructive test can't
+    // affect anything else regardless of execution order.
+    const item = await prisma.plaidItem.create({
+      data: {
+        userId: USER_A,
+        itemId: `${USER_A}-unlink-item`,
+        accessToken: encrypt(`fake-access-token-${USER_A}-unlink`),
+        institutionId: `ins_${USER_A}_unlink`,
+        institutionName: `${USER_A}-Unlink-Bank`,
+      },
+    })
+    const account = await prisma.account.create({
+      data: {
+        userId: USER_A,
+        plaidItemId: item.id,
+        plaidAccountId: `${USER_A}-unlink-acct`,
+        name: `${USER_A}-Unlink-Checking`,
+        type: 'depository',
+        subtype: 'checking',
+        currentBalance: '1.00',
+        availableBalance: '1.00',
+        isoCurrencyCode: 'USD',
+      },
+    })
+    const tx = await prisma.transaction.create({
+      data: {
+        userId: USER_A,
+        accountId: account.id,
+        plaidTransactionId: `${USER_A}-unlink-tx-1`,
+        date: new Date(),
+        amount: '1.00',
+        name: `${USER_A}-unlink-tx`,
+        isoCurrencyCode: 'USD',
+        pending: false,
+      },
+    })
+
+    const res = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+
+    expect(res.status).toBe(200)
+    expect(await prisma.plaidItem.findUnique({ where: { id: item.id } })).toBeNull()
+    expect(await prisma.account.findUnique({ where: { id: account.id } })).toBeNull()
+    expect(await prisma.transaction.findUnique({ where: { id: tx.id } })).toBeNull()
   })
 })
 
@@ -407,6 +507,30 @@ describe('C. Demo mode — read-only, resolves to the demo user only', () => {
     const after = await prisma.budget.count({ where: { userId: USER_A } })
     expect(after).toBe(before)
   })
+
+  it('GET /plaid-items (demo mode) returns only the demo item', async () => {
+    const res = await request(app).get('/plaid-items').set('X-Demo-Mode', '1')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveLength(1)
+    expect(res.body[0]).toMatchObject({
+      id: demoItem.id,
+      institutionName: 'Demo Bank',
+      status: 'healthy',
+    })
+  })
+
+  it('DELETE /plaid-items/:id is blocked in demo mode with no DB change', async () => {
+    const before = await prisma.plaidItem.findUniqueOrThrow({ where: { id: demoItem.id } })
+
+    const res = await request(app).delete(`/plaid-items/${demoItem.id}`).set('X-Demo-Mode', '1')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ demo: true, ok: false })
+
+    const after = await prisma.plaidItem.findUniqueOrThrow({ where: { id: demoItem.id } })
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+  })
 })
 
 // ── D. Unauthenticated ───────────────────────────────────────────────
@@ -416,5 +540,16 @@ describe('D. Unauthenticated — no headers means no data', () => {
     const res = await request(app).get(path)
     expect(res.status, `GET ${path} unexpectedly returned 200 with no auth`).not.toBe(200)
     assertNoLeak(res, [...userA.markers, ...userB.markers], `GET ${path} (unauthenticated)`)
+  })
+
+  it('DELETE /plaid-items/:id with no auth headers does not delete', async () => {
+    const before = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
+
+    const res = await request(app).delete(`/plaid-items/${userA.plaidItemId}`)
+
+    expect(res.status, 'DELETE /plaid-items/:id unexpectedly returned 200 with no auth').not.toBe(200)
+
+    const after = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before))
   })
 })

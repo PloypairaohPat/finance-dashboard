@@ -247,6 +247,18 @@ export interface EnrichedGoal {
   createdAt: string
 }
 
+export type PlaidItemStatus = "healthy" | "login_required" | "pending_expiration" | "revoked" | "error"
+
+export interface PlaidItemSummary {
+  id: string
+  institutionName: string | null
+  institutionId: string | null
+  status: PlaidItemStatus
+  errorCode: string | null
+  lastSyncedAt: string | null
+  accountCount: number
+}
+
 export type ScoreGrade = "excellent" | "good" | "fair" | "needs_work" | "at_risk"
 export type ScoreComponentKey = "savingsRate" | "spendingControl" | "debtLoad" | "growthTrend"
 

@@ -138,6 +138,7 @@ vi.mock('plaid', async (importOriginal) => {
       .fn()
       .mockResolvedValue({ data: { access_token: 'test-access-token', item_id: 'test-item-id' } })
     institutionsGetById = vi.fn().mockResolvedValue({ data: { institution: { name: 'Test Bank' } } })
+    itemRemove = vi.fn().mockResolvedValue({ data: {} })
   }
   return { ...actual, PlaidApi: MockPlaidApi }
 })
