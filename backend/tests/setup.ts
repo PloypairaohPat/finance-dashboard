@@ -20,16 +20,33 @@ import { vi } from 'vitest'
 // from backend/.env. Without this, dotenv's default "don't clobber an
 // existing value" behavior could let a pre-set real DATABASE_URL slip
 // past this file entirely.
+//
+// .env.test is gitignored, so it doesn't exist in CI — there, DATABASE_URL
+// and friends are set directly in the environment (e.g. GitHub Actions
+// `env:`) instead. Only tolerate a missing file (ENOENT) when DATABASE_URL
+// is already present in process.env; any other load error, or a missing
+// file with no DATABASE_URL set, still hard-fails below. The safety gate
+// in step 3 (must look like a test database, must not match backend/.env)
+// runs unconditionally either way — this only decides where the values
+// are allowed to come from.
 const envTestPath = path.resolve(__dirname, '..', '.env.test')
 const loaded = dotenv.config({ path: envTestPath, override: true })
 
 if (loaded.error) {
-  throw new Error(
-    `[M6.1 isolation suite] Could not load ${envTestPath} — refusing to run.\n` +
-      `Create backend/.env.test with DATABASE_URL/DIRECT_URL pointing at a disposable ` +
-      `test Postgres database before running this suite (see backend/.env.test's own ` +
-      `header comment for the local docker command used to provision one).\n` +
-      `Underlying error: ${loaded.error.message}`,
+  const fileMissing = (loaded.error as NodeJS.ErrnoException).code === 'ENOENT'
+  if (!fileMissing || !process.env.DATABASE_URL) {
+    throw new Error(
+      `[M6.1 isolation suite] Could not load ${envTestPath} — refusing to run.\n` +
+        `Create backend/.env.test with DATABASE_URL/DIRECT_URL pointing at a disposable ` +
+        `test Postgres database before running this suite (see backend/.env.test's own ` +
+        `header comment for the local docker command used to provision one), or set ` +
+        `DATABASE_URL (and friends) directly in the environment, e.g. in CI.\n` +
+        `Underlying error: ${loaded.error.message}`,
+    )
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[M6.1 isolation suite] ${envTestPath} not found — using DATABASE_URL already set in the environment.`,
   )
 }
 
