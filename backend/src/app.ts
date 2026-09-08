@@ -101,15 +101,16 @@ app.set('trust proxy', 1)
 const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:3000',
   'http://localhost:5173',
+  // Always allowed — finance-dashboard Vercel preview/production deploys.
+  /https:\/\/finance-dashboard.*\.vercel\.app$/,
 ]
-// ALLOWED_ORIGIN env var takes precedence; falls back to regex matching all
-// finance-dashboard Vercel preview/production deploys.
-const envOrigin = process.env.ALLOWED_ORIGIN
-if (envOrigin) {
-  allowedOrigins.push(envOrigin)
-} else {
-  allowedOrigins.push(/https:\/\/finance-dashboard.*\.vercel\.app$/)
-}
+// ALLOWED_ORIGIN is a comma-separated list of additional exact-match origins,
+// added on top of the defaults above (not a replacement for them).
+const envOrigins = (process.env.ALLOWED_ORIGIN ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter((o) => o.length > 0)
+allowedOrigins.push(...envOrigins)
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
