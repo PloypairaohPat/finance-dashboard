@@ -38,7 +38,7 @@ import budgetsRouter from "./routes/budgets.routes"
 import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
-import { clerkAuth, requireSession, demoReadOnly } from "./middleware/auth"
+import { clerkAuth, requireSession, demoReadOnly, DEMO_USER_ID } from "./middleware/auth"
 import prisma from "./lib/prisma"
 import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
@@ -202,7 +202,26 @@ app.get('/health', async (_req: Request, res: Response) => {
       prisma.$queryRaw`SELECT 1`,
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
     ])
-    res.json({ status: 'ok', db: 'ok' })
+
+    // Sync freshness is aggregate-only (max timestamp across non-demo items) —
+    // best-effort: if this query fails, /health still reports db:ok rather than erroring.
+    let lastSync: string | null = null
+    let lastSyncAgeHours: number | null = null
+    try {
+      const result = await prisma.plaidItem.aggregate({
+        where: { userId: { not: DEMO_USER_ID } },
+        _max: { lastSyncedAt: true },
+      })
+      const mostRecent = result._max.lastSyncedAt
+      if (mostRecent) {
+        lastSync = mostRecent.toISOString()
+        lastSyncAgeHours = Math.round(((Date.now() - mostRecent.getTime()) / 3600000) * 10) / 10
+      }
+    } catch {
+      // leave lastSync/lastSyncAgeHours as null
+    }
+
+    res.json({ status: 'ok', db: 'ok', lastSync, lastSyncAgeHours })
   } catch {
     res.status(503).json({ status: 'degraded', db: 'unreachable' })
   }
