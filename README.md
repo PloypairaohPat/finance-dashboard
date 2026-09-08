@@ -375,6 +375,18 @@ jupyter lab
 > openssl rand -hex 32
 > ```
 
+### Database migrations
+
+Schema changes are made with `npx prisma migrate dev` against a **local** Postgres database — never `prisma db push`, and never directly against the shared Supabase instance. `db push` against a shared database is exactly what broke migration history once already (it applied schema changes with no corresponding migration file, which later made `migrate dev`'s shadow-database replay fail); every schema change now needs a migration file so history stays replayable from empty.
+
+`migrate dev` needs a shadow database to detect drift — set `SHADOW_DATABASE_URL` in `.env` to a second local container (see `.env.example` for the `docker run` command), separate from both `DATABASE_URL` and any shared database.
+
+The isolation test suite has its own disposable database, provisioned with:
+```bash
+npm run test:db:setup   # dotenv -e .env.test -- prisma migrate deploy
+```
+See `.env.test.example` for the docker command that starts that container.
+
 ---
 
 ## Disclaimer
