@@ -1,4 +1,5 @@
 import { PlaidApi } from 'plaid'
+import * as Sentry from '@sentry/node'
 import prisma from '../lib/prisma'
 import { decrypt } from '../utils/encrypt'
 
@@ -40,6 +41,37 @@ export async function listPlaidItems(userId: string): Promise<PlaidItemSummary[]
   }))
 }
 
+// Plaid keeps billing for a live Item every month until /item/remove succeeds,
+// so deleting local rows without calling it is a financial bug, not a tidiness
+// one. Every code path that drops a PlaidItem must go through this function.
+//
+// Codes treated as "already gone": there is no live Item left to bill under this
+// token, so local cleanup should proceed. Anything else rethrows, which aborts
+// the caller and leaves local rows intact — the user retries rather than
+// silently orphaning a billable Item.
+const ALREADY_REMOVED_CODES = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'])
+
+export async function removeItemAtPlaid(
+  plaidClient:          PlaidApi,
+  encryptedAccessToken: string,
+): Promise<void> {
+  const accessToken = decrypt(encryptedAccessToken)
+
+  try {
+    await plaidClient.itemRemove({ access_token: accessToken })
+  } catch (err: any) {
+    const code = err?.response?.data?.error_code
+    if (!ALREADY_REMOVED_CODES.has(code)) throw err
+
+    // Not fatal, but worth seeing: if this fires often it means tokens are
+    // going stale before users disconnect, and Items may be billing unnoticed.
+    Sentry.captureMessage('plaid.itemRemove skipped — item already gone', {
+      level: 'warning',
+      extra: { errorCode: code },
+    })
+  }
+}
+
 export async function unlinkPlaidItem(
   plaidClient: PlaidApi,
   userId:      string,
@@ -48,17 +80,9 @@ export async function unlinkPlaidItem(
   const item = await prisma.plaidItem.findFirst({ where: { id: itemId, userId } })
   if (!item) throw new Error('PlaidItem not found')
 
-  const accessToken = decrypt(item.accessToken)
-
   // Revoke at Plaid BEFORE touching local rows — a Plaid failure must never
   // leave orphaned local state (deleted here, still live at Plaid or vice versa).
-  try {
-    await plaidClient.itemRemove({ access_token: accessToken })
-  } catch (err: any) {
-    const code = err?.response?.data?.error_code
-    if (code !== 'ITEM_NOT_FOUND') throw err
-    // Already gone at Plaid — treat as success and continue with local cleanup.
-  }
+  await removeItemAtPlaid(plaidClient, item.accessToken)
 
   const accounts = await prisma.account.findMany({
     where:  { plaidItemId: item.id },

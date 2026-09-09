@@ -5,6 +5,7 @@ import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 import { captureBalanceSnapshots } from './networth.service'
 import { ensureUser } from './user.service'
+import { removeItemAtPlaid } from './plaidItems.service'
 import { classifyPlaidError } from '../utils/plaidErrors'
 
 function sanitizeAccountName(name: string): string {
@@ -68,15 +69,22 @@ export async function exchangePublicToken(
   if (existingItem) {
     console.log(`🔄 Re-linking ${institutionName} — replacing existing item`)
 
+    // The superseded Item stays live at Plaid — and keeps billing monthly —
+    // unless /item/remove is called. Do it before dropping local rows, and let
+    // a genuine failure abort the re-link so we never orphan a billable Item.
+    await removeItemAtPlaid(plaidClient, existingItem.accessToken)
+
     const existingAccounts = await prisma.account.findMany({
       where:  { plaidItemId: existingItem.id },
       select: { id: true },
     })
     const accountIds = existingAccounts.map((a: { id: string }) => a.id)
 
-    await prisma.transaction.deleteMany({ where: { accountId: { in: accountIds } } })
-    await prisma.account.deleteMany({ where: { plaidItemId: existingItem.id } })
-    await prisma.plaidItem.delete({ where: { id: existingItem.id } })
+    await prisma.$transaction([
+      prisma.transaction.deleteMany({ where: { accountId: { in: accountIds } } }),
+      prisma.account.deleteMany({ where: { plaidItemId: existingItem.id } }),
+      prisma.plaidItem.delete({ where: { id: existingItem.id } }),
+    ])
 
     console.log(`🗑  Removed old item + ${accountIds.length} accounts`)
   }
