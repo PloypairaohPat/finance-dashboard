@@ -430,6 +430,12 @@ A targeted `overrides` entry (`react-scripts` → `typescript`) was tried and **
 
 Also note `moduleResolution` is `"node"`, not `"bundler"` — `"bundler"` requires TS 5 and silently broke `tsc` for the whole life of the file before the TypeScript bump.
 
+**`frontend/vercel.json` is what stops client-side routes 404ing.** Its single rewrite sends every path to `index.html` so React Router can resolve it. Without it, only the index route survives a hard refresh or a pasted deep link — navigating in-app works fine, which is what makes the omission easy to miss until someone shares a URL. Vercel checks the filesystem before applying rewrites, so hashed assets under `/static/` still serve normally.
+
+It must sit in Vercel's **Root Directory**, which for this project is `frontend/` (there is no package.json at the repo root). If that setting ever changes, this file has to move with it — a misplaced `vercel.json` is silently ignored rather than erroring.
+
+**Routing is react-router-dom in declarative mode only** — `BrowserRouter` / `Routes` / `Route`. Not `createBrowserRouter`, and not react-router's framework mode: both need build-tool integration (a Vite plugin, `react-router.config.ts`) that CRA cannot provide. RR7's docs lead with framework mode, so this is easy to drift into. `src/tabs.ts` is the single source of truth for the five tab paths and labels.
+
 ---
 
 ## Disclaimer

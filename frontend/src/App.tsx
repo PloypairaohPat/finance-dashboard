@@ -3,6 +3,10 @@
 // ─────────────────────────────────────────────────────────────────
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, CSSProperties } from "react";
+// Declarative mode only — BrowserRouter/Routes/Route. Deliberately NOT
+// createBrowserRouter: the data router's loaders/actions and react-router's
+// framework mode both need build-tool integration that CRA cannot provide.
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
@@ -34,6 +38,7 @@ import ConnectedBanks from "./ConnectedBanks"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
 import AddBudgetRow from "./AddBudgetRow"
+import { TABS } from "./tabs"
 
 // ── Styles ────────────────────────────────────────────────────────
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
@@ -207,6 +212,28 @@ function AccountCard({ account }: AccountCardProps) {
       </div>
     </div>
   );
+}
+
+// ── Placeholder tab view ──────────────────────────────────────────
+// M7.1 stage 1 ships the routes empty on purpose: this stage proves URLs,
+// deep-linking and the SPA fallback work before any component moves. Stage 2
+// replaces each of these with a real view, one tab at a time.
+function PlaceholderView({ title }: { title: string }) {
+  return (
+    <div style={styles.root as CSSProperties}>
+      <main style={{ maxWidth: 900, margin: "0 auto", padding: "60px 40px" }}>
+        <h1 style={{
+          fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+          fontSize: 32, color: "#e8f4e8", marginBottom: 12,
+        }}>{title}</h1>
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#5a7a5a",
+        }}>
+          This tab is empty until M7.1 stage 2 moves its components here.
+        </p>
+      </main>
+    </div>
+  )
 }
 
 // ── Main App ──────────────────────────────────────────────────────
@@ -521,29 +548,32 @@ export default function App() {
   ];
 
   // ── Initial loading splash ───────────────────────────────────────
-  if (initialLoading) {
-    return (
-      <div style={{
-        display: "flex", flexDirection: "column",
-        justifyContent: "center", alignItems: "center",
-        height: "100vh", background: "#0a0f0c", gap: "16px",
-      }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{
-            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-            fontSize: 24, color: "#e8f4e8", letterSpacing: "-.01em",
-          }}>Ledger</span>
-          <span style={{
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
-            color: "#5a7a5a", letterSpacing: ".06em",
-          }}>v0.5</span>
-        </div>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#5a7a5a" }}>
-          Loading your dashboard…
-        </div>
+  // Deliberately a const rather than the early `return` this used to be.
+  // Every branch App can render has to end up inside the BrowserRouter at the
+  // bottom of this function; returning here would leave the splash outside
+  // router context, so anything added to it later that touches a router hook
+  // would throw only on the slow-network path that shows it.
+  const splash = (
+    <div style={{
+      display: "flex", flexDirection: "column",
+      justifyContent: "center", alignItems: "center",
+      height: "100vh", background: "#0a0f0c", gap: "16px",
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{
+          fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
+          fontSize: 24, color: "#e8f4e8", letterSpacing: "-.01em",
+        }}>Ledger</span>
+        <span style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
+          color: "#5a7a5a", letterSpacing: ".06em",
+        }}>v0.5</span>
       </div>
-    );
-  }
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#5a7a5a" }}>
+        Loading your dashboard…
+      </div>
+    </div>
+  );
 
   // ── Shared dashboard JSX — rendered for real signed-in users and for
   // demo visitors alike, so there is no duplicated markup between the two.
@@ -903,18 +933,43 @@ export default function App() {
     </div>
   );
 
-  if (demoMode) {
-    return (
-      <DemoContext.Provider value={{ demoMode }}>
-        {demoBanner}
-        {dashboard}
-      </DemoContext.Provider>
-    );
-  }
+  // ── Routes ───────────────────────────────────────────────────────
+  // Index renders the existing dashboard completely untouched; the other four
+  // tabs are empty until stage 2. Declared once and reused by both the demo
+  // and signed-in branches so the two can never drift.
+  const [overviewTab, ...placeholderTabs] = TABS;
+  const routes = (
+    <Routes>
+      <Route path={overviewTab.path} element={dashboard} />
+      {placeholderTabs.map((tab) => (
+        <Route key={tab.id} path={tab.path} element={<PlaceholderView title={tab.label} />} />
+      ))}
+      {/* An unknown in-app path is a dead end, not a 404 page — send it home.
+          `replace` so Back doesn't bounce the user straight back into it. */}
+      <Route path="*" element={<Navigate to={overviewTab.path} replace />} />
+    </Routes>
+  );
 
-  return (
-    <DemoContext.Provider value={{ demoMode }}>
-    <SignedOut>
+  // ── Render ───────────────────────────────────────────────────────
+  // Everything app-level — demoMode + its URL/sessionStorage sync, authFetch,
+  // every data fetcher, and the Clerk gate — lives above <Routes>, so route
+  // changes never remount it and no route element owns shared state.
+  // M7.2's period anchor belongs alongside demoMode near the top of this
+  // component, for the same reason.
+  let content: React.ReactNode;
+  if (initialLoading) {
+    content = splash;
+  } else if (demoMode) {
+    content = (
+      <>
+        {demoBanner}
+        {routes}
+      </>
+    );
+  } else {
+    content = (
+      <>
+        <SignedOut>
       <div style={{
         display: "flex", flexDirection: "column",
         justifyContent: "center", alignItems: "center",
@@ -942,11 +997,16 @@ export default function App() {
           View demo — no login required
         </button>
       </div>
-    </SignedOut>
+        </SignedOut>
 
-    <SignedIn>
-    {dashboard}
-    </SignedIn>
+        <SignedIn>{routes}</SignedIn>
+      </>
+    );
+  }
+
+  return (
+    <DemoContext.Provider value={{ demoMode }}>
+      <BrowserRouter>{content}</BrowserRouter>
     </DemoContext.Provider>
   );
 }
