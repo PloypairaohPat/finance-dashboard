@@ -11,6 +11,55 @@ import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
 import { classifyPlaidError } from '../utils/plaidErrors'
 
+// ── Webhook observability ────────────────────────────────────────────
+// One JSON object per line, so Railway's log search can filter on
+// `plaid.webhook` and on the outcome field.
+//
+// NEVER add the Plaid-Verification JWT, the raw body, or any access token
+// to these fields. Everything logged here is either a non-secret enum
+// (webhook_type/code) or a deliberately truncated item id.
+
+const LOG_FIELD_MAX = 64
+
+// Until verification passes, the body is attacker-controlled. Bounding each
+// field stops a forged request from flooding the log stream; JSON.stringify
+// escapes newlines, which keeps one event on exactly one line.
+function safeField(value: unknown): string | null {
+  return typeof value === 'string' ? value.slice(0, LOG_FIELD_MAX) : null
+}
+
+// Enough to correlate against Plaid's dashboard, not enough to be a usable
+// identifier on its own.
+function truncateItemId(itemId: unknown): string | null {
+  const safe = safeField(itemId)
+  if (safe === null) return null
+  return safe.length <= 8 ? safe : `${safe.slice(0, 8)}…`
+}
+
+interface WebhookLogFields {
+  outcome:       'verified' | 'rejected'
+  webhook_type?: unknown
+  webhook_code?: unknown
+  item_id?:      unknown
+  reason?:       string
+}
+
+function logPlaidWebhook({ outcome, webhook_type, webhook_code, item_id, reason }: WebhookLogFields) {
+  const line = JSON.stringify({
+    evt:          'plaid.webhook',
+    outcome,
+    reason:       reason ?? undefined,
+    webhook_type: safeField(webhook_type),
+    webhook_code: safeField(webhook_code),
+    item_id:      truncateItemId(item_id),
+  })
+
+  // Rejections go to stderr so a forged or misconfigured request stands out
+  // at a different severity in Railway, not just by its outcome field.
+  if (outcome === 'rejected') console.warn(line)
+  else console.log(line)
+}
+
 export function makePlaidController(
   plaidClient:  PlaidApi,
   products:     Products[],
@@ -74,19 +123,33 @@ export function makePlaidController(
       }>,
       res: Response
     ) {
+      // Verification runs before any logging, DB access, or response — the
+      // body below is untrusted input until this resolves true.
+      const verificationHeader = req.header('Plaid-Verification')
       const verified = await verifyPlaidWebhook(
         plaidClient,
-        req.header('Plaid-Verification'),
+        verificationHeader,
         (req as any).rawBody
       )
+
+      const { webhook_type, webhook_code, item_id } = req.body
+
       if (!verified) {
-        console.warn('⚠️  Webhook rejected: invalid signature')
+        logPlaidWebhook({
+          outcome: 'rejected',
+          // Distinguishes a forged/tampered request from the far more common
+          // cause: something in front of Plaid stripped the header, or the
+          // endpoint was hit by a scanner.
+          reason: verificationHeader ? 'signature_invalid' : 'missing_verification_header',
+          webhook_type,
+          webhook_code,
+          item_id,
+        })
         res.status(401).json({ error: 'Invalid webhook signature' })
         return
       }
 
-      const { webhook_type, webhook_code, item_id } = req.body
-      console.log(`📨 Webhook: ${webhook_type}/${webhook_code} — item: ${item_id}`)
+      logPlaidWebhook({ outcome: 'verified', webhook_type, webhook_code, item_id })
       res.json({ received: true })
 
       if (webhook_type === 'TRANSACTIONS') {
@@ -142,7 +205,12 @@ export function makePlaidController(
               `Plaid ITEM/${webhook_code} for item ${item_id} → status=${status}${errorCode ? ` (${errorCode})` : ''}`,
               webhook_code === 'PENDING_EXPIRATION' ? 'warning' : 'error'
             )
-            console.error(`❌ Plaid ITEM/${webhook_code} for ${item_id} → status=${status}`, req.body.error ?? '')
+            // Sentry above keeps the full item_id (access-controlled, and needed
+            // to act on the alert); the Railway log stream gets the short form.
+            console.error(
+              `❌ Plaid ITEM/${webhook_code} for ${truncateItemId(item_id)} → status=${status}`,
+              req.body.error ?? '',
+            )
           }
         }
       }
