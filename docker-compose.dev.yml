@@ -1,0 +1,56 @@
+# Local development databases for Ledger.
+#
+# Brought up and down via backend/package.json:
+#   npm run db:dev:up     npm run db:dev:down
+#
+# postgres:17-alpine matches the Supabase production major version (17.6),
+# so migrations are exercised against the same engine they land on.
+#
+# This file deliberately does NOT define the isolation-suite's test database
+# (container findash-test-pg, port 55432) — that container is managed
+# separately, is ephemeral, and must stay independent of dev data.
+#
+# Nothing here is a secret: these credentials only ever reach a container
+# bound to 127.0.0.1 that holds throwaway seed data.
+
+services:
+  dev-db:
+    image: postgres:17-alpine
+    container_name: findash-dev-pg
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: findash_dev
+    # Bound to loopback explicitly so the dev database is never reachable
+    # from the local network.
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - findash-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d findash_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # `prisma migrate dev` needs a scratch database to replay migration history
+  # into when detecting drift. It DROPS and recreates this database on every
+  # run, so it must never be the dev database and never a shared one.
+  # No volume: its contents are disposable by design.
+  shadow-db:
+    image: postgres:17-alpine
+    container_name: findash-shadow-pg
+    environment:
+      POSTGRES_USER: shadowuser
+      POSTGRES_PASSWORD: shadowpass
+      POSTGRES_DB: findash_shadow
+    ports:
+      - "127.0.0.1:55435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shadowuser -d findash_shadow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  findash-dev-pgdata:

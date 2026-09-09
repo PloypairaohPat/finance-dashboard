@@ -350,10 +350,13 @@ cd finance-dashboard
 
 # 2. Backend
 cd backend
-cp .env.example .env          # DATABASE_URL, PLAID_*, CLERK_*, ENCRYPTION_KEY
+cp .env.example .env          # PLAID_*, CLERK_*, ENCRYPTION_KEY
+cp .env.dev.example .env.dev  # local dev database — see "Local databases" below
 npm install
 npx prisma generate
-npx prisma migrate dev
+npm run db:dev:up             # start local Postgres (Docker)
+npm run db:dev:migrate        # apply migrations to the LOCAL db
+npm run db:dev:seed           # realistic demo data, no Plaid calls
 npm run dev                   # http://localhost:4000
 
 # 3. Frontend (new terminal)
@@ -375,17 +378,45 @@ jupyter lab
 > openssl rand -hex 32
 > ```
 
+### Local databases
+
+Three separate Postgres databases, deliberately kept apart. None of them is ever the deployed one.
+
+| Purpose | Container | Port | Database | Config file |
+| --- | --- | --- | --- | --- |
+| Day-to-day dev | `findash-dev-pg` | 55433 | `findash_dev` | `backend/.env.dev` |
+| `migrate dev` shadow | `findash-shadow-pg` | 55435 | `findash_shadow` | (same file) |
+| Isolation test suite | `findash-test-pg` | 55432 | `findash_test` | `backend/.env.test` |
+
+Dev and shadow both come from `docker-compose.dev.yml` and are bound to `127.0.0.1` only:
+
+```bash
+cd backend
+cp .env.dev.example .env.dev   # gitignored
+npm run db:dev:up              # start both containers
+npm run db:dev:migrate         # prisma migrate dev
+npm run db:dev:seed            # seed demo data via prisma/seed-demo.ts
+npm run db:dev:reset           # drop, re-migrate, re-seed
+npm run db:dev:down            # stop (dev data persists in a named volume)
+```
+
+The test database is separate and ephemeral — see `backend/.env.test.example` for the `docker run` command that starts it, then:
+
+```bash
+cp .env.test.example .env.test
+npm run test:db:setup          # dotenv -e .env.test -- prisma migrate deploy
+npm test
+```
+
 ### Database migrations
 
-Schema changes are made with `npx prisma migrate dev` against a **local** Postgres database — never `prisma db push`, and never directly against the shared Supabase instance. `db push` against a shared database is exactly what broke migration history once already (it applied schema changes with no corresponding migration file, which later made `migrate dev`'s shadow-database replay fail); every schema change now needs a migration file so history stays replayable from empty.
+Schema changes are made with `npm run db:dev:migrate` against the **local** dev database — never `prisma db push`, and never against the deployed Supabase instance. `db push` against a shared database is exactly what broke migration history once already (it applied schema changes with no corresponding migration file, which later made `migrate dev`'s shadow-database replay fail); every schema change now needs a migration file so history stays replayable from empty.
 
-`migrate dev` needs a shadow database to detect drift — set `SHADOW_DATABASE_URL` in `.env` to a second local container (see `.env.example` for the `docker run` command), separate from both `DATABASE_URL` and any shared database.
+**The safety gate.** `backend/scripts/guard-local-db.ts` runs as a `pre` script before every migrate, reset, and seed. It refuses to continue unless `DATABASE_URL`, `DIRECT_URL`, **and** `SHADOW_DATABASE_URL` all resolve to `localhost`/`127.0.0.1`, and it additionally rejects any value byte-identical to one in `backend/.env`. It fails closed — a missing or unparseable URL is a refusal, and there is no bypass flag. All three URLs are checked because Prisma Migrate connects through `DIRECT_URL` rather than `DATABASE_URL`, and rebuilds the shadow database from scratch on every run.
 
-The isolation test suite has its own disposable database, provisioned with:
-```bash
-npm run test:db:setup   # dotenv -e .env.test -- prisma migrate deploy
-```
-See `.env.test.example` for the docker command that starts that container.
+Because the guard is wired as a `pre` script, it cannot be skipped by forgetting a flag. It does not intercept a bare `npx prisma migrate dev`, though — that path reads `backend/.env` directly, so use the npm scripts.
+
+Deployments apply migrations with `prisma migrate deploy`, which never creates or drops a database. That is also what CI runs.
 
 ---
 

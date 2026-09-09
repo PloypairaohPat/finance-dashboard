@@ -11,8 +11,20 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "npm run db:dev:migrate",
+    "db:dev:up": "docker compose -f ../docker-compose.dev.yml up -d",
+    "db:dev:down": "docker compose -f ../docker-compose.dev.yml down",
+    "db:guard": "dotenv -e .env.dev -- tsx scripts/guard-local-db.ts",
+    "predb:dev:migrate": "npm run db:guard",
+    "db:dev:migrate": "dotenv -e .env.dev -- prisma migrate dev",
+    "predb:dev:reset": "npm run db:guard",
+    "db:dev:reset": "dotenv -e .env.dev -- prisma migrate reset --force",
+    "predb:dev:seed": "npm run db:guard",
+    "db:dev:seed": "dotenv -e .env.dev -- tsx prisma/seed-demo.ts",
     "test:db:setup": "dotenv -e .env.test -- prisma migrate deploy"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed-demo.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.1",
