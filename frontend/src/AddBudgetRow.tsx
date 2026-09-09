@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
 
 const ALL_CATEGORIES = [
   "Food & Dining",
@@ -25,7 +25,7 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
   const [category, setCategory] = useState("")
   const [limit, setLimit] = useState("")
   const [saving, setSaving] = useState(false)
-  const { getToken } = useAuth()
+  const apiFetch = useApiFetch()
 
   const available = ALL_CATEGORIES.filter(c => !existingCategories.includes(c))
 
@@ -35,13 +35,10 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
 
     setSaving(true)
     try {
-      const token = await getToken()
-      await fetch(`${API_URL}/budgets`, {
+      // Content-Type must be set here — useApiFetch adds auth headers only.
+      await apiFetch(`${API_URL}/budgets`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category, monthlyLimit: val }),
       })
       setCategory("")

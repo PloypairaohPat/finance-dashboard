@@ -24,6 +24,7 @@ import {
 } from "@clerk/clerk-react";
 import { API_URL } from "./config"
 import { DemoContext } from "./lib/DemoContext"
+import { readInitialDemoMode, persistDemoMode } from "./lib/demoMode"
 import HeroOverview from "./HeroOverview"
 import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
@@ -233,9 +234,15 @@ export default function App() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
 
   // ── Demo mode — lets visitors view the dashboard without logging in ──
-  const [demoMode, setDemoMode] = useState(
-    () => new URLSearchParams(window.location.search).get("demo") === "1"
-  );
+  // Entry is either `?demo=1` or a stored session; see lib/demoMode.ts.
+  const [demoMode, setDemoMode] = useState(readInitialDemoMode);
+
+  // Keep sessionStorage and the URL in step with state, in both directions.
+  // Without this, "Exit demo" left `?demo=1` behind (a refresh put you back in)
+  // and "View demo" never added it (a refresh dropped you out).
+  useEffect(() => {
+    persistDemoMode(demoMode);
+  }, [demoMode]);
 
   // ── Authenticated fetch wrapper ──────────────────────────────────
   const authFetch = useCallback(

@@ -1,7 +1,7 @@
 import { useState } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import type { Budget } from "./types"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
 
 const STATUS_COLORS = {
   on_track: {
@@ -45,7 +45,7 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
   const [limitInput, setLimitInput] = useState(String(budget.monthlyLimit))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const { getToken } = useAuth()
+  const apiFetch = useApiFetch()
 
   const colors = STATUS_COLORS[budget.status]
   const pct = Math.min(budget.percentUsed, 100)
@@ -66,13 +66,11 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
     }
     setSaving(true)
     try {
-      const token = await getToken()
-      await fetch(`${API_URL}/budgets`, {
+      // useApiFetch adds auth (or X-Demo-Mode); Content-Type is ours to set —
+      // it does not add one, and express.json() won't parse the body without it.
+      await apiFetch(`${API_URL}/budgets`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category: budget.category,
           monthlyLimit: val,
@@ -89,11 +87,7 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
     if (!window.confirm(`Remove budget for ${budget.category}?`)) return
     setDeleting(true)
     try {
-      const token = await getToken()
-      await fetch(`${API_URL}/budgets/${budget.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await apiFetch(`${API_URL}/budgets/${budget.id}`, { method: "DELETE" })
       onDeleted()
     } finally {
       setDeleting(false)

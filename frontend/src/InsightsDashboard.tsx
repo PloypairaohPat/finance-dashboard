@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
+import { useApiFetch } from "./lib/useApiFetch"
+import { useDemo } from "./lib/DemoContext"
 import type { InsightsResponse, Sentiment } from "./types"
 import TopMerchants from "./TopMerchants"
 import LargestPurchases from "./LargestPurchases"
@@ -106,27 +108,30 @@ function InsightsSkeleton({ isMobile }: { isMobile: boolean }) {
 }
 
 export default function InsightsDashboard() {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
+  const apiFetch = useApiFetch()
+  const { demoMode } = useDemo()
   const [data, setData] = useState<InsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const isMobile = useMediaQuery("(max-width: 640px)")
 
   useEffect(() => {
-    if (!isSignedIn) return
+    // Clearing `loading` here matters: this component renders a skeleton while
+    // loading, so an early return that left it true showed a skeleton forever.
+    if (!demoMode && !isSignedIn) {
+      setLoading(false)
+      return
+    }
 
     ;(async () => {
       try {
-        const token = await getToken()
-        const res = await fetch(`${API_URL}/insights`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-
+        const res = await apiFetch(`${API_URL}/insights`)
         if (res.ok) setData(await res.json())
       } finally {
         setLoading(false)
       }
     })()
-  }, [isSignedIn, getToken])
+  }, [demoMode, isSignedIn, apiFetch])
 
   if (loading || !data) {
     return <InsightsSkeleton isMobile={isMobile} />
