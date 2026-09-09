@@ -38,6 +38,7 @@ import ConnectedBanks from "./ConnectedBanks"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
 import AddBudgetRow from "./AddBudgetRow"
+import DemoUrlSync from "./DemoUrlSync"
 import { TABS } from "./tabs"
 
 // ── Styles ────────────────────────────────────────────────────────
@@ -264,9 +265,9 @@ export default function App() {
   // Entry is either `?demo=1` or a stored session; see lib/demoMode.ts.
   const [demoMode, setDemoMode] = useState(readInitialDemoMode);
 
-  // Keep sessionStorage and the URL in step with state, in both directions.
-  // Without this, "Exit demo" left `?demo=1` behind (a refresh put you back in)
-  // and "View demo" never added it (a refresh dropped you out).
+  // Persist to sessionStorage so demo survives a hard refresh. The matching
+  // `?demo=1` URL write is DemoUrlSync's job — it has to go through the router
+  // or React Router's location.search goes stale.
   useEffect(() => {
     persistDemoMode(demoMode);
   }, [demoMode]);
@@ -1006,7 +1007,13 @@ export default function App() {
 
   return (
     <DemoContext.Provider value={{ demoMode }}>
-      <BrowserRouter>{content}</BrowserRouter>
+      <BrowserRouter>
+        {/* Owns the `?demo=1` write, from inside the router. Rendered in every
+            branch — including the splash — so the URL is correct before any
+            route reads it. */}
+        <DemoUrlSync demoMode={demoMode} />
+        {content}
+      </BrowserRouter>
     </DemoContext.Provider>
   );
 }
