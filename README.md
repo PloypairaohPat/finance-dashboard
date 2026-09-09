@@ -428,7 +428,7 @@ Scope of the workaround: `npm ci` ignores peer resolution entirely and works wit
 
 A targeted `overrides` entry (`react-scripts` → `typescript`) was tried and **rejected**: it fixes the install but globally downgrades ERESOLVE from error to warning — with it in place, `npm install react@17` succeeds despite being incompatible with react-dom 18, Clerk, and Recharts. The blanket flag is at least honest about being a blanket flag. Verified that `react-router-dom@7`'s own peers (`react >=18`, `react-dom >=18`) are satisfied on their merits and not masked by it.
 
-Also note `moduleResolution` is `"node"`, not `"bundler"` — `"bundler"` requires TS 5 and silently broke `tsc` for the whole life of the file before the TypeScript bump.
+`moduleResolution` is `"bundler"`, which is correct for a webpack-bundled app and requires TS 5. It was briefly `"node"` — TS's deprecated node10 algorithm, removed in TS 7 — purely as a workaround while the project was still pinned to typescript@4.9.5, where `"bundler"` did not exist and `tsc` refused to start at all. Don't switch it back; fix the TypeScript version instead.
 
 **`frontend/vercel.json` is what stops client-side routes 404ing.** Its single rewrite sends every path to `index.html` so React Router can resolve it. Without it, only the index route survives a hard refresh or a pasted deep link — navigating in-app works fine, which is what makes the omission easy to miss until someone shares a URL. Vercel checks the filesystem before applying rewrites, so hashed assets under `/static/` still serve normally.
 
