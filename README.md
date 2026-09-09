@@ -418,6 +418,18 @@ Because the guard is wired as a `pre` script, it cannot be skipped by forgetting
 
 Deployments apply migrations with `prisma migrate deploy`, which never creates or drops a database. That is also what CI runs.
 
+### Frontend toolchain notes
+
+**`frontend/.npmrc` sets `legacy-peer-deps=true`. Remove it when `react-scripts` goes.**
+
+It exists for exactly one reason: `react-scripts@5.0.1` declares `peerOptional typescript@"^3.2.1 || ^4"`, and the project is on TypeScript 5.9.3. TypeScript ≥5.1 is not optional here — Clerk's `SignedIn`/`SignedOut` are typed as returning `React.ReactNode`, and TS below 5.1 rejects a JSX component that can return `undefined`, so `tsc --noEmit` cannot pass on 4.x. CRA 5 predates TS 5; the peer range is stale metadata, not a real incompatibility (typecheck passes, the production build compiles, and the emitted bundle is byte-identical to the TS 4.9 build).
+
+Scope of the workaround: `npm ci` ignores peer resolution entirely and works without the flag, so **CI and Vercel builds are unaffected**. Only `npm install` needs it.
+
+A targeted `overrides` entry (`react-scripts` → `typescript`) was tried and **rejected**: it fixes the install but globally downgrades ERESOLVE from error to warning — with it in place, `npm install react@17` succeeds despite being incompatible with react-dom 18, Clerk, and Recharts. The blanket flag is at least honest about being a blanket flag. Verified that `react-router-dom@7`'s own peers (`react >=18`, `react-dom >=18`) are satisfied on their merits and not masked by it.
+
+Also note `moduleResolution` is `"node"`, not `"bundler"` — `"bundler"` requires TS 5 and silently broke `tsc` for the whole life of the file before the TypeScript bump.
+
 ---
 
 ## Disclaimer
