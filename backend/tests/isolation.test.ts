@@ -11,7 +11,7 @@
 //  demo user via the real `X-Demo-Mode: 1` header.
 // ─────────────────────────────────────────────────────────────────
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { app, plaidClient } from '../src/app'
 import prisma from '../src/lib/prisma'
@@ -551,5 +551,192 @@ describe('D. Unauthenticated — no headers means no data', () => {
 
     const after = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+  })
+})
+
+// ── E. Unlink — the Plaid /item/remove call is the billable part ──────
+//
+//  M7.0. A PlaidItem that is deleted locally but never removed at Plaid
+//  keeps billing every month, so "did we actually call /item/remove?" is a
+//  financial assertion, not a stylistic one. Section B already proves the
+//  rows disappear; without the assertions here, turning unlink into a
+//  local-only delete would pass the entire rest of this suite.
+
+describe('E. Unlink — /item/remove must actually reach Plaid', () => {
+  const itemRemove = () => plaidClient.itemRemove as any
+  const itemGet = () => plaidClient.itemGet as any
+  const tokenExchange = () => plaidClient.itemPublicTokenExchange as any
+
+  // The shared stub returns a fixed item_id, and PlaidItem.itemId is @unique —
+  // so any test that creates an item through the real exchange path must claim
+  // its own, or the second such test dies on a constraint violation.
+  function withFreshExchangedItem(itemId: string) {
+    tokenExchange().mockResolvedValueOnce({
+      data: { access_token: 'test-access-token', item_id: itemId },
+    })
+  }
+
+  let seq = 0
+
+  /** A throwaway item/account/transaction, isolated from the shared fixtures. */
+  async function seedThrowaway(userId: string, rawToken: string, institutionId?: string) {
+    const tag = `unlink-e${++seq}`
+    const item = await prisma.plaidItem.create({
+      data: {
+        userId,
+        itemId: `${userId}-${tag}-item`,
+        accessToken: encrypt(rawToken),
+        institutionId: institutionId ?? `ins_${userId}_${tag}`,
+        institutionName: `${userId}-${tag}-Bank`,
+      },
+    })
+    const account = await prisma.account.create({
+      data: {
+        userId,
+        plaidItemId: item.id,
+        plaidAccountId: `${userId}-${tag}-acct`,
+        name: `${userId}-${tag}-Checking`,
+        type: 'depository',
+        subtype: 'checking',
+        currentBalance: '1.00',
+        availableBalance: '1.00',
+        isoCurrencyCode: 'USD',
+      },
+    })
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        accountId: account.id,
+        plaidTransactionId: `${userId}-${tag}-tx`,
+        date: new Date(),
+        amount: '1.00',
+        name: `${userId}-${tag}-tx`,
+        isoCurrencyCode: 'USD',
+        pending: false,
+      },
+    })
+    return { item, account, tx }
+  }
+
+  async function rowsExist(ids: { item: string; account: string; tx: string }) {
+    return {
+      item: (await prisma.plaidItem.findUnique({ where: { id: ids.item } })) !== null,
+      account: (await prisma.account.findUnique({ where: { id: ids.account } })) !== null,
+      tx: (await prisma.transaction.findUnique({ where: { id: ids.tx } })) !== null,
+    }
+  }
+
+  // Only clear call history — the stub's default resolved value must survive,
+  // since mockReset() would strip it and every later unlink would see undefined.
+  beforeEach(() => {
+    itemRemove().mockClear()
+  })
+
+  it('calls Plaid /item/remove exactly once, with the DECRYPTED access token', async () => {
+    const rawToken = 'plaintext-token-for-remove-assertion'
+    const { item } = await seedThrowaway(USER_A, rawToken)
+
+    const res = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+
+    expect(res.status).toBe(200)
+    // The financial assertion: a local-only delete would leave this at 0.
+    expect(itemRemove().mock.calls.length).toBe(1)
+    expect(itemRemove().mock.calls[0][0]).toEqual({ access_token: rawToken })
+  })
+
+  it('leaves every local row intact when Plaid /item/remove fails', async () => {
+    const { item, account, tx } = await seedThrowaway(USER_A, 'token-plaid-fails')
+    const ids = { item: item.id, account: account.id, tx: tx.id }
+
+    itemRemove().mockRejectedValueOnce({
+      response: { data: { error_code: 'INTERNAL_SERVER_ERROR' } },
+    })
+
+    const res = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+
+    expect(res.status).toBe(500)
+    // Deleting locally here would orphan a live, billing Item at Plaid.
+    expect(await rowsExist(ids)).toEqual({ item: true, account: true, tx: true })
+  })
+
+  it.each(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'])(
+    'still cleans up locally when Plaid reports %s (nothing left to bill)',
+    async (errorCode) => {
+      const { item, account, tx } = await seedThrowaway(USER_A, `token-${errorCode}`)
+      const ids = { item: item.id, account: account.id, tx: tx.id }
+
+      itemRemove().mockRejectedValueOnce({ response: { data: { error_code: errorCode } } })
+
+      const res = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+
+      expect(res.status).toBe(200)
+      expect(await rowsExist(ids)).toEqual({ item: false, account: false, tx: false })
+    },
+  )
+
+  it('is idempotent — a repeated DELETE returns 404 and does not re-call Plaid', async () => {
+    const { item } = await seedThrowaway(USER_A, 'token-idempotency')
+
+    const first = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+    expect(first.status).toBe(200)
+    expect(itemRemove().mock.calls.length).toBe(1)
+
+    const second = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
+    expect(second.status).toBe(404)
+    // The ownership/existence check must short-circuit before reaching Plaid.
+    expect(itemRemove().mock.calls.length).toBe(1)
+  })
+
+  it('re-linking an institution removes the superseded Item at Plaid', async () => {
+    // Re-link is a second path that drops a PlaidItem. Before M7.0 it deleted
+    // the old row locally and never called /item/remove, so every reconnect
+    // silently orphaned a billable Item — the same financial bug as above.
+    const institutionId = 'ins_relink_regression'
+    const oldRawToken = 'old-token-superseded-by-relink'
+    const { item, account, tx } = await seedThrowaway(USER_A, oldRawToken, institutionId)
+    const ids = { item: item.id, account: account.id, tx: tx.id }
+
+    // The re-link branch keys off institutionId, which comes from itemGet.
+    itemGet().mockResolvedValueOnce({ data: { item: { institution_id: institutionId } } })
+    withFreshExchangedItem('relink-regression-item')
+
+    const res = await request(app)
+      .post('/exchange_public_token')
+      .set('X-Test-User', USER_A)
+      .send({ public_token: 'public-test-relink' })
+
+    expect(res.status).toBe(200)
+    expect(itemRemove().mock.calls.length).toBe(1)
+    expect(itemRemove().mock.calls[0][0]).toEqual({ access_token: oldRawToken })
+    expect(await rowsExist(ids)).toEqual({ item: false, account: false, tx: false })
+
+    // The replacement item exists and belongs to the same user.
+    const replacement = await prisma.plaidItem.findFirst({
+      where: { userId: USER_A, institutionId },
+    })
+    expect(replacement).not.toBeNull()
+    expect(replacement!.id).not.toBe(item.id)
+  })
+
+  it('does not remove another user’s Item at Plaid when re-linking', async () => {
+    // user-b re-links an institution whose id collides with a user-a item.
+    // The lookup is userId-scoped, so user-a's Item must be left alone —
+    // including at Plaid, where removing it would break a paying connection.
+    const sharedInstitution = 'ins_shared_across_users'
+    const victim = await seedThrowaway(USER_A, 'user-a-token-must-survive', sharedInstitution)
+
+    itemGet().mockResolvedValueOnce({ data: { item: { institution_id: sharedInstitution } } })
+    withFreshExchangedItem('relink-cross-user-item')
+
+    const res = await request(app)
+      .post('/exchange_public_token')
+      .set('X-Test-User', USER_B)
+      .send({ public_token: 'public-test-relink-b' })
+
+    expect(res.status).toBe(200)
+    expect(itemRemove().mock.calls.length).toBe(0)
+    expect(
+      await rowsExist({ item: victim.item.id, account: victim.account.id, tx: victim.tx.id }),
+    ).toEqual({ item: true, account: true, tx: true })
   })
 })
