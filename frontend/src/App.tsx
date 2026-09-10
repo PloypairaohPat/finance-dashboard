@@ -11,11 +11,10 @@ import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
 import SubscriptionTracker from "./SubscriptionTracker";
-import { Account, EnrichedTransaction, CategorySpend, Budget, Alert } from "./types"
+import { Account, CategorySpend, Budget, Alert } from "./types"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
-import TransactionDetail from "./TransactionDetail"
-import TransactionList from "./TransactionList"
+import TransactionsView from "./TransactionsView"
 import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import useMediaQuery from "./useMediaQuery"
@@ -250,7 +249,6 @@ export default function App() {
   const [error,        setError]        = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  const [selectedTx,   setSelectedTx]   = useState<EnrichedTransaction | null>(null)
   const [monthSaved,   setMonthSaved]   = useState<number | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [syncing,        setSyncing]        = useState(false)
@@ -885,25 +883,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Transactions */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Transactions</h2>
-            </div>
-            <TransactionList onRowClick={tx => setSelectedTx(tx)} />
-          </div>
-        )}
+        {/* Transactions moved to TransactionsView (/transactions) in stage 2. */}
       </main>
     </div>
-
-    {selectedTx && (
-      <TransactionDetail
-        transaction={selectedTx}
-        onClose={() => setSelectedTx(null)}
-        onUpdate={updated => setSelectedTx(updated)}
-      />
-    )}
     </>
   );
 
@@ -938,12 +920,21 @@ export default function App() {
   // Index renders the existing dashboard completely untouched; the other four
   // tabs are empty until stage 2. Declared once and reused by both the demo
   // and signed-in branches so the two can never drift.
-  const [overviewTab, ...placeholderTabs] = TABS;
+  // Tabs are filled in one at a time (stage 2); whatever is still empty falls
+  // through to the placeholder.
+  const TAB_VIEWS: Record<string, React.ReactNode> = {
+    transactions: <TransactionsView />,
+  };
+  const [overviewTab, ...otherTabs] = TABS;
   const routes = (
     <Routes>
       <Route path={overviewTab.path} element={dashboard} />
-      {placeholderTabs.map((tab) => (
-        <Route key={tab.id} path={tab.path} element={<PlaceholderView title={tab.label} />} />
+      {otherTabs.map((tab) => (
+        <Route
+          key={tab.id}
+          path={tab.path}
+          element={TAB_VIEWS[tab.id] ?? <PlaceholderView title={tab.label} />}
+        />
       ))}
       {/* An unknown in-app path is a dead end, not a 404 page — send it home.
           `replace` so Back doesn't bounce the user straight back into it. */}

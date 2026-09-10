@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
+import { useSearchParams } from "react-router-dom"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
@@ -15,7 +16,9 @@ interface Filters {
   dateTo: string
 }
 
-const EMPTY: Filters = { q: "", category: "All", dateFrom: "", dateTo: "" }
+// A filter at its default is omitted from the URL entirely, so a clean view has
+// a clean address bar and `?demo=1` isn't buried in empty params.
+const DEFAULTS: Filters = { q: "", category: "All", dateFrom: "", dateTo: "" }
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n)
@@ -26,8 +29,41 @@ export default function TransactionList({ onRowClick }: Props) {
   const { isSignedIn } = useAuth()
   const apiFetch = useApiFetch()
   const { demoMode } = useDemo()
-  const [filters, setFilters] = useState<Filters>(EMPTY)
-  const [searchInput, setSearchInput] = useState("")
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // ── Filters live in the URL, not in state ───────────────────────
+  // The URL is the single source of truth, so a filtered view is linkable and
+  // Back/Forward moves between filter states.
+  //
+  // Read as individual strings and re-assembled with useMemo — deriving the
+  // object inline would produce a new identity every render, which would
+  // invalidate runSearch's useCallback and re-fire the fetch effect forever.
+  const q = searchParams.get("q") ?? DEFAULTS.q
+  const category = searchParams.get("category") ?? DEFAULTS.category
+  const dateFrom = searchParams.get("dateFrom") ?? DEFAULTS.dateFrom
+  const dateTo = searchParams.get("dateTo") ?? DEFAULTS.dateTo
+  const filters: Filters = useMemo(
+    () => ({ q, category, dateFrom, dateTo }),
+    [q, category, dateFrom, dateTo],
+  )
+
+  // Writes only the keys it is given, onto whatever the URL currently holds —
+  // so `?demo=1` (owned by DemoUrlSync) and the other filters survive untouched.
+  // The functional form reads the latest params rather than a captured copy,
+  // which is what makes this safe to interleave with DemoUrlSync's writes.
+  // `replace` so filter changes don't stack up history entries.
+  const setFilter = useCallback((patch: Partial<Filters>) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      for (const [key, value] of Object.entries(patch) as [keyof Filters, string][]) {
+        if (value === DEFAULTS[key]) next.delete(key)
+        else next.set(key, value)
+      }
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+
+  const [searchInput, setSearchInput] = useState(q)
   const [showDrawer, setShowDrawer] = useState(false)
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [rows, setRows] = useState<EnrichedTransaction[]>([])
@@ -35,13 +71,23 @@ export default function TransactionList({ onRowClick }: Props) {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
 
-  // Debounce search input → filters.q
+  // Debounce typing → the URL. Only the settled value is written, so a search
+  // doesn't put one history/URL update per keystroke into the address bar.
   useEffect(() => {
     const t = setTimeout(() => {
-      setFilters(f => f.q === searchInput ? f : { ...f, q: searchInput })
+      if (searchInput !== q) setFilter({ q: searchInput })
     }, 300)
     return () => clearTimeout(t)
-  }, [searchInput])
+  }, [searchInput, q, setFilter])
+
+  // Adopt q when it changes from outside this input — a deep link, Back/Forward,
+  // or a cleared filter. Depends on the string, not the params object, so
+  // unrelated writes (DemoUrlSync toggling `demo`) don't disturb the input.
+  // Our own debounced write lands here too, but searchInput already equals it
+  // by then, so it no-ops rather than fighting the user mid-type.
+  useEffect(() => {
+    setSearchInput((prev) => (prev === q ? prev : q))
+  }, [q])
 
   // Fetch categories once for the dropdown
   useEffect(() => {
@@ -91,14 +137,14 @@ export default function TransactionList({ onRowClick }: Props) {
   // Active filter chips (everything except q, which has its own input)
   const chips: Array<{ label: string; clear: () => void }> = []
   if (filters.category !== "All") {
-    chips.push({ label: filters.category, clear: () => setFilters(f => ({ ...f, category: "All" })) })
+    chips.push({ label: filters.category, clear: () => setFilter({ category: "All" }) })
   }
   if (filters.dateFrom || filters.dateTo) {
     const lbl = filters.dateFrom && filters.dateTo
       ? `${filters.dateFrom} → ${filters.dateTo}`
       : filters.dateFrom ? `from ${filters.dateFrom}`
       : `until ${filters.dateTo}`
-    chips.push({ label: lbl, clear: () => setFilters(f => ({ ...f, dateFrom: "", dateTo: "" })) })
+    chips.push({ label: lbl, clear: () => setFilter({ dateFrom: "", dateTo: "" }) })
   }
 
   return (
@@ -157,7 +203,7 @@ export default function TransactionList({ onRowClick }: Props) {
             <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a" }}>CATEGORY</span>
             <select
               value={filters.category}
-              onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}
+              onChange={e => setFilter({ category: e.target.value })}
               style={{
                 background: "#161e14", border: "1px solid #253325", color: "#d4e8d4",
                 padding: "6px 8px", borderRadius: 4, fontFamily: "inherit", fontSize: 12.5,
@@ -170,7 +216,7 @@ export default function TransactionList({ onRowClick }: Props) {
             <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a" }}>FROM</span>
             <input
               type="date" value={filters.dateFrom}
-              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
+              onChange={e => setFilter({ dateFrom: e.target.value })}
               style={{
                 background: "#161e14", border: "1px solid #253325", color: "#d4e8d4",
                 padding: "6px 8px", borderRadius: 4, fontFamily: "inherit", fontSize: 12.5,
@@ -181,7 +227,7 @@ export default function TransactionList({ onRowClick }: Props) {
             <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a" }}>TO</span>
             <input
               type="date" value={filters.dateTo}
-              onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
+              onChange={e => setFilter({ dateTo: e.target.value })}
               style={{
                 background: "#161e14", border: "1px solid #253325", color: "#d4e8d4",
                 padding: "6px 8px", borderRadius: 4, fontFamily: "inherit", fontSize: 12.5,
