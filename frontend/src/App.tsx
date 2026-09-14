@@ -8,15 +8,11 @@ import React, { useState, useCallback, useEffect, useMemo, useRef, CSSProperties
 // framework mode both need build-tool integration that CRA cannot provide.
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
-import SpendingChart from "./SpendingChart";
-import CategoryComparison from "./CategoryComparison"
 import SubscriptionsView from "./SubscriptionsView";
 import { Account, CategorySpend, Alert } from "./types"
-import TrendChart from './TrendChart'
 import BudgetsView from "./BudgetsView"
 import TransactionsView from "./TransactionsView"
-import NetWorthChart from "./NetWorthChart"
-import CashFlowChart from "./CashFlowChart"
+import OverviewView from "./OverviewView"
 import useMediaQuery from "./useMediaQuery"
 import {
   SignedIn,
@@ -28,14 +24,7 @@ import {
 import { API_URL } from "./config"
 import { DemoContext } from "./lib/DemoContext"
 import { readInitialDemoMode, persistDemoMode } from "./lib/demoMode"
-import HeroOverview from "./HeroOverview"
-import InsightsDashboard from "./InsightsDashboard"
-import SavingsTrend from "./SavingsTrend"
-import WeeklyDigestCard from "./WeeklyDigestCard"
-import AlertCenter from "./AlertCenter"
 import AccountsView from "./AccountsView"
-import FinancialScoreCard from "./FinancialScoreCard"
-import GoalsCard from "./GoalsCard"
 import DemoUrlSync from "./DemoUrlSync"
 import { TABS } from "./tabs"
 
@@ -497,11 +486,12 @@ export default function App() {
     </div>
   );
 
-  // ── Shared dashboard JSX — rendered for real signed-in users and for
+  // ── Overview (index route) — rendered for real signed-in users and for
   // demo visitors alike, so there is no duplicated markup between the two.
-  const dashboard = (
-    <>
-    <div style={styles.root as CSSProperties}>
+  // The page body lives in OverviewView; the header and the connect/setup
+  // panel stay here because they drive App-owned Plaid Link and refresh state,
+  // and are passed in as slots.
+  const header = (
       <header style={{
         ...(styles.header as CSSProperties),
         padding: isMobile ? "16px 20px" : "24px 40px",
@@ -536,6 +526,9 @@ export default function App() {
               views that fetch for themselves are NOT refreshed by it:
                 - AccountsView (src/AccountsView.tsx) — its own copy of /accounts
                 - BudgetsView (src/BudgetsView.tsx) — /budgets, which left App entirely
+                - OverviewView (src/OverviewView.tsx) — gets App's state as props, so
+                  its hero and Spending breakdown DO refresh; its child widgets fetch
+                  for themselves and never did (pre-M7.1, see its TODO)
               Unreachable while this header lives inside the Overview dashboard;
               becomes a real stale-data bug when the header moves to app level in
               M7.1 stage 4. Wire every view listed here into the refresh path then,
@@ -591,13 +584,9 @@ export default function App() {
           )}
         </div>
       </header>
+  );
 
-      <main style={{
-        ...(styles.main as CSSProperties),
-        padding: isMobile ? "30px 16px" : "60px 40px",
-      }}>
-        {connected && <HeroOverview {...heroProps} />}
-
+  const setupPanel = (
         <div style={styles.hero as CSSProperties}>
           <h1 style={{
             ...(styles.heroTitle as CSSProperties),
@@ -653,131 +642,18 @@ export default function App() {
 
           {error && <div style={styles.error as CSSProperties}>⚠ {error}</div>}
         </div>
+  );
 
-        {/* Weekly Digest + Smart Alerts (M5.8) */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <WeeklyDigestCard />
-            <div style={{ marginTop: 24 }}>
-              <div style={styles.sectionHeader as CSSProperties}>
-                <h2 style={styles.sectionTitle as CSSProperties}>Alerts</h2>
-                <span style={styles.sectionCount as CSSProperties}>
-                  {alerts.filter(a => !a.dismissedAt).length} active
-                </span>
-              </div>
-              <AlertCenter />
-            </div>
-          </div>
-        )}
-
-        {/* Account Balances + Connected Banks moved to AccountsView (/accounts) in stage 2. */}
-
-        {/* Financial Insights */}
-        {accounts.length > 0 && (
-          <section style={{ marginBottom: 32 }}>
-            <InsightsDashboard />
-          </section>
-        )}
-
-        {/* Spending Breakdown + Month-over-Month */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <section style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
-              gap: 24, marginBottom: 32,
-            }}>
-              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
-                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>
-                  Spending breakdown
-                </h3>
-                <SpendingChart data={categories} />
-              </div>
-              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
-                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>
-                  Month over month
-                </h3>
-                <CategoryComparison />
-              </div>
-            </section>
-          </div>
-        )}
-
-        {/* Monthly Spending Trend */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Monthly Spending</h2>
-              <span style={styles.sectionCount as CSSProperties}>last 12 months</span>
-            </div>
-            <TrendChart />
-          </div>
-        )}
-
-        {/* Financial Score + Goals (M5.9) */}
-        {accounts.length > 0 && (
-          <section style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "1fr 1.2fr",
-            gap: 24, marginBottom: 32,
-          }}>
-            <FinancialScoreCard />
-            <div style={{
-              background: "#161e14", border: "1px solid #253325",
-              borderRadius: 10, padding: 20,
-            }}>
-              <h3 style={{
-                fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-                fontSize: 18, color: "#e8f4e8", marginBottom: 16,
-              }}>Goals</h3>
-              <GoalsCard />
-            </div>
-          </section>
-        )}
-
-        {/* Net Worth */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Net Worth</h2>
-            </div>
-            <NetWorthChart />
-          </div>
-        )}
-
-        {/* Cash Flow + Savings Trend */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Cash Flow</h2>
-              <span style={styles.sectionCount as CSSProperties}>last 6 months</span>
-            </div>
-            <section style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr",
-              gap: 24, marginBottom: 32,
-            }}>
-              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
-                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>Cash flow</h3>
-                <CashFlowChart />
-              </div>
-              <div style={{ background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }}>
-                <h3 style={{ fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }}>Monthly savings</h3>
-                <SavingsTrend />
-              </div>
-            </section>
-          </div>
-        )}
-
-        {/* Monthly Budgets moved to BudgetsView (/budgets) in stage 2. */}
-
-        {/* Recurring & Subscriptions */}
-        {/* Subscriptions & Bills moved to SubscriptionsView (/subscriptions) in stage 2. */}
-
-        {/* Transactions moved to TransactionsView (/transactions) in stage 2. */}
-      </main>
-    </div>
-    </>
+  const dashboard = (
+    <OverviewView
+      header={header}
+      setupPanel={setupPanel}
+      heroProps={heroProps}
+      showHero={connected}
+      hasAccounts={accounts.length > 0}
+      categories={categories}
+      activeAlertCount={alerts.filter(a => !a.dismissedAt).length}
+    />
   );
 
   // ── Demo banner — slim persistent bar shown only while in demo mode ──
