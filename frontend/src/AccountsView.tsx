@@ -16,8 +16,14 @@ import type { Account } from "./types"
 //  App can't give that state up (it still feeds the Overview hero and gates
 //  most dashboard sections), and threading it down would keep this tab
 //  coupled to App — the thing stage 2 is removing. The cost is a second GET of
-//  /accounts when both views have mounted, and that this copy is not refreshed
-//  by App's "Sync" button (see stage 4 note in the M7.1 report).
+//  /accounts when both views have mounted.
+//
+//  TODO(M7.1-stage4-sync-refresh): this copy of accounts is NOT refreshed by
+//  App's "Sync" button — its triggerRefresh (src/App.tsx, at the Sync button)
+//  only refreshes App's own state. Unreachable while that header lives inside
+//  the Overview dashboard; becomes a real stale-data bug when the header moves
+//  to app level in M7.1 stage 4. Wire this view into the refresh path then, and
+//  remove this TODO and its twin in App.tsx.
 // ─────────────────────────────────────────────────────────────────
 
 const sectionTitle = {

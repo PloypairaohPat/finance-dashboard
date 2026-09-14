@@ -548,6 +548,13 @@ export default function App() {
               + Link Account
             </button>
           )}
+          {/* TODO(M7.1-stage4-sync-refresh): this Sync button's triggerRefresh only
+              refreshes App's own copy of accounts (plus budgets, alerts, net worth,
+              insights). AccountsView (src/AccountsView.tsx) fetches /accounts for
+              itself and is NOT refreshed by it. Unreachable while this header lives
+              inside the Overview dashboard; becomes a real stale-data bug when the
+              header moves to app level in M7.1 stage 4. Wire AccountsView into the
+              refresh path then, and remove this TODO and its twin in AccountsView. */}
           {connected && (
             <button
               onClick={triggerRefresh}
