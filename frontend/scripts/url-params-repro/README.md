@@ -80,3 +80,45 @@ remove a key it never saw.
 - Needs a Node with built-in TypeScript type stripping (verified on Node 24.14). Node
   prints a `MODULE_TYPELESS_PACKAGE_JSON` warning when it loads the `.ts` helper;
   it is harmless.
+
+---
+
+# Nav links keep `?demo=1` — `link-nav-check.mjs`
+
+```bash
+cd frontend
+npm run repro:link-nav   # exits 1 if any check fails
+```
+
+## Why this exists
+
+The M7.1 stage 4 nav (`src/AppNav.tsx`) uses plain `<NavLink to="/accounts">` links
+with no knowledge of demo mode. A link drops the whole query string, so demo mode
+survives navigation only because `DemoUrlSync` notices `demo` is missing and writes it
+back. This script checks that that actually holds instead of assuming it.
+
+## What it simulates
+
+The same jsdom + `BrowserRouter` setup as `run.mjs`. It renders a nav built from the
+**real** `src/tabs.ts` (so its links are exactly the paths the app's nav uses), a
+`DemoUrlSync`, and one page per route, then clicks real `<Link>` elements. It checks:
+
+- In demo mode, clicking each of the five tabs lands on `<path>?demo=1`.
+- The links' own `href`s carry no query string, so the nav is not demo-aware.
+- Back returns to the previous tab **with** `?demo=1`.
+- Leaving `/transactions?q=coffee&demo=1` for another tab keeps `demo` and drops `q`.
+- Out of demo mode, links stay clean (`/accounts`, no `demo`).
+
+It also logs, per tab, what the destination route saw on each render. Expect one render
+**without** `demo=1` before `DemoUrlSync` restores it. That is harmless only as long as
+nothing decides demo mode from the URL after mount; see `src/DemoUrlSync.tsx`.
+
+## Limits
+
+- **`DemoUrlSync` is copied, not imported.** Node can't load `.tsx`, so the script
+  carries a copy of `src/DemoUrlSync.tsx`. `useUrlParams.ts` and `tabs.ts` are imported
+  for real. **If you change `DemoUrlSync.tsx`, update the copy in
+  `link-nav-check.mjs`**, or this can pass while the app is broken.
+- **It doesn't render `AppNav` itself.** The script builds equivalent `<Link>`s from
+  `tabs.ts`; it doesn't check `AppNav`'s markup, styling or its `NavLink` active state.
+- Same jsdom and ~25ms timing limits as `run.mjs` above.

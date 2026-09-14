@@ -16,7 +16,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "typecheck": "tsc --noEmit",
-    "repro:url-params": "node scripts/url-params-repro/run.mjs"
+    "repro:url-params": "node scripts/url-params-repro/run.mjs",
+    "repro:link-nav": "node scripts/url-params-repro/link-nav-check.mjs"
   },
   "eslintConfig": {
     "rules": {

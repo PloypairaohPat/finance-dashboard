@@ -25,6 +25,18 @@ import { useUrlParams } from "./lib/useUrlParams"
 //  leaving demo adds no history entry and Back navigates instead of toggling
 //  demo.
 //
+//  LOAD-BEARING: there is a one-render gap. After a navigation that dropped
+//  the param, the destination route commits once WITHOUT `demo` in
+//  location.search; this effect only puts it back after that render
+//  (scripts/url-params-repro/link-nav-check.mjs logs it for every tab). That
+//  is harmless today for one reason: nothing decides demo mode from the URL
+//  after mount. demoMode is React state, and the URL is read exactly once, by
+//  readInitialDemoMode() when App mounts. If anything starts reading `demo`
+//  from the URL during render — a route component, a guard, a loader — it
+//  will see "not demo" on that first render and could, say, fire a request
+//  without X-Demo-Mode or flash the sign-in screen. Read useDemo(), never the
+//  URL.
+//
 //  demoMode state itself stays in App, above <Routes> — only the URL write
 //  lives down here.
 // ─────────────────────────────────────────────────────────────────
