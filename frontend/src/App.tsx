@@ -33,7 +33,7 @@ import InsightsDashboard from "./InsightsDashboard"
 import SavingsTrend from "./SavingsTrend"
 import WeeklyDigestCard from "./WeeklyDigestCard"
 import AlertCenter from "./AlertCenter"
-import ConnectedBanks from "./ConnectedBanks"
+import AccountsView from "./AccountsView"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
 import AddBudgetRow from "./AddBudgetRow"
@@ -142,33 +142,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   sectionTitle: { fontSize: "22px", fontWeight: 700, letterSpacing: "-0.5px" },
   sectionCount: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#555" },
-  accountGrid:  { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" },
-  accountCard: {
-    background: "#111",
-    border: "1px solid #1e1e1e",
-    borderRadius: "12px",
-    padding: "24px",
-    position: "relative",
-    overflow: "hidden",
-  },
-  accountType: {
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "10px",
-    color: "#555",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-    marginBottom: "8px",
-  },
-  accountName:  { fontSize: "17px", fontWeight: 700, marginBottom: "4px", letterSpacing: "-0.3px" },
-  accountMask:  { fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#555", marginBottom: "20px" },
-  balanceRow:   { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" },
-  balanceLabel: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#555" },
-  balanceValue: (highlight: boolean) => ({
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: "18px",
-    fontWeight: 500,
-    color: highlight ? "#00e5a0" : "#f0ede8",
-  }),
   error: {
     background: "#1a0d0d",
     border: "1px solid #ff6b6b30",
@@ -180,39 +153,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     marginTop: "20px",
   },
 };
-
-// ── Format currency ───────────────────────────────────────────────
-const fmt = (n: number | null | undefined, code = "USD") =>
-  n == null
-    ? "—"
-    : new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(n);
-
-// ── Component prop types ──────────────────────────────────────────
-type AccountCardProps = { account: Account };
-
-// ── Account Card ──────────────────────────────────────────────────
-function AccountCard({ account }: AccountCardProps) {
-  const {
-    name, officialName, type, subtype,
-    mask, currentBalance, availableBalance, isoCurrencyCode,
-  } = account;
-  const currency = isoCurrencyCode || "USD";
-  return (
-    <div style={styles.accountCard as CSSProperties}>
-      <div style={styles.accountType as CSSProperties}>{type} · {subtype}</div>
-      <div style={styles.accountName as CSSProperties}>{name}</div>
-      <div style={styles.accountMask as CSSProperties}>{officialName || name} ···· {mask || "——"}</div>
-      <div style={styles.balanceRow as CSSProperties}>
-        <span style={styles.balanceLabel as CSSProperties}>Available</span>
-        <span style={(styles.balanceValue as (h: boolean) => CSSProperties)(true)}>{fmt(availableBalance, currency)}</span>
-      </div>
-      <div style={styles.balanceRow as CSSProperties}>
-        <span style={styles.balanceLabel as CSSProperties}>Current</span>
-        <span style={(styles.balanceValue as (h: boolean) => CSSProperties)(false)}>{fmt(currentBalance, currency)}</span>
-      </div>
-    </div>
-  );
-}
 
 // ── Placeholder tab view ──────────────────────────────────────────
 // M7.1 stage 1 ships the routes empty on purpose: this stage proves URLs,
@@ -738,27 +678,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Account Balances */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Account Balances</h2>
-              <span style={styles.sectionCount as CSSProperties}>{accounts.length} accounts</span>
-            </div>
-            <div style={{
-              ...(styles.accountGrid as CSSProperties),
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(260px, 1fr))",
-            }}>
-              {accounts.map((a) => <AccountCard key={a.plaidAccountId} account={a} />)}
-            </div>
-            <div style={{ marginTop: 24 }}>
-              <div style={styles.sectionHeader as CSSProperties}>
-                <h2 style={styles.sectionTitle as CSSProperties}>Connected Banks</h2>
-              </div>
-              <ConnectedBanks />
-            </div>
-          </div>
-        )}
+        {/* Account Balances + Connected Banks moved to AccountsView (/accounts) in stage 2. */}
 
         {/* Financial Insights */}
         {accounts.length > 0 && (
@@ -924,6 +844,7 @@ export default function App() {
   // through to the placeholder.
   const TAB_VIEWS: Record<string, React.ReactNode> = {
     transactions: <TransactionsView />,
+    accounts: <AccountsView />,
   };
   const [overviewTab, ...otherTabs] = TABS;
   const routes = (
