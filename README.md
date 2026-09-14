@@ -436,6 +436,8 @@ It must sit in Vercel's **Root Directory**, which for this project is `frontend/
 
 **Routing is react-router-dom in declarative mode only** — `BrowserRouter` / `Routes` / `Route`. Not `createBrowserRouter`, and not react-router's framework mode: both need build-tool integration (a Vite plugin, `react-router.config.ts`) that CRA cannot provide. RR7's docs lead with framework mode, so this is easy to drift into. `src/tabs.ts` is the single source of truth for the five tab paths and labels.
 
+**URL search params are written only through `src/lib/useUrlParams.ts`.** React Router's `setSearchParams` builds each write from the last render's params, so two writers — or one write from a stale closure, such as a save handler after an `await` — can silently delete each other's params. The helper builds every write from the live URL and touches only the keys it names; ESLint bans `useSearchParams` everywhere else. `npm run repro:url-params` (in `frontend/`) is the regression test for this whole class of bug — see [`frontend/scripts/url-params-repro/README.md`](frontend/scripts/url-params-repro/README.md) for what it simulates and its limits.
+
 ---
 
 ## Disclaimer

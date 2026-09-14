@@ -1,42 +1,42 @@
 import { useEffect } from "react"
-import { useSearchParams } from "react-router-dom"
 import { DEMO_PARAM } from "./lib/demoMode"
+import { useUrlParams } from "./lib/useUrlParams"
 
 // ─────────────────────────────────────────────────────────────────
 //  DemoUrlSync — keeps `?demo=1` truthful, from inside the router.
 //
 //  Must be rendered inside <BrowserRouter>. Renders nothing.
 //
-//  Why this exists: lib/demoMode.ts used to write the URL with
-//  history.replaceState directly. React Router does not observe that, so its
-//  location.search went stale the moment demo mode changed — and anything
-//  reading useSearchParams (the Transactions tab's search and filters) would
-//  have read a lie. setSearchParams writes THROUGH the router, so the two
-//  never disagree.
+//  lib/demoMode.ts originally wrote the URL with history.replaceState, which
+//  React Router does not observe, so the router's location.search stayed stale
+//  until the next navigation. Writing through the router fixes that. It does
+//  NOT mean the address bar and the router can never disagree: after any write
+//  they differ until the next render commits, and every writer has to be
+//  correct across that gap.
 //
-//  `replace: true` keeps the original property that entering or leaving demo
-//  adds no history entry, so Back navigates rather than toggling demo mode.
+//  The gap is why this writes through useUrlParams. Each write is built from
+//  the URL as it is at the moment of writing — not from this render's params —
+//  and touches only the `demo` key, so search and filter params written by
+//  other components in the same gap are preserved.
+//
+//  State is authoritative, so the param is re-added after any navigation that
+//  dropped it (a plain <Link to="/accounts"> discards the query string) and the
+//  nav needs no demo-awareness. Writes replace rather than push, so entering or
+//  leaving demo adds no history entry and Back navigates instead of toggling
+//  demo.
 //
 //  demoMode state itself stays in App, above <Routes> — only the URL write
 //  lives down here.
 // ─────────────────────────────────────────────────────────────────
 
 export default function DemoUrlSync({ demoMode }: { demoMode: boolean }) {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams, writeParams] = useUrlParams()
+  const inUrl = searchParams.get(DEMO_PARAM) === "1"
 
   useEffect(() => {
-    // State is authoritative, so this also re-adds the param after any
-    // navigation that dropped it — a plain <Link to="/accounts"> discards the
-    // query string, which would otherwise strip demo on every nav click.
-    if ((searchParams.get(DEMO_PARAM) === '1') === demoMode) return
-
-    // Copied so other params (search, filters, tags) are preserved untouched.
-    const next = new URLSearchParams(searchParams)
-    if (demoMode) next.set(DEMO_PARAM, '1')
-    else next.delete(DEMO_PARAM)
-
-    setSearchParams(next, { replace: true })
-  }, [demoMode, searchParams, setSearchParams])
+    if (inUrl === demoMode) return
+    writeParams({ [DEMO_PARAM]: demoMode ? "1" : null })
+  }, [demoMode, inUrl, writeParams])
 
   return null
 }

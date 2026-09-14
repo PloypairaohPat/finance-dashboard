@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
-import { useSearchParams } from "react-router-dom"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useUrlParams } from "./lib/useUrlParams"
 import type { EnrichedTransaction, SearchResult, CategoryOption } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 
@@ -29,7 +29,7 @@ export default function TransactionList({ onRowClick }: Props) {
   const { isSignedIn } = useAuth()
   const apiFetch = useApiFetch()
   const { demoMode } = useDemo()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams, writeParams] = useUrlParams()
 
   // ── Filters live in the URL, not in state ───────────────────────
   // The URL is the single source of truth, so a filtered view is linkable and
@@ -47,21 +47,21 @@ export default function TransactionList({ onRowClick }: Props) {
     [q, category, dateFrom, dateTo],
   )
 
-  // Writes only the keys it is given, onto whatever the URL currently holds —
-  // so `?demo=1` (owned by DemoUrlSync) and the other filters survive untouched.
-  // The functional form reads the latest params rather than a captured copy,
-  // which is what makes this safe to interleave with DemoUrlSync's writes.
-  // `replace` so filter changes don't stack up history entries.
+  // Filters at their default are removed from the URL rather than written empty.
+  //
+  // Why this is safe alongside DemoUrlSync and any future writer: writeParams
+  // builds each write from the URL as it is at the moment of writing, and
+  // touches only the keys named here. So `?demo=1` and every other param
+  // survive — including when this runs from the debounce timer after other
+  // writes have landed. React Router's setSearchParams could not promise that:
+  // even its functional form only ever sees the last render's params.
   const setFilter = useCallback((patch: Partial<Filters>) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      for (const [key, value] of Object.entries(patch) as [keyof Filters, string][]) {
-        if (value === DEFAULTS[key]) next.delete(key)
-        else next.set(key, value)
-      }
-      return next
-    }, { replace: true })
-  }, [setSearchParams])
+    const next: Record<string, string | null> = {}
+    for (const [key, value] of Object.entries(patch) as [keyof Filters, string][]) {
+      next[key] = value === DEFAULTS[key] ? null : value
+    }
+    writeParams(next)
+  }, [writeParams])
 
   const [searchInput, setSearchInput] = useState(q)
   const [showDrawer, setShowDrawer] = useState(false)

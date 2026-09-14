@@ -13,7 +13,7 @@ import type { EnrichedTransaction } from "./types"
 //  the page that owns both the list and the modal, not to the list itself.
 //
 //  Search and filter state deliberately does NOT live here — it lives in the
-//  URL, read and written by TransactionList via useSearchParams, so a filtered
+//  URL, read and written by TransactionList via useUrlParams, so a filtered
 //  view is linkable and survives Back/Forward.
 // ─────────────────────────────────────────────────────────────────
 

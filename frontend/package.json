@@ -15,7 +15,43 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "repro:url-params": "node scripts/url-params-repro/run.mjs"
+  },
+  "eslintConfig": {
+    "rules": {
+      "no-restricted-imports": [
+        "error",
+        {
+          "paths": [
+            {
+              "name": "react-router-dom",
+              "importNames": [
+                "useSearchParams"
+              ],
+              "message": "Use useUrlParams from src/lib/useUrlParams.ts. useSearchParams' setter builds writes from the last render's params and can silently drop another writer's param; see scripts/url-params-repro/README.md."
+            },
+            {
+              "name": "react-router",
+              "importNames": [
+                "useSearchParams"
+              ],
+              "message": "Use useUrlParams from src/lib/useUrlParams.ts. useSearchParams' setter builds writes from the last render's params and can silently drop another writer's param; see scripts/url-params-repro/README.md."
+            }
+          ]
+        }
+      ]
+    },
+    "overrides": [
+      {
+        "files": [
+          "src/lib/useUrlParams.ts"
+        ],
+        "rules": {
+          "no-restricted-imports": "off"
+        }
+      }
+    ]
   },
   "proxy": "http://localhost:3001",
   "browserslist": {
@@ -34,6 +70,7 @@
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "jsdom": "^24.1.3",
     "typescript": "^5.9.3"
   }
 }
