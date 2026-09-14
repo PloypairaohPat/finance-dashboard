@@ -75,7 +75,11 @@ export async function runDetectors(userId: string): Promise<void> {
         title: alert.title,
         body: alert.body,
         data: (alert.data ?? {}) as Prisma.InputJsonValue,
-        dismissedAt: null,
+        // dismissedAt deliberately NOT reset: this runs on every GET /alerts,
+        // so resetting it undid every dismissal whose condition still held.
+        // A dismissal now lasts for the fingerprint's period (a day for
+        // low_balance, a month for most detectors). See
+        // tests/alerts-dismissal.test.ts and docs/m7.3-data-trust-notes.md.
         updatedAt: new Date(),
       },
     })
