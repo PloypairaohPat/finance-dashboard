@@ -10,7 +10,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
-import SubscriptionTracker from "./SubscriptionTracker";
+import SubscriptionsView from "./SubscriptionsView";
 import { Account, CategorySpend, Budget, Alert } from "./types"
 import TrendChart from './TrendChart'
 import BudgetCard from './BudgetCard'
@@ -800,15 +800,7 @@ export default function App() {
             </div>
 
         {/* Recurring & Subscriptions */}
-        {accounts.length > 0 && (
-          <div style={styles.section as CSSProperties}>
-            <div style={styles.sectionHeader as CSSProperties}>
-              <h2 style={styles.sectionTitle as CSSProperties}>Subscriptions & Bills</h2>
-              <span style={styles.sectionCount as CSSProperties}>subscriptions &amp; recurring bills</span>
-            </div>
-            <SubscriptionTracker />
-          </div>
-        )}
+        {/* Subscriptions & Bills moved to SubscriptionsView (/subscriptions) in stage 2. */}
 
         {/* Transactions moved to TransactionsView (/transactions) in stage 2. */}
       </main>
@@ -852,6 +844,7 @@ export default function App() {
   const TAB_VIEWS: Record<string, React.ReactNode> = {
     transactions: <TransactionsView />,
     accounts: <AccountsView />,
+    subscriptions: <SubscriptionsView />,
   };
   const [overviewTab, ...otherTabs] = TABS;
   const routes = (

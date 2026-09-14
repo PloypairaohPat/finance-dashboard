@@ -113,19 +113,34 @@ export default function SubscriptionTracker() {
   const { demoMode } = useDemo()
   const [data, setData] = useState<SubscriptionAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!demoMode && !isSignedIn) return
+    // Clear loading on the early return too (the stage 0.5 InsightsDashboard bug).
+    if (!demoMode && !isSignedIn) {
+      setLoading(false)
+      return
+    }
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/subscriptions`)
-        if (res.ok) setData(await res.json())
-      } finally { setLoading(false) }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        setData(await res.json())
+        setError(null)
+      } catch (e: any) {
+        setError(`Couldn't load subscriptions: ${e.message}`)
+      } finally {
+        setLoading(false)
+      }
     })()
   }, [demoMode, isSignedIn, apiFetch])
 
-  if (loading || !data) {
+  if (loading) {
     return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading subscriptions…</div>
+  }
+  // A failed fetch used to leave data null and fall into "Loading…" forever.
+  if (error || !data) {
+    return <div style={{ color: "#ff6b6b", fontSize: 13, padding: 20 }}>⚠ {error ?? "Couldn't load subscriptions."}</div>
   }
 
   const { subscriptions, bills, upcoming, alerts, totals } = data
