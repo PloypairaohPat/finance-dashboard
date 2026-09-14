@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import TabPage from "./TabPage"
 import BudgetCard from "./BudgetCard"
@@ -6,6 +6,7 @@ import AddBudgetRow from "./AddBudgetRow"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import type { Budget } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -21,13 +22,8 @@ import type { Budget } from "./types"
 //  No URL state: none of the save handlers write a URL param, so the
 //  post-await hazard useUrlParams defends against does not arise here.
 //
-//  TODO(M7.1-stage4-sync-refresh): this list is NOT refreshed by App's "Sync"
-//  button — its triggerRefresh (src/App.tsx, at the Sync button) only refreshes
-//  App's own state, and budgets are no longer part of it. Unreachable while Sync
-//  shows on the Overview route only (AppHeader, since stage 3); becomes a real
-//  stale-data bug when it shows on other routes in M7.1 stage 4. Wire this view
-//  into the refresh path then, and remove this TODO along with the others
-//  carrying it.
+//  Re-fetches after every sync (useSyncVersion): spend changes when new
+//  transactions arrive. The current list stays on screen while it loads.
 // ─────────────────────────────────────────────────────────────────
 
 const muted = {
@@ -40,22 +36,29 @@ export default function BudgetsView() {
   const { isSignedIn } = useAuth()
   const apiFetch = useApiFetch()
   const { demoMode } = useDemo()
+  const syncVersion = useSyncVersion()
 
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // reload runs from several places (mount, sync, every card's save/delete);
+  // only the most recently started one may write state.
+  const requestSeq = useRef(0)
+
   const reload = useCallback(async () => {
+    const seq = ++requestSeq.current
     try {
       const res = await apiFetch(`${API_URL}/budgets`)
       const data = await res.json() as { budgets?: Budget[]; error?: string }
+      if (seq !== requestSeq.current) return
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`)
       setBudgets(data.budgets ?? [])
       setError(null)
     } catch (e: any) {
-      setError(`Couldn't load budgets: ${e.message}`)
+      if (seq === requestSeq.current) setError(`Couldn't load budgets: ${e.message}`)
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [apiFetch])
 
@@ -66,7 +69,8 @@ export default function BudgetsView() {
       return
     }
     reload()
-  }, [demoMode, isSignedIn, reload])
+    // syncVersion is a trigger only: a new value means bank data just changed.
+  }, [demoMode, isSignedIn, reload, syncVersion])
 
   return (
     <TabPage title="Budgets" count="this month">

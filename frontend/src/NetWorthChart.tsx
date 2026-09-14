@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import {
   ComposedChart,
   Area,
@@ -13,6 +13,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import type { Range, NetWorthResponse } from "./types"
 import { colors, fonts } from "./tokens"
 import { SkeletonChart } from "./Skeleton"
@@ -36,22 +37,37 @@ export default function NetWorthChart() {
   const [range, setRange] = useState<Range>("6M")
   const [data, setData] = useState<NetWorthResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const syncVersion = useSyncVersion()
+
+  // What the chart on screen was fetched for. A new range (or a demo/auth
+  // switch) shows the skeleton as before; a sync re-fetch of the same range
+  // keeps the chart visible until the new data arrives.
+  const fetchKey = `${demoMode}|${isSignedIn}|${range}`
+  const loadedKey = useRef<string | null>(null)
 
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
 
-    setLoading(true)
+    if (loadedKey.current !== fetchKey) setLoading(true)
 
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/networth?range=${range}`)
 
-        if (res.ok) setData(await res.json())
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) {
+            setData(json)
+            loadedKey.current = fetchKey
+          }
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [demoMode, isSignedIn, apiFetch, range])
+    return () => { cancelled = true }
+  }, [demoMode, isSignedIn, apiFetch, range, fetchKey, syncVersion])
 
   if (loading || !data) {
     return <SkeletonChart height={240} />

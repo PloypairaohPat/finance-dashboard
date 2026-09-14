@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import { SkeletonList } from "./Skeleton"
 
 interface MonthData {
@@ -20,18 +21,26 @@ export default function CategoryComparison() {
   const { demoMode } = useDemo()
   const [data, setData] = useState<MonthData[]>([])
   const [loading, setLoading] = useState(true)
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current data stays on screen meanwhile, and a
+  // superseded run's response is ignored.
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/categories/comparison?months=3`)
-        if (res.ok) setData(await res.json())
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setData(json)
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [demoMode, isSignedIn, apiFetch])
+    return () => { cancelled = true }
+  }, [demoMode, isSignedIn, apiFetch, syncVersion])
 
   if (loading) return <SkeletonList rows={4} />
 

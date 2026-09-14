@@ -4,6 +4,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { readWriteResult } from "./lib/writeResult"
+import { useSyncVersion } from "./SyncProvider"
 import type { Alert, Severity } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -16,8 +17,8 @@ import type { Alert, Severity } from "./types"
 //  detectors and upserts rows, and a dismiss in one reader never reached the
 //  others.
 //
-//  `refreshToken` is bumped by App after a successful Sync, so alerts refresh
-//  with the rest of App's data without App owning alert state.
+//  Re-fetches after every sync via useSyncVersion (SyncProvider), keeping the
+//  current list on screen while it loads.
 // ─────────────────────────────────────────────────────────────────
 
 // Severity is a plain string column, so the backend's `orderBy severity`
@@ -50,16 +51,11 @@ export function useAlerts(): AlertsState {
   return value
 }
 
-export default function AlertsProvider({
-  refreshToken,
-  children,
-}: {
-  refreshToken: number
-  children: ReactNode
-}) {
+export default function AlertsProvider({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth()
   const { demoMode } = useDemo()
   const apiFetch = useApiFetch()
+  const syncVersion = useSyncVersion()
   const enabled = demoMode || (isLoaded && !!isSignedIn)
 
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -67,7 +63,7 @@ export default function AlertsProvider({
   const [error, setError] = useState<string | null>(null)
 
   // Only the newest request may write state — a slow response from before a
-  // demo/auth switch must not overwrite the list that replaced it.
+  // demo/auth switch or a sync must not overwrite the list that replaced it.
   const requestSeq = useRef(0)
 
   const reload = useCallback(async () => {
@@ -99,8 +95,8 @@ export default function AlertsProvider({
       return
     }
     reload()
-    // refreshToken is a trigger only: a new value means "App just synced".
-  }, [enabled, reload, refreshToken])
+    // syncVersion is a trigger only: a new value means bank data just changed.
+  }, [enabled, reload, syncVersion])
 
   const dismiss = useCallback(async (id: string): Promise<string | null> => {
     try {

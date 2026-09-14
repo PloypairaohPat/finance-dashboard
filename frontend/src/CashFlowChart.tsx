@@ -12,6 +12,7 @@ import {
 } from "recharts"
 import { useApiFetch } from "./lib/useApiFetch"
 import { API_URL } from "./config"
+import { useSyncVersion } from "./SyncProvider"
 
 interface CashFlowMonth {
   month: string
@@ -72,20 +73,25 @@ export default function CashFlowChart() {
   const [data, setData] = useState<CashFlowMonth[]>([])
   const [loading, setLoading] = useState(true)
   const apiFetch = useApiFetch()
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current chart stays on screen meanwhile, and
+  // a superseded run's response is ignored.
   useEffect(() => {
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/cashflow?months=6`)
         const json = await res.json()
-        setData(json.cashflow ?? [])
+        if (!cancelled) setData(json.cashflow ?? [])
       } catch (e: any) {
         console.error("CashFlow fetch failed:", e.message)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [apiFetch])
+    return () => { cancelled = true }
+  }, [apiFetch, syncVersion])
 
   if (loading) {
     return (

@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import type { SubscriptionAnalysis, EnrichedStream, Frequency } from "./types"
 
 const fmt = (n: number) =>
@@ -114,26 +115,33 @@ export default function SubscriptionTracker() {
   const [data, setData] = useState<SubscriptionAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current list stays on screen meanwhile, and a
+  // superseded run's response is ignored.
   useEffect(() => {
     // Clear loading on the early return too (the stage 0.5 InsightsDashboard bug).
     if (!demoMode && !isSignedIn) {
       setLoading(false)
       return
     }
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/subscriptions`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        setData(await res.json())
+        const json = await res.json()
+        if (cancelled) return
+        setData(json)
         setError(null)
       } catch (e: any) {
-        setError(`Couldn't load subscriptions: ${e.message}`)
+        if (!cancelled) setError(`Couldn't load subscriptions: ${e.message}`)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [demoMode, isSignedIn, apiFetch])
+    return () => { cancelled = true }
+  }, [demoMode, isSignedIn, apiFetch, syncVersion])
 
   if (loading) {
     return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading subscriptions…</div>

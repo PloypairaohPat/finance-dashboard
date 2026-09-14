@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
+import { useSyncVersion } from "./SyncProvider"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
@@ -34,16 +35,24 @@ export default function GoalsCard() {
   const [months, setMonths] = useState("6")
   const [error, setError] = useState<string | null>(null)
 
+  const syncVersion = useSyncVersion()
+  // reload runs on mount, after every sync, and after a goal is saved; only the
+  // most recently started one may write state.
+  const requestSeq = useRef(0)
+
   const reload = async () => {
+    const seq = ++requestSeq.current
     const [g, a] = await Promise.all([
       apiFetch(`${API_URL}/goals`).then(r => r.json()),
       apiFetch(`${API_URL}/accounts`).then(r => r.json()),
     ])
+    if (seq !== requestSeq.current) return
     setGoals(Array.isArray(g) ? g : [])
     setAccounts(Array.isArray(a) ? a : (a.accounts ?? []))
   }
 
-  useEffect(() => { if (demoMode || isSignedIn) reload() }, [demoMode, isSignedIn])  // eslint-disable-line
+  // Re-runs after every sync: goal progress follows balances.
+  useEffect(() => { if (demoMode || isSignedIn) reload() }, [demoMode, isSignedIn, syncVersion])  // eslint-disable-line
 
   const resetForm = () => {
     setAdding(false); setError(null)

@@ -15,6 +15,8 @@ import TransactionsView from "./TransactionsView"
 import OverviewView from "./OverviewView"
 import AppHeader from "./AppHeader"
 import AlertsProvider from "./AlertsProvider"
+import SyncProvider from "./SyncProvider"
+import { readWriteResult } from "./lib/writeResult"
 import useMediaQuery from "./useMediaQuery"
 import {
   SignedIn,
@@ -172,9 +174,12 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
-  // Bumped after a successful Sync so AlertsProvider re-fetches; App no longer
-  // owns alert state (M7.1 stage 3).
-  const [alertsRefreshToken, setAlertsRefreshToken] = useState(0);
+  // Bumped whenever synced bank data changes — after a successful Sync (button,
+  // auto-sync, Live Balances) and after linking a bank. SyncProvider hands it
+  // to every view that shows synced data so each re-fetches (M7.1 stage 4).
+  const [syncVersion, setSyncVersion] = useState(0);
+  // Shown next to the Sync button on every route, e.g. a demo-mode refusal.
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
@@ -340,21 +345,33 @@ export default function App() {
 
   const triggerRefresh = useCallback(async () => {
     setSyncing(true)
+    setSyncNotice(null)
     try {
       const syncRes = await authFetch(`${API_URL}/sync`, { method: "POST" })
-      if (!syncRes.ok) {
-        const body = await syncRes.json().catch(() => ({})) as { error?: string }
-        throw new Error(body.error ?? `Sync failed (${syncRes.status})`)
+      // Not res.ok alone: in demo mode the backend refuses every write with
+      // HTTP 200 { demo: true, ok: false }, which res.ok reads as a sync.
+      const result = await readWriteResult(syncRes)
+      if (!result.ok) {
+        if (result.demo) {
+          // Nothing synced, so there is nothing to re-fetch. Not an error.
+          setSyncNotice(result.message)
+          return
+        }
+        throw new Error(result.message)
       }
+      // Every view that shows synced data re-fetches off this, in parallel with
+      // App's own fetches below.
+      setSyncVersion((v) => v + 1)
       await Promise.all([
         fetchData(),
         fetchNetWorth(),
         fetchInsightsSummary(),
       ])
-      setAlertsRefreshToken((t) => t + 1)
     } catch (e: any) {
       console.error("Sync failed:", e.message)
-      setError(`Sync failed: ${e.message}`)
+      // Shown next to the Sync button, which is on every route; the connect
+      // panel's error slot only exists on Overview.
+      setSyncNotice(`Sync failed: ${e.message}`)
     } finally {
       setSyncing(false)
     }
@@ -368,12 +385,14 @@ export default function App() {
   }, [fetchData, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
 
   useEffect(() => {
-    if (!lastSyncedAt || !connected || hasAutoSynced.current) return
+    // Never in demo: the backend refuses the write, so an automatic Sync would
+    // only greet every demo visitor with "changes aren't saved".
+    if (demoMode || !lastSyncedAt || !connected || hasAutoSynced.current) return
     if (Date.now() - new Date(lastSyncedAt).getTime() > 4 * 60 * 60 * 1000) {
       hasAutoSynced.current = true
       triggerRefresh()
     }
-  }, [lastSyncedAt, connected, triggerRefresh])
+  }, [demoMode, lastSyncedAt, connected, triggerRefresh])
 
   const onSuccess = useCallback(
     async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
@@ -387,6 +406,10 @@ export default function App() {
         if (data.error) throw new Error(data.error);
         setConnected(true);
         fetchData();
+        // A newly linked bank changes every synced view, not just App's
+        // accounts. Before stage 4 this path only called fetchData — the same
+        // gap Sync had.
+        setSyncVersion((v) => v + 1);
       } catch (e: any) {
         setError(`Token exchange failed: ${e.message}`);
       }
@@ -480,11 +503,10 @@ export default function App() {
 
   // ── App header pieces — rendered by AppHeader above <Routes> ─────
   // Built here because they drive App-owned Plaid Link, refresh and demo
-  // state. AppHeader shows `overviewActions` on the Overview route only; the
-  // bell and `accountControl` show everywhere.
-  const overviewActions = (
-        <>
-          {connected && (
+  // state. `overviewActions` shows on the Overview route only (+ Link Account
+  // reveals the connect panel, which only exists there); `syncActions`, the
+  // bell and `accountControl` show on every route.
+  const overviewActions = connected ? (
             <button
               onClick={() => setConnected(false)}
               style={{
@@ -495,21 +517,12 @@ export default function App() {
             >
               + Link Account
             </button>
-          )}
-          {/* TODO(M7.1-stage4-sync-refresh): this Sync button's triggerRefresh only
-              refreshes App's own state (accounts, net worth, insights) and bumps
-              AlertsProvider's refreshToken. Tab views that fetch for themselves are
-              NOT refreshed by it:
-                - AccountsView (src/AccountsView.tsx) — its own copy of /accounts
-                - BudgetsView (src/BudgetsView.tsx) — /budgets, which left App entirely
-                - OverviewView (src/OverviewView.tsx) — gets App's state as props, so
-                  its hero and Spending breakdown DO refresh; its child widgets fetch
-                  for themselves and never did (pre-M7.1, see its TODO)
-              Still unreachable: since stage 3 the header renders app-wide
-              (AppHeader), but these buttons show on the Overview route only.
-              Becomes a real stale-data bug the moment Sync shows on other routes
-              (M7.1 stage 4). Wire every view listed here into the refresh path then,
-              and remove this TODO and every other one carrying this tag. */}
+  ) : null;
+
+  // Sync can sit on every route because every view that shows synced data
+  // re-fetches when triggerRefresh bumps syncVersion (SyncProvider).
+  const syncActions = (
+        <>
           {connected && (
             <button
               onClick={triggerRefresh}
@@ -545,6 +558,16 @@ export default function App() {
               {updatingBalance ? "opening…" : "⚡ Live Balances"}
             </button>
           )}
+          {/* Sync's outcome when it didn't simply work: a demo-mode refusal or a
+              failure. Next to the button so it's visible on every route. */}
+          {syncNotice && (
+            <span role="status" style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px",
+              color: "#f0a030", maxWidth: 280,
+            }}>
+              {syncNotice}
+            </span>
+          )}
         </>
   );
 
@@ -563,7 +586,13 @@ export default function App() {
             <UserButton afterSignOutUrl="/" />
   );
 
-  const header = <AppHeader overviewActions={overviewActions} accountControl={accountControl} />;
+  const header = (
+    <AppHeader
+      overviewActions={overviewActions}
+      syncActions={syncActions}
+      accountControl={accountControl}
+    />
+  );
 
   const setupPanel = (
         <div style={styles.hero as CSSProperties}>
@@ -754,12 +783,15 @@ export default function App() {
             branch — including the splash — so the URL is correct before any
             route reads it. */}
         <DemoUrlSync demoMode={demoMode} />
-        {/* One alerts source for the bell on every route. It fetches only in
-            demo mode or once signed in, so the splash and sign-in screens
-            cost nothing. */}
-        <AlertsProvider refreshToken={alertsRefreshToken}>
-          {content}
-        </AlertsProvider>
+        {/* SyncProvider: every view re-fetches synced data when syncVersion
+            changes. AlertsProvider: one alerts source for the bell on every
+            route, fetching only in demo mode or once signed in, so the splash
+            and sign-in screens cost nothing. */}
+        <SyncProvider version={syncVersion}>
+          <AlertsProvider>
+            {content}
+          </AlertsProvider>
+        </SyncProvider>
       </BrowserRouter>
     </DemoContext.Provider>
   );

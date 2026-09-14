@@ -21,20 +21,15 @@ import type { CategorySpend } from "./types"
 //  left it (M7.1 stage 3): the header, now AppHeader above <Routes>, and the
 //  Alerts section, replaced by the header's alerts bell.
 //
-//  Unlike the other four tabs, this view RECEIVES App's data as props instead
-//  of fetching its own. That is deliberate. The Sync button, "Live Balances"
-//  and the Plaid Link success handler show only on this route and refresh
-//  App's state; if this view fetched its own copy, linking a first bank or
-//  pressing Sync would leave it stale right now — the stage 4 gap, but
-//  reachable today.
+//  Unlike the other four tabs, the hero and Spending breakdown RECEIVE App's
+//  data as props instead of fetching their own. App still needs that data for
+//  itself (the connect panel's checklist, the auto-sync timer, `connected`),
+//  and App's triggerRefresh re-fetches it, so props keep one copy that Sync
+//  already updates. The widgets below fetch for themselves and re-fetch on
+//  every sync through useSyncVersion (SyncProvider, M7.1 stage 4).
 //
 //  The connect/setup block is passed in as a rendered slot: it depends on
 //  App-owned Plaid Link state, and slotting it keeps the DOM order identical.
-//
-//  TODO(M7.1-stage4-sync-refresh): when a shared refresh path exists, revisit
-//  these props — heroProps, categories, hasAccounts and showHero are
-//  App-coupled only because refresh lives in App. Remove this TODO along with
-//  the others carrying it.
 // ─────────────────────────────────────────────────────────────────
 
 const styles: Record<string, CSSProperties> = {

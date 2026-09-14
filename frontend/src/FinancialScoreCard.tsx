@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import type { FinancialScore, ScoreComponentKey, ScoreGrade } from "./types"
 
 const GRADE_COLOR: Record<ScoreGrade, string> = {
@@ -33,16 +34,24 @@ export default function FinancialScoreCard() {
   const { demoMode } = useDemo()
   const [score, setScore] = useState<FinancialScore | null>(null)
   const [loading, setLoading] = useState(true)
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current score stays on screen meanwhile, and
+  // a superseded run's response is ignored.
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/score`)
-        if (res.ok) setScore(await res.json())
-      } finally { setLoading(false) }
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setScore(json)
+        }
+      } finally { if (!cancelled) setLoading(false) }
     })()
-  }, [demoMode, isSignedIn, apiFetch])
+    return () => { cancelled = true }
+  }, [demoMode, isSignedIn, apiFetch, syncVersion])
 
   if (loading || !score) return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading score…</div>
 

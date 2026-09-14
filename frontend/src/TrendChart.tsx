@@ -6,6 +6,7 @@ import {
 import { useApiFetch } from './lib/useApiFetch'
 import { MonthlyTotal } from './types'
 import { API_URL } from "./config"
+import { useSyncVersion } from "./SyncProvider"
 
 const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)> = {
   wrap:   { background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px 24px' },
@@ -39,20 +40,25 @@ export default function TrendChart() {
   const [data,    setData]    = useState<MonthlyTotal[]>([])
   const [loading, setLoading] = useState(true)
   const apiFetch = useApiFetch()
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current chart stays on screen meanwhile, and
+  // a superseded run's response is ignored.
   useEffect(() => {
-    (async () => {
+    let cancelled = false
+    ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/transactions/trends`)
         const d = await res.json()
-        setData(d.trends ?? [])
+        if (!cancelled) setData(d.trends ?? [])
       } catch (e) {
         console.error('TrendChart fetch failed:', e)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [apiFetch])
+    return () => { cancelled = true }
+  }, [apiFetch, syncVersion])
 
   const delta = (() => {
     if (data.length < 2) return null

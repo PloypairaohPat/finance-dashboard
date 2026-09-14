@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
+import { useSyncVersion } from "./SyncProvider"
 import { useAuth } from "@clerk/clerk-react"
 import { usePlaidLink, PlaidLinkError } from "react-plaid-link"
 import { API_URL } from "./config"
@@ -44,19 +45,30 @@ export default function ConnectedBanks() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
 
+  // reload runs on mount, after every sync, and after a reconnect or
+  // disconnect; only the most recently started one may write state.
+  const requestSeq = useRef(0)
+
   const reload = useCallback(async () => {
+    const seq = ++requestSeq.current
     try {
       const res = await apiFetch(`${API_URL}/plaid-items`)
-      if (res.ok) setItems(await res.json())
+      if (res.ok) {
+        const json = await res.json()
+        if (seq === requestSeq.current) setItems(json)
+      }
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [apiFetch])
+
+  const syncVersion = useSyncVersion()
 
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     reload()
-  }, [demoMode, isSignedIn, reload])
+    // syncVersion is a trigger only: item status and last-synced time change on sync.
+  }, [demoMode, isSignedIn, reload, syncVersion])
 
   // ── Reconnect (update-mode Plaid Link) — same pattern as App.tsx's
   // "⚡ Live Balances" flow, scoped to a specific item via itemId. ──────

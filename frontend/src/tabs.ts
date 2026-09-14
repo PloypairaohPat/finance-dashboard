@@ -12,6 +12,8 @@ export interface TabDef {
   /** Stable key — safe to use for nav state and analytics. */
   id: string
   label: string
+  /** Used where `label` doesn't fit, e.g. the five-item mobile bottom nav. */
+  shortLabel?: string
   path: string
 }
 
@@ -20,5 +22,5 @@ export const TABS: TabDef[] = [
   { id: 'accounts', label: 'Accounts', path: '/accounts' },
   { id: 'budgets', label: 'Budgets', path: '/budgets' },
   { id: 'transactions', label: 'Transactions', path: '/transactions' },
-  { id: 'subscriptions', label: 'Subscriptions & Bills', path: '/subscriptions' },
+  { id: 'subscriptions', label: 'Subscriptions & Bills', shortLabel: 'Bills', path: '/subscriptions' },
 ]

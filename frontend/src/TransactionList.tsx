@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useSyncVersion } from "./SyncProvider"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
@@ -98,7 +99,7 @@ export default function TransactionList({ onRowClick }: Props) {
     })()
   }, [demoMode, isSignedIn, apiFetch])
 
-  // Main search — re-runs when any filter changes
+  // Main search — re-runs when any filter changes, and after every sync
   const runSearch = useCallback(async (cursor: string | null) => {
     const qs = new URLSearchParams()
     if (filters.q) qs.set("q", filters.q)
@@ -111,22 +112,44 @@ export default function TransactionList({ onRowClick }: Props) {
     return res.ok ? (await res.json() as SearchResult) : null
   }, [apiFetch, filters])
 
+  const syncVersion = useSyncVersion()
+
+  // What the rows on screen were fetched for. A filter (or demo/auth) change
+  // shows the loading state; a sync re-fetch of the same search keeps the rows
+  // visible and swaps in the fresh first page when it arrives.
+  const searchKey = `${demoMode}|${isSignedIn}|${filters.q}|${filters.category}|${filters.dateFrom}|${filters.dateTo}`
+  const loadedKey = useRef<string | null>(null)
+
+  // Bumped by every new first-page search, so a response — or a "load more"
+  // page — that a newer search has superseded is dropped instead of landing
+  // on top of fresher rows.
+  const generation = useRef(0)
+
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
-    setLoading(true)
+    const gen = ++generation.current
+    if (loadedKey.current !== searchKey) setLoading(true)
     runSearch(null).then(result => {
+      if (gen !== generation.current) return
       if (result) {
         setRows(result.transactions)
         setNextCursor(result.nextCursor)
+        loadedKey.current = searchKey
       }
       setLoading(false)
     })
-  }, [demoMode, isSignedIn, runSearch])
+  }, [demoMode, isSignedIn, runSearch, searchKey, syncVersion])
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return
+    const gen = generation.current
     setLoadingMore(true)
     const result = await runSearch(nextCursor)
+    if (gen !== generation.current) {
+      // A new search replaced the list while this page loaded.
+      setLoadingMore(false)
+      return
+    }
     if (result) {
       setRows(prev => [...prev, ...result.transactions])
       setNextCursor(result.nextCursor)

@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
+import { useSyncVersion } from "./SyncProvider"
 import type { WeeklyDigest } from "./types"
 
 const fmt = (n: number) =>
@@ -20,16 +21,24 @@ export default function WeeklyDigestCard() {
   const { demoMode } = useDemo()
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [loading, setLoading] = useState(true)
+  const syncVersion = useSyncVersion()
 
+  // Re-runs after every sync; the current digest stays on screen meanwhile, and
+  // a superseded run's response is ignored.
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
+    let cancelled = false
     ;(async () => {
       try {
         const res = await apiFetch(`${API_URL}/alerts/digest`)
-        if (res.ok) setDigest(await res.json())
-      } finally { setLoading(false) }
+        if (res.ok) {
+          const json = await res.json()
+          if (!cancelled) setDigest(json)
+        }
+      } finally { if (!cancelled) setLoading(false) }
     })()
-  }, [demoMode, isSignedIn, apiFetch])
+    return () => { cancelled = true }
+  }, [demoMode, isSignedIn, apiFetch, syncVersion])
 
   if (loading || !digest) return null       // silent if not ready — fine at top of page
 
