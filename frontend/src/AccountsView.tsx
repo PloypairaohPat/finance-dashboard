@@ -23,7 +23,7 @@ import type { Account } from "./types"
 //  only refreshes App's own state. Unreachable while that header lives inside
 //  the Overview dashboard; becomes a real stale-data bug when the header moves
 //  to app level in M7.1 stage 4. Wire this view into the refresh path then, and
-//  remove this TODO and its twin in App.tsx.
+//  remove this TODO along with the others carrying it.
 // ─────────────────────────────────────────────────────────────────
 
 const sectionTitle = {

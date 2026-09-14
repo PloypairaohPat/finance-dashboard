@@ -11,9 +11,9 @@ import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-
 import SpendingChart from "./SpendingChart";
 import CategoryComparison from "./CategoryComparison"
 import SubscriptionsView from "./SubscriptionsView";
-import { Account, CategorySpend, Budget, Alert } from "./types"
+import { Account, CategorySpend, Alert } from "./types"
 import TrendChart from './TrendChart'
-import BudgetCard from './BudgetCard'
+import BudgetsView from "./BudgetsView"
 import TransactionsView from "./TransactionsView"
 import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
@@ -36,7 +36,6 @@ import AlertCenter from "./AlertCenter"
 import AccountsView from "./AccountsView"
 import FinancialScoreCard from "./FinancialScoreCard"
 import GoalsCard from "./GoalsCard"
-import AddBudgetRow from "./AddBudgetRow"
 import DemoUrlSync from "./DemoUrlSync"
 import { TABS } from "./tabs"
 
@@ -182,7 +181,6 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
-  const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [alerts,       setAlerts]       = useState<Alert[]>([]);
   const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
@@ -301,17 +299,6 @@ export default function App() {
     })();
   }, [authFetch, isSignedIn]);
 
-  // ── Fetch budgets ────────────────────────────────────────────────
-  const fetchBudgets = useCallback(async () => {
-    try {
-      const res  = await authFetch(`${API_URL}/budgets`);
-      const data = await res.json() as { budgets: Budget[] };
-      setBudgets(data.budgets ?? []);
-    } catch (e: any) {
-      console.error("Budgets fetch failed:", e.message);
-    }
-  }, [authFetch]);
-
   // ── Fetch alerts — backend returns Alert[] directly ──────────────
   const fetchAlerts = useCallback(async () => {
     try {
@@ -367,9 +354,7 @@ export default function App() {
     } catch (e: any) {
       setError(`Categories fetch failed: ${e.message}`);
     }
-
-    fetchBudgets();
-  }, [authFetch, fetchBudgets]);
+  }, [authFetch]);
 
   const triggerRefresh = useCallback(async () => {
     setSyncing(true)
@@ -381,7 +366,6 @@ export default function App() {
       }
       await Promise.all([
         fetchData(),
-        fetchBudgets(),
         fetchAlerts(),
         fetchNetWorth(),
         fetchInsightsSummary(),
@@ -392,16 +376,15 @@ export default function App() {
     } finally {
       setSyncing(false)
     }
-  }, [authFetch, fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary])
+  }, [authFetch, fetchData, fetchAlerts, fetchNetWorth, fetchInsightsSummary])
 
   useEffect(() => {
     if (!demoMode && (!isLoaded || !isSignedIn)) return;
     fetchData();
-    fetchBudgets();
     fetchAlerts();
     fetchNetWorth();
     fetchInsightsSummary();
-  }, [fetchData, fetchBudgets, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
+  }, [fetchData, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
 
   useEffect(() => {
     if (!lastSyncedAt || !connected || hasAutoSynced.current) return
@@ -549,12 +532,14 @@ export default function App() {
             </button>
           )}
           {/* TODO(M7.1-stage4-sync-refresh): this Sync button's triggerRefresh only
-              refreshes App's own copy of accounts (plus budgets, alerts, net worth,
-              insights). AccountsView (src/AccountsView.tsx) fetches /accounts for
-              itself and is NOT refreshed by it. Unreachable while this header lives
-              inside the Overview dashboard; becomes a real stale-data bug when the
-              header moves to app level in M7.1 stage 4. Wire AccountsView into the
-              refresh path then, and remove this TODO and its twin in AccountsView. */}
+              refreshes App's own state (accounts, alerts, net worth, insights). Tab
+              views that fetch for themselves are NOT refreshed by it:
+                - AccountsView (src/AccountsView.tsx) — its own copy of /accounts
+                - BudgetsView (src/BudgetsView.tsx) — /budgets, which left App entirely
+              Unreachable while this header lives inside the Overview dashboard;
+              becomes a real stale-data bug when the header moves to app level in
+              M7.1 stage 4. Wire every view listed here into the refresh path then,
+              and remove this TODO and every other one carrying this tag. */}
           {connected && (
             <button
               onClick={triggerRefresh}
@@ -784,20 +769,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Monthly Budgets */}
-        <div style={styles.section as CSSProperties}>
-          <div style={styles.sectionHeader as CSSProperties}>
-            <h2 style={styles.sectionTitle as CSSProperties}>Monthly Budgets</h2>
-            <span style={styles.sectionCount as CSSProperties}>this month</span>
-            </div>
-            {budgets.map((b) => (
-              <BudgetCard key={b.category} budget={b} onUpdated={fetchBudgets} onDeleted={fetchBudgets} />
-              ))}
-              <AddBudgetRow
-              existingCategories={budgets.map(b => b.category)}
-              onAdded={fetchBudgets}
-              />
-            </div>
+        {/* Monthly Budgets moved to BudgetsView (/budgets) in stage 2. */}
 
         {/* Recurring & Subscriptions */}
         {/* Subscriptions & Bills moved to SubscriptionsView (/subscriptions) in stage 2. */}
@@ -844,6 +816,7 @@ export default function App() {
   const TAB_VIEWS: Record<string, React.ReactNode> = {
     transactions: <TransactionsView />,
     accounts: <AccountsView />,
+    budgets: <BudgetsView />,
     subscriptions: <SubscriptionsView />,
   };
   const [overviewTab, ...otherTabs] = TABS;
