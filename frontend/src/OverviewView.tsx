@@ -1,7 +1,6 @@
 import { CSSProperties, ReactNode } from "react"
 import HeroOverview, { HeroOverviewProps } from "./HeroOverview"
 import WeeklyDigestCard from "./WeeklyDigestCard"
-import AlertCenter from "./AlertCenter"
 import InsightsDashboard from "./InsightsDashboard"
 import SpendingChart from "./SpendingChart"
 import CategoryComparison from "./CategoryComparison"
@@ -18,22 +17,24 @@ import type { CategorySpend } from "./types"
 //  OverviewView — the Overview tab (index route).
 //
 //  Moved out of App.tsx's dashboard JSX unchanged: same sections, same order,
-//  same "only when accounts exist" gating, same markup.
+//  same "only when accounts exist" gating, same markup. Two things have since
+//  left it (M7.1 stage 3): the header, now AppHeader above <Routes>, and the
+//  Alerts section, replaced by the header's alerts bell.
 //
 //  Unlike the other four tabs, this view RECEIVES App's data as props instead
 //  of fetching its own. That is deliberate. The Sync button, "Live Balances"
-//  and the Plaid Link success handler all live on this page and refresh App's
-//  state; if this view fetched its own copy, linking a first bank or pressing
-//  Sync would leave it stale right now — the stage 4 gap, but reachable today.
+//  and the Plaid Link success handler show only on this route and refresh
+//  App's state; if this view fetched its own copy, linking a first bank or
+//  pressing Sync would leave it stale right now — the stage 4 gap, but
+//  reachable today.
 //
-//  The header and the connect/setup block are passed in as rendered slots:
-//  both depend on App-owned Plaid Link state, and slotting them keeps the DOM
-//  and visual order identical to the old dashboard.
+//  The connect/setup block is passed in as a rendered slot: it depends on
+//  App-owned Plaid Link state, and slotting it keeps the DOM order identical.
 //
-//  TODO(M7.1-stage4-sync-refresh): when the header moves to app level and a
-//  shared refresh path exists, revisit these props — heroProps, categories,
-//  activeAlertCount, hasAccounts and showHero are App-coupled only because
-//  refresh lives in App. Remove this TODO along with the others carrying it.
+//  TODO(M7.1-stage4-sync-refresh): when a shared refresh path exists, revisit
+//  these props — heroProps, categories, hasAccounts and showHero are
+//  App-coupled only because refresh lives in App. Remove this TODO along with
+//  the others carrying it.
 // ─────────────────────────────────────────────────────────────────
 
 const styles: Record<string, CSSProperties> = {
@@ -63,8 +64,6 @@ const panel: CSSProperties = { background: "#161e14", border: "1px solid #253325
 const panelTitle: CSSProperties = { fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 18, color: "#e8f4e8", marginBottom: 16 }
 
 export interface OverviewViewProps {
-  /** App header (word-mark, Link/Sync/Live Balances, Exit demo). Moves to app level in stage 4. */
-  header: ReactNode
   /** Connect-your-bank block and setup checklist. Plaid Link state lives in App. */
   setupPanel: ReactNode
   heroProps: HeroOverviewProps
@@ -73,40 +72,29 @@ export interface OverviewViewProps {
   /** Gates every data section, exactly as the old dashboard did. */
   hasAccounts: boolean
   categories: CategorySpend[]
-  activeAlertCount: number
 }
 
 export default function OverviewView({
-  header,
   setupPanel,
   heroProps,
   showHero,
   hasAccounts,
   categories,
-  activeAlertCount,
 }: OverviewViewProps) {
   const isMobile = useMediaQuery("(max-width: 640px)")
 
   return (
     <div style={styles.root}>
-      {header}
-
       <main style={{ ...styles.main, padding: isMobile ? "30px 16px" : "60px 40px" }}>
         {showHero && <HeroOverview {...heroProps} />}
 
         {setupPanel}
 
-        {/* Weekly Digest + Smart Alerts (M5.8) */}
+        {/* Weekly Digest (M5.8). The Alerts list that sat under it is now the
+            header's alerts bell (M7.1 stage 3). */}
         {hasAccounts && (
           <div style={styles.section}>
             <WeeklyDigestCard />
-            <div style={{ marginTop: 24 }}>
-              <div style={styles.sectionHeader}>
-                <h2 style={styles.sectionTitle}>Alerts</h2>
-                <span style={styles.sectionCount}>{activeAlertCount} active</span>
-              </div>
-              <AlertCenter />
-            </div>
           </div>
         )}
 

@@ -9,10 +9,12 @@ import React, { useState, useCallback, useEffect, useMemo, useRef, CSSProperties
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { usePlaidLink, PlaidLinkOnSuccessMetadata, PlaidLinkError } from "react-plaid-link";
 import SubscriptionsView from "./SubscriptionsView";
-import { Account, CategorySpend, Alert } from "./types"
+import { Account, CategorySpend } from "./types"
 import BudgetsView from "./BudgetsView"
 import TransactionsView from "./TransactionsView"
 import OverviewView from "./OverviewView"
+import AppHeader from "./AppHeader"
+import AlertsProvider from "./AlertsProvider"
 import useMediaQuery from "./useMediaQuery"
 import {
   SignedIn,
@@ -170,7 +172,9 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
-  const [alerts,       setAlerts]       = useState<Alert[]>([]);
+  // Bumped after a successful Sync so AlertsProvider re-fetches; App no longer
+  // owns alert state (M7.1 stage 3).
+  const [alertsRefreshToken, setAlertsRefreshToken] = useState(0);
   const [netWorthHistory, setNetWorthHistory] = useState<Array<{ date: string; netWorth: number }>>([]);
   const [loading,      setLoading]      = useState({ link: true, accounts: false, tx: false });
   const [error,        setError]        = useState<string | null>(null);
@@ -288,17 +292,6 @@ export default function App() {
     })();
   }, [authFetch, isSignedIn]);
 
-  // ── Fetch alerts — backend returns Alert[] directly ──────────────
-  const fetchAlerts = useCallback(async () => {
-    try {
-      const res  = await authFetch(`${API_URL}/alerts`)
-      const data = await res.json() as Alert[]
-      setAlerts(Array.isArray(data) ? data : [])
-    } catch (e: any) {
-      console.error("Alerts fetch failed:", e.message)
-    }
-  }, [authFetch])
-
   const fetchNetWorth = useCallback(async () => {
     try {
       const res  = await authFetch(`${API_URL}/networth`)
@@ -355,25 +348,24 @@ export default function App() {
       }
       await Promise.all([
         fetchData(),
-        fetchAlerts(),
         fetchNetWorth(),
         fetchInsightsSummary(),
       ])
+      setAlertsRefreshToken((t) => t + 1)
     } catch (e: any) {
       console.error("Sync failed:", e.message)
       setError(`Sync failed: ${e.message}`)
     } finally {
       setSyncing(false)
     }
-  }, [authFetch, fetchData, fetchAlerts, fetchNetWorth, fetchInsightsSummary])
+  }, [authFetch, fetchData, fetchNetWorth, fetchInsightsSummary])
 
   useEffect(() => {
     if (!demoMode && (!isLoaded || !isSignedIn)) return;
     fetchData();
-    fetchAlerts();
     fetchNetWorth();
     fetchInsightsSummary();
-  }, [fetchData, fetchAlerts, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
+  }, [fetchData, fetchNetWorth, fetchInsightsSummary, isSignedIn, demoMode])
 
   useEffect(() => {
     if (!lastSyncedAt || !connected || hasAutoSynced.current) return
@@ -486,29 +478,12 @@ export default function App() {
     </div>
   );
 
-  // ── Overview (index route) — rendered for real signed-in users and for
-  // demo visitors alike, so there is no duplicated markup between the two.
-  // The page body lives in OverviewView; the header and the connect/setup
-  // panel stay here because they drive App-owned Plaid Link and refresh state,
-  // and are passed in as slots.
-  const header = (
-      <header style={{
-        ...(styles.header as CSSProperties),
-        padding: isMobile ? "16px 20px" : "24px 40px",
-      }}>
-        {/* Word-mark */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{
-            fontFamily: "Fraunces, Georgia, serif", fontWeight: 300,
-            fontSize: 22, color: "#e8f4e8", letterSpacing: "-.01em",
-          }}>Ledger</span>
-          <span style={{
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: 10,
-            color: "#5a7a5a", letterSpacing: ".06em",
-          }}>v0.5</span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+  // ── App header pieces — rendered by AppHeader above <Routes> ─────
+  // Built here because they drive App-owned Plaid Link, refresh and demo
+  // state. AppHeader shows `overviewActions` on the Overview route only; the
+  // bell and `accountControl` show everywhere.
+  const overviewActions = (
+        <>
           {connected && (
             <button
               onClick={() => setConnected(false)}
@@ -522,16 +497,18 @@ export default function App() {
             </button>
           )}
           {/* TODO(M7.1-stage4-sync-refresh): this Sync button's triggerRefresh only
-              refreshes App's own state (accounts, alerts, net worth, insights). Tab
-              views that fetch for themselves are NOT refreshed by it:
+              refreshes App's own state (accounts, net worth, insights) and bumps
+              AlertsProvider's refreshToken. Tab views that fetch for themselves are
+              NOT refreshed by it:
                 - AccountsView (src/AccountsView.tsx) — its own copy of /accounts
                 - BudgetsView (src/BudgetsView.tsx) — /budgets, which left App entirely
                 - OverviewView (src/OverviewView.tsx) — gets App's state as props, so
                   its hero and Spending breakdown DO refresh; its child widgets fetch
                   for themselves and never did (pre-M7.1, see its TODO)
-              Unreachable while this header lives inside the Overview dashboard;
-              becomes a real stale-data bug when the header moves to app level in
-              M7.1 stage 4. Wire every view listed here into the refresh path then,
+              Still unreachable: since stage 3 the header renders app-wide
+              (AppHeader), but these buttons show on the Overview route only.
+              Becomes a real stale-data bug the moment Sync shows on other routes
+              (M7.1 stage 4). Wire every view listed here into the refresh path then,
               and remove this TODO and every other one carrying this tag. */}
           {connected && (
             <button
@@ -568,7 +545,10 @@ export default function App() {
               {updatingBalance ? "opening…" : "⚡ Live Balances"}
             </button>
           )}
-          {demoMode ? (
+        </>
+  );
+
+  const accountControl = demoMode ? (
             <button
               onClick={() => setDemoMode(false)}
               style={{
@@ -579,12 +559,11 @@ export default function App() {
             >
               Exit demo
             </button>
-          ) : (
+  ) : (
             <UserButton afterSignOutUrl="/" />
-          )}
-        </div>
-      </header>
   );
+
+  const header = <AppHeader overviewActions={overviewActions} accountControl={accountControl} />;
 
   const setupPanel = (
         <div style={styles.hero as CSSProperties}>
@@ -646,13 +625,11 @@ export default function App() {
 
   const dashboard = (
     <OverviewView
-      header={header}
       setupPanel={setupPanel}
       heroProps={heroProps}
       showHero={connected}
       hasAccounts={accounts.length > 0}
       categories={categories}
-      activeAlertCount={alerts.filter(a => !a.dismissedAt).length}
     />
   );
 
@@ -725,6 +702,7 @@ export default function App() {
     content = (
       <>
         {demoBanner}
+        {header}
         {routes}
       </>
     );
@@ -761,7 +739,10 @@ export default function App() {
       </div>
         </SignedOut>
 
-        <SignedIn>{routes}</SignedIn>
+        <SignedIn>
+          {header}
+          {routes}
+        </SignedIn>
       </>
     );
   }
@@ -773,7 +754,12 @@ export default function App() {
             branch — including the splash — so the URL is correct before any
             route reads it. */}
         <DemoUrlSync demoMode={demoMode} />
-        {content}
+        {/* One alerts source for the bell on every route. It fetches only in
+            demo mode or once signed in, so the splash and sign-in screens
+            cost nothing. */}
+        <AlertsProvider refreshToken={alertsRefreshToken}>
+          {content}
+        </AlertsProvider>
       </BrowserRouter>
     </DemoContext.Provider>
   );

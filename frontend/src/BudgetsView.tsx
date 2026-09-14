@@ -23,10 +23,11 @@ import type { Budget } from "./types"
 //
 //  TODO(M7.1-stage4-sync-refresh): this list is NOT refreshed by App's "Sync"
 //  button — its triggerRefresh (src/App.tsx, at the Sync button) only refreshes
-//  App's own state, and budgets are no longer part of it. Unreachable while that
-//  header lives inside the Overview dashboard; becomes a real stale-data bug
-//  when the header moves to app level in M7.1 stage 4. Wire this view into the
-//  refresh path then, and remove this TODO along with the others carrying it.
+//  App's own state, and budgets are no longer part of it. Unreachable while Sync
+//  shows on the Overview route only (AppHeader, since stage 3); becomes a real
+//  stale-data bug when it shows on other routes in M7.1 stage 4. Wire this view
+//  into the refresh path then, and remove this TODO along with the others
+//  carrying it.
 // ─────────────────────────────────────────────────────────────────
 
 const muted = {

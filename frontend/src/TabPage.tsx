@@ -5,10 +5,9 @@ import useMediaQuery from "./useMediaQuery"
 //  TabPage — the page chrome every tab view shares.
 //
 //  Deliberately minimal for now: background, width, and a titled header.
-//  The app header (word-mark, sync/link buttons, Exit demo / UserButton) is
-//  still inside the Overview dashboard and moves up to app level in stage 4,
-//  when the nav shell lands. Until then tabs other than Overview render
-//  without it.
+//  The app header (AppHeader: word-mark, alerts bell, Exit demo / UserButton)
+//  renders above <Routes> since stage 3; its Link/Sync/Live Balances buttons
+//  show on Overview only. Stage 4 replaces it with the responsive nav.
 // ─────────────────────────────────────────────────────────────────
 
 export default function TabPage({
