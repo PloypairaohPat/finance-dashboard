@@ -12,9 +12,11 @@ import {
   DEFAULT_PERIOD_START_DAY,
   fromDateKey,
   periodKeyOf,
+  periodsFromFirstActivity,
   recentPeriods,
   type Period,
 } from "../lib/period"
+import { fetchFirstTransactionDate } from "./activity.service"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -120,7 +122,12 @@ export async function fetchCategoryComparison(
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
 ) {
-  const periods = recentPeriods(now, startDay, periodCount)
+  // Periods from before the user's first transaction are dropped (Q2): with
+  // no history, "was $0" / "new" against a period they didn't exist in misleads.
+  const periods = periodsFromFirstActivity(
+    recentPeriods(now, startDay, periodCount),
+    await fetchFirstTransactionDate(userId),
+  )
   const out: Array<Period & { month: string; total: number; categories: Record<string, number> }> = []
 
   for (const p of periods) {
@@ -149,7 +156,13 @@ export async function fetchMonthlyTotals(
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
 ): Promise<MonthlyTotal[]> {
-  const periods = recentPeriods(now, startDay, periodCount)
+  // Periods from before the user's first transaction are dropped (Q2); empty
+  // periods after it stay as zeros. No transactions at all means no periods.
+  const periods = periodsFromFirstActivity(
+    recentPeriods(now, startDay, periodCount),
+    await fetchFirstTransactionDate(userId),
+  )
+  if (periods.length === 0) return []
 
   const rows = await prisma.transaction.findMany({
     where: {

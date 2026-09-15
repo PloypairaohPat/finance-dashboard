@@ -14,6 +14,7 @@ import {
   periodBoundaryDates,
   periodContaining,
   periodKeyOf,
+  periodsFromFirstActivity,
   recentPeriods,
   toDateKey,
 } from '../src/lib/period'
@@ -133,6 +134,30 @@ describe('period boundaries on day-based data', () => {
     const dates = ['2026-08-08', '2026-08-09', '2026-08-11', '2026-09-09', '2026-09-10', '2026-09-12']
     expect(periodBoundaryDates(dates, 10)).toEqual(['2026-08-11', '2026-09-10'])
     expect(periodBoundaryDates(dates, 1)).toEqual(['2026-09-09'])
+  })
+})
+
+describe('periods before the first transaction', () => {
+  const periods = recentPeriods(d('2026-09-15'), 1, 6) // Apr .. Sep 2026
+
+  it('drops periods that end before the first transaction, keeping the one that contains it', () => {
+    const kept = periodsFromFirstActivity(periods, d('2026-06-20'))
+    expect(kept.map((p) => p.start)).toEqual(['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'])
+  })
+
+  it('keeps the period whose first day is the first transaction day', () => {
+    const kept = periodsFromFirstActivity(periods, d('2026-07-01'))
+    expect(kept[0].start).toBe('2026-07-01')
+    expect(kept).toHaveLength(3)
+  })
+
+  it('keeps every later period, including empty ones in between (interior gaps stay)', () => {
+    // First activity in May; the filter never looks at later periods' contents.
+    expect(periodsFromFirstActivity(periods, d('2026-05-02'))).toHaveLength(5)
+  })
+
+  it('returns no periods for a user with no transactions', () => {
+    expect(periodsFromFirstActivity(periods, null)).toEqual([])
   })
 })
 

@@ -3,9 +3,11 @@ import {
   DEFAULT_PERIOD_START_DAY,
   fromDateKey,
   periodKeyOf,
+  periodsFromFirstActivity,
   recentPeriods,
   type Period,
 } from "../lib/period"
+import { fetchFirstTransactionDate } from "./activity.service"
 
 const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
 
@@ -27,7 +29,14 @@ export async function fetchCashFlow(
   now: Date = new Date(),
 ): Promise<{ cashflow: CashFlowPeriod[]; periodStartDay: number }> {
   const count = Math.min(Math.max(Math.trunc(periodCount) || 6, 1), 24)
-  const periods = recentPeriods(now, startDay, count)
+  // Periods from before the user's first transaction are dropped (a period they
+  // didn't exist in, which would drag averages); empty periods after it stay.
+  const periods = periodsFromFirstActivity(
+    recentPeriods(now, startDay, count),
+    await fetchFirstTransactionDate(userId),
+  )
+  if (periods.length === 0) return { cashflow: [], periodStartDay: startDay }
+
   const since = fromDateKey(periods[0].start)
   const until = fromDateKey(periods[periods.length - 1].end)
 
@@ -52,7 +61,7 @@ export async function fetchCashFlow(
     bucket.txCount += 1
   }
 
-  // Every period in the window is returned, including empty ones: skipping a
+  // Every remaining period is returned, including empty ones: skipping a
   // period with no transactions hides the gap.
   const cashflow: CashFlowPeriod[] = periods.map((p) => {
     const { income, expenses, txCount } = byPeriod[p.key] ?? { income: 0, expenses: 0, txCount: 0 }

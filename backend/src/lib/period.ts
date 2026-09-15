@@ -182,3 +182,20 @@ export function periodBoundaryDates(sortedDateKeys: string[], startDay: number):
   }
   return out
 }
+
+/**
+ * Drop the periods that end before a user's first transaction — periods they
+ * had no history in yet. A zero there isn't a gap, it's a period they didn't
+ * exist in, and it would drag averages toward zero.
+ *
+ * The period containing `firstActivity`, and every period after it, is kept,
+ * including empty ones between transactions: an interior zero is real and must
+ * stay visible. With no activity at all, returns no periods.
+ */
+export function periodsFromFirstActivity<T extends Pick<Period, "end">>(
+  periods: readonly T[],
+  firstActivity: Date | null,
+): T[] {
+  if (!firstActivity) return []
+  return periods.filter((p) => fromDateKey(p.end).getTime() > firstActivity.getTime())
+}

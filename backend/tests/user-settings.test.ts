@@ -6,6 +6,9 @@
 //  transactions either side of a day-10 boundary land in different periods at
 //  start day 10, and in the calendar months toISOString().slice(0, 7) gives at
 //  start day 1.
+//
+//  Also (Q2): periods before a user's first transaction are dropped, while
+//  empty periods after it stay as zeros.
 // ─────────────────────────────────────────────────────────────────
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -18,12 +21,14 @@ import { fromDateKey, recentPeriods } from '../src/lib/period'
 const USER = 'period-settings-test-user'
 const OTHER = 'period-settings-test-other'
 const NO_ROW = 'period-settings-test-no-row'
+const GAP = 'period-settings-test-gap'
 const DEMO_USER_ID = 'demo-user'
 const DAY_MS = 86_400_000
 
 let demoRowCreatedHere = false
 let beforeBoundary: Date
 let onBoundary: Date
+let gapPeriodKeys: string[]
 
 async function cleanup(userId: string): Promise<void> {
   await prisma.transaction.deleteMany({ where: { userId } })
@@ -57,11 +62,27 @@ async function seed(userId: string): Promise<string> {
   return account.id
 }
 
+async function addTransactions(userId: string, accountId: string, txs: Array<{ at: Date; amount: string }>) {
+  await prisma.transaction.createMany({
+    data: txs.map(({ at, amount }, i) => ({
+      userId,
+      accountId,
+      plaidTransactionId: `${userId}-tx-${i + 1}`,
+      date: at,
+      amount,
+      name: `${userId}-MERCHANT-${i + 1}`,
+      categoryPrimary: 'GENERAL_MERCHANDISE',
+      isoCurrencyCode: 'USD',
+      pending: false,
+    })),
+  })
+}
+
 const put = (userId: string, body: unknown) =>
   request(app).put('/user/settings').set('X-Test-User', userId).send(body as object)
 
 beforeAll(async () => {
-  for (const u of [USER, OTHER, NO_ROW]) await cleanup(u)
+  for (const u of [USER, OTHER, NO_ROW, GAP]) await cleanup(u)
   const accountId = await seed(USER)
   await prisma.user.create({ data: { id: OTHER, email: `${OTHER}@period-test.local` } })
 
@@ -76,26 +97,25 @@ beforeAll(async () => {
   onBoundary = fromDateKey(current.start)
   beforeBoundary = new Date(onBoundary.getTime() - DAY_MS)
 
-  await prisma.transaction.createMany({
-    data: [
-      { at: beforeBoundary, amount: '100.00', n: 1 },
-      { at: onBoundary, amount: '40.00', n: 2 },
-    ].map(({ at, amount, n }) => ({
-      userId: USER,
-      accountId,
-      plaidTransactionId: `${USER}-tx-${n}`,
-      date: at,
-      amount,
-      name: `${USER}-MERCHANT-${n}`,
-      categoryPrimary: 'GENERAL_MERCHANDISE',
-      isoCurrencyCode: 'USD',
-      pending: false,
-    })),
-  })
+  await addTransactions(USER, accountId, [
+    { at: beforeBoundary, amount: '100.00' },
+    { at: onBoundary, amount: '40.00' },
+  ])
+
+  // GAP user, at start day 1: first transaction four periods ago, then nothing
+  // until the current period. Two periods before it must be dropped; the
+  // three empty periods between must stay.
+  const gapAccountId = await seed(GAP)
+  const six = recentPeriods(new Date(), 1, 6)
+  gapPeriodKeys = six.map((p) => p.key)
+  await addTransactions(GAP, gapAccountId, [
+    { at: fromDateKey(six[2].start), amount: '75.00' },
+    { at: fromDateKey(six[5].start), amount: '25.00' },
+  ])
 })
 
 afterAll(async () => {
-  for (const u of [USER, OTHER, NO_ROW]) await cleanup(u)
+  for (const u of [USER, OTHER, NO_ROW, GAP]) await cleanup(u)
   if (demoRowCreatedHere) await prisma.user.deleteMany({ where: { id: DEMO_USER_ID } })
 })
 
@@ -156,14 +176,14 @@ describe('period-grouped endpoints use the stored start day', () => {
     const res = await request(app).get('/cashflow').set('X-Test-User', USER)
     expect(res.status).toBe(200)
     const periods = res.body.cashflow as Array<{ key: string; expenses: number; txCount: number; inProgress: boolean }>
-    expect(periods).toHaveLength(6)
+    // The user's first transaction is in the previous period, so the four
+    // periods before it are dropped (Q2).
+    expect(periods).toHaveLength(2)
 
-    const [previous, current] = periods.slice(-2)
+    const [previous, current] = periods
     expect(current.key).toBe(onBoundary.toISOString().slice(0, 10))
     expect(current).toMatchObject({ expenses: 40, txCount: 1, inProgress: true })
     expect(previous).toMatchObject({ expenses: 100, txCount: 1, inProgress: false })
-    // Empty periods are returned as zeros, not skipped.
-    expect(periods.slice(0, 4).every((p) => p.txCount === 0 && p.expenses === 0)).toBe(true)
   })
 
   it('at start day 1, the same transactions group exactly by calendar month', async () => {
@@ -181,13 +201,15 @@ describe('period-grouped endpoints use the stored start day', () => {
     }
   })
 
-  it('trends, comparison, insights and net worth all report periods', async () => {
+  it('trends, comparison, insights, categories and net worth all report periods', async () => {
     await put(USER, { periodStartDay: 10 })
     const trends = await request(app).get('/transactions/trends').set('X-Test-User', USER)
-    expect(trends.body.trends).toHaveLength(12)
+    // 12 requested; only the two from the first transaction on remain (Q2).
+    expect(trends.body.trends).toHaveLength(2)
     expect(trends.body.trends.at(-1)).toMatchObject({ inProgress: true, total: 40 })
 
     const comparison = await request(app).get('/categories/comparison').set('X-Test-User', USER)
+    expect(comparison.body).toHaveLength(2)
     expect(comparison.body.at(-1)).toMatchObject({ key: onBoundary.toISOString().slice(0, 10), inProgress: true })
 
     const insights = await request(app).get('/insights').set('X-Test-User', USER)
@@ -201,5 +223,27 @@ describe('period-grouped endpoints use the stored start day', () => {
 
     const networth = await request(app).get('/networth').set('X-Test-User', USER)
     expect(Array.isArray(networth.body.periodMarkers)).toBe(true)
+  })
+})
+
+describe('periods before the first transaction are dropped; interior gaps stay (Q2)', () => {
+  it('cash flow starts at the first transaction and keeps the empty periods after it', async () => {
+    const res = await request(app).get('/cashflow').set('X-Test-User', GAP)
+    const periods = res.body.cashflow as Array<{ key: string; expenses: number; txCount: number }>
+    expect(periods.map((p) => p.key)).toEqual(gapPeriodKeys.slice(2))
+    expect(periods.map((p) => p.expenses)).toEqual([75, 0, 0, 25])
+    expect(periods.map((p) => p.txCount)).toEqual([1, 0, 0, 1])
+  })
+
+  it('trends drop the same pre-history periods and keep the same interior zeros', async () => {
+    const res = await request(app).get('/transactions/trends?months=6').set('X-Test-User', GAP)
+    const trends = res.body.trends as Array<{ key: string; total: number }>
+    expect(trends.map((t) => t.key)).toEqual(gapPeriodKeys.slice(2))
+    expect(trends.map((t) => t.total)).toEqual([75, 0, 0, 25])
+  })
+
+  it('a user with no transactions gets no periods, not six zero bars', async () => {
+    const res = await request(app).get('/cashflow').set('X-Test-User', OTHER)
+    expect(res.body.cashflow).toEqual([])
   })
 })
