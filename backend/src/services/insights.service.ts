@@ -1,6 +1,13 @@
 import prisma from "../lib/prisma"
 import { mapPlaidCategory, isSpending, CATEGORY_COLORS } from "../lib/categoryMap"
 import { filterInternalTransfers } from "../utils/transferFilter"
+import {
+  DEFAULT_PERIOD_START_DAY,
+  fromDateKey,
+  periodKeyOf,
+  recentPeriods,
+  type Period,
+} from "../lib/period"
 
 export type Sentiment = "positive" | "negative" | "neutral"
 export interface Insight {
@@ -11,12 +18,14 @@ export interface Insight {
 
 export interface InsightsResponse {
   summary: {
-    month: string                  // YYYY-MM
-    monthLabel: string             // "April"
+    month: string                  // period key (YYYY-MM-DD start date)
+    monthLabel: string             // "April" for start day 1, else "Apr 10 – May 9"
     income: number
     expenses: number
     netSaved: number
     savingsRate: number | null     // % or null if income == 0
+    /** The period these figures cover, including whether it's still in progress. */
+    period: Period
   }
   topMerchants: Array<{ merchant: string; total: number; count: number }>
   largestPurchases: Array<{
@@ -32,23 +41,18 @@ export interface InsightsResponse {
   highlights: Insight[]
 }
 
-const ymOf = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-
-const monthBounds = (ym: string) => {
-  const start = new Date(`${ym}-01T00:00:00Z`)
-  const end = new Date(start); end.setUTCMonth(end.getUTCMonth() + 1)
-  return { start, end }
-}
-
-export async function fetchInsights(userId: string): Promise<InsightsResponse> {
-  const now = new Date()
-  const thisYM = ymOf(now)
-  const lastYM = ymOf(new Date(now.getFullYear(), now.getMonth() - 1, 1))
-  const monthLabel = now.toLocaleString("en-US", { month: "long" })
-
-  const { start: thisStart, end: thisEnd } = monthBounds(thisYM)
-  const { start: lastStart, end: lastEnd } = monthBounds(lastYM)
+// "this month"/"this period" figures cover the user's current money period
+// (M7.2). With start day 1 that is the calendar month, as before.
+export async function fetchInsights(
+  userId: string,
+  startDay: number = DEFAULT_PERIOD_START_DAY,
+  now: Date = new Date(),
+): Promise<InsightsResponse> {
+  const [lastPeriod, thisPeriod] = recentPeriods(now, startDay, 2)
+  const thisStart = fromDateKey(thisPeriod.start)
+  const thisEnd = fromDateKey(thisPeriod.end)
+  const lastStart = fromDateKey(lastPeriod.start)
+  const lastEnd = fromDateKey(lastPeriod.end)
   const ninetyAgo = new Date(now); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
 
   const [rawAccounts, rawThisMonth, rawLastMonth, rawRecent, plaidItems] = await Promise.all([
@@ -110,16 +114,16 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
     .filter(a => a.type === "depository")
     .reduce((s, a) => s + (a.currentBalance ? Number(a.currentBalance) : 0), 0)
 
-  // Avg monthly expenses — last 90 days (transfer-filtered)
+  // Avg monthly expenses — last 90 days (transfer-filtered), per period touched
   const expenseSum = filteredRecent
     .filter(t => t.amount > 0 && isSpending(t.categoryPrimary))
     .reduce((s, t) => s + t.amount, 0)
-  const monthsOfHistory = new Set(filteredRecent.map(t => ymOf(t.date))).size
+  const monthsOfHistory = new Set(filteredRecent.map(t => periodKeyOf(t.date, startDay))).size
   const avgMonthlyExpenses = monthsOfHistory > 0
     ? Number((expenseSum / monthsOfHistory).toFixed(2))
     : 0
 
-  // Monthly summary (transfer-filtered)
+  // Period summary (transfer-filtered)
   let income = 0, expenses = 0
   for (const tx of filteredThis) {
     if (tx.amount < 0) income += Math.abs(tx.amount)
@@ -147,7 +151,7 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
     .sort((a, b) => b.total - a.total)
     .slice(0, 5)
 
-  // Largest individual purchases this month (transfer-filtered)
+  // Largest individual purchases this period (transfer-filtered)
   const largestPurchases = filteredThis
     .filter(tx => tx.amount > 0 && isSpending(tx.categoryPrimary))
     .sort((a, b) => b.amount - a.amount)
@@ -175,14 +179,18 @@ export async function fetchInsights(userId: string): Promise<InsightsResponse> {
     lastMonthTxs: filteredLast,
     income, expenses,
     runwayMonths, monthsOfHistory,
+    periodNoun: startDay === 1 ? "month" : "period",
+    inProgress: thisPeriod.inProgress,
   })
 
   return {
     summary: {
-      month: thisYM, monthLabel,
+      month: thisPeriod.key,
+      monthLabel: thisPeriod.longLabel,
       income: Number(income.toFixed(2)),
       expenses: Number(expenses.toFixed(2)),
       netSaved, savingsRate,
+      period: thisPeriod,
     },
     topMerchants,
     largestPurchases,
@@ -205,6 +213,10 @@ interface HighlightInput {
   expenses: number
   runwayMonths: number | null
   monthsOfHistory: number
+  /** "month" for start day 1, otherwise "period". */
+  periodNoun: "month" | "period"
+  /** The current period isn't over; comparisons say "so far" rather than projecting. */
+  inProgress: boolean
 }
 
 function sumCategorySpend(txs: Array<{ amount: number; categoryPrimary: string | null }>) {
@@ -219,10 +231,14 @@ function sumCategorySpend(txs: Array<{ amount: number; categoryPrimary: string |
 
 function generateHighlights(i: HighlightInput): Insight[] {
   const out: Insight[] = []
+  const noun = i.periodNoun
+  // A partial period compared with a full one reads as "spending is down" —
+  // say it's partial instead of letting the comparison flatter.
+  const soFar = i.inProgress ? " so far" : ""
 
   const hasLastMonth = i.lastMonthTxs.length > 0
 
-  // 1. Total spend delta vs last month
+  // 1. Total spend delta vs last period
   if (hasLastMonth) {
     const lastTotal = i.lastMonthTxs
       .filter(t => t.amount > 0 && isSpending(t.categoryPrimary))
@@ -232,7 +248,7 @@ function generateHighlights(i: HighlightInput): Insight[] {
       const sign = pct >= 0 ? "up" : "down"
       out.push({
         type: "total_spend_delta",
-        headline: `Spending is ${sign} ${Math.abs(pct).toFixed(0)}% vs last month ($${i.expenses.toFixed(0)} vs $${lastTotal.toFixed(0)}).`,
+        headline: `Spending${soFar} is ${sign} ${Math.abs(pct).toFixed(0)}% vs last ${noun} ($${i.expenses.toFixed(0)}${soFar} vs $${lastTotal.toFixed(0)}).`,
         sentiment: pct >= 5 ? "negative" : pct <= -5 ? "positive" : "neutral",
       })
     }
@@ -254,7 +270,7 @@ function generateHighlights(i: HighlightInput): Insight[] {
       const sign = biggest.pct >= 0 ? "+" : ""
       out.push({
         type: "category_mover",
-        headline: `${biggest.cat} is your biggest mover at ${sign}${biggest.pct.toFixed(0)}%.`,
+        headline: `${biggest.cat} is your biggest mover${soFar} at ${sign}${biggest.pct.toFixed(0)}%.`,
         sentiment: biggest.pct >= 0 ? "negative" : "positive",
       })
     }
@@ -283,13 +299,13 @@ function generateHighlights(i: HighlightInput): Insight[] {
     if (rate >= 30) {
       out.push({
         type: "savings_strong",
-        headline: `Saving ${rate.toFixed(0)}% of income this month — strong rate.`,
+        headline: `Saving ${rate.toFixed(0)}% of income this ${noun}${soFar} — strong rate.`,
         sentiment: "positive",
       })
     } else if (rate < 0) {
       out.push({
         type: "savings_negative",
-        headline: `Spending more than earning this month — ${Math.abs(rate).toFixed(0)}% over.`,
+        headline: `Spending more than earning this ${noun}${soFar} — ${Math.abs(rate).toFixed(0)}% over.`,
         sentiment: "negative",
       })
     }

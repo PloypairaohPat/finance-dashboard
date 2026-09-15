@@ -11,6 +11,7 @@ import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import SavingsTrend from "./SavingsTrend"
 import useMediaQuery from "./useMediaQuery"
+import { usePeriod } from "./PeriodProvider"
 import type { CategorySpend } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -77,6 +78,9 @@ export default function OverviewView({
   categories,
 }: OverviewViewProps) {
   const isMobile = useMediaQuery("(max-width: 640px)")
+  // Section counts name the unit the charts below actually use (M7.2).
+  const { startDay } = usePeriod()
+  const unit = startDay === 1 ? "months" : "periods"
 
   return (
     <div style={styles.root}>
@@ -113,7 +117,7 @@ export default function OverviewView({
                 <SpendingChart data={categories} />
               </div>
               <div style={panel}>
-                <h3 style={panelTitle}>Month over month</h3>
+                <h3 style={panelTitle}>{startDay === 1 ? "Month over month" : "Period over period"}</h3>
                 <CategoryComparison />
               </div>
             </section>
@@ -125,7 +129,7 @@ export default function OverviewView({
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Monthly Spending</h2>
-              <span style={styles.sectionCount}>last 12 months</span>
+              <span style={styles.sectionCount}>last 12 {unit}</span>
             </div>
             <TrendChart />
           </div>
@@ -161,7 +165,7 @@ export default function OverviewView({
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Cash Flow</h2>
-              <span style={styles.sectionCount}>last 6 months</span>
+              <span style={styles.sectionCount}>last 6 {unit}</span>
             </div>
             <section style={{
               display: "grid",
@@ -173,7 +177,7 @@ export default function OverviewView({
                 <CashFlowChart />
               </div>
               <div style={panel}>
-                <h3 style={panelTitle}>Monthly savings</h3>
+                <h3 style={panelTitle}>{startDay === 1 ? "Monthly savings" : "Savings per period"}</h3>
                 <SavingsTrend />
               </div>
             </section>

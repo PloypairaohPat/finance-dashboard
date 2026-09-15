@@ -45,6 +45,7 @@ import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
 import goalsRoutes from "./routes/goals.routes"
 import scoreRoutes from "./routes/score.routes"
+import userRouter from "./routes/user.routes"
 
 declare global {
   namespace Express {
@@ -125,7 +126,8 @@ const corsOptions: CorsOptions = {
       callback(new Error('Not allowed by CORS'))
     }
   },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  // PUT added in M7.2 for PUT /user/settings; without it the browser's preflight rejects the save.
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Demo-Mode'],
   credentials: true,
   preflightContinue: false,
@@ -189,6 +191,7 @@ app.use("/insights", insightsRoutes)
 app.use("/subscriptions", subscriptionsRoutes)
 app.use("/goals", goalsRoutes)
 app.use("/score", scoreRoutes)
+app.use('/user', requireSession, userRouter)
 
 app.use(
   ['/create_link_token', '/create-update-link-token', '/exchange_public_token', '/sync'],

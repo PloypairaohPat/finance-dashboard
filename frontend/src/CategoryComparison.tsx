@@ -4,9 +4,14 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
+import { periodProgress, usePeriod } from "./PeriodProvider"
 import { SkeletonList } from "./Skeleton"
+import type { PeriodInfo } from "./types"
 
-interface MonthData {
+// Category spend, current money period vs the previous one (M7.2). The current
+// period is usually in progress, so the header says "so far · day X of Y": a
+// category that looks "down" may only be down because the period isn't over.
+interface PeriodCategories extends PeriodInfo {
   month: string
   total: number
   categories: Record<string, number>
@@ -19,12 +24,13 @@ export default function CategoryComparison() {
   const { isSignedIn } = useAuth()
   const apiFetch = useApiFetch()
   const { demoMode } = useDemo()
-  const [data, setData] = useState<MonthData[]>([])
+  const [data, setData] = useState<PeriodCategories[]>([])
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
+  const { version: periodVersion } = usePeriod()
 
-  // Re-runs after every sync; the current data stays on screen meanwhile, and a
-  // superseded run's response is ignored.
+  // Re-runs after every sync and every period-setting change; the current data
+  // stays on screen meanwhile, and a superseded run's response is ignored.
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     let cancelled = false
@@ -40,20 +46,23 @@ export default function CategoryComparison() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
 
   if (loading) return <SkeletonList rows={4} />
+
+  const noun = data.length > 0 && data[data.length - 1].startDay !== 1 ? "period" : "month"
 
   if (data.length < 2) {
     return (
       <div style={{ color: "#5a7a5a", fontSize: 13 }}>
-        Need a full month for comparison.
+        Need a full {noun} for comparison.
       </div>
     )
   }
 
   const current  = data[data.length - 1]
   const previous = data[data.length - 2]
+  const progress = periodProgress(current)
 
   const rows = Object.entries(current.categories)
     .map(([category, amount]) => {
@@ -70,10 +79,18 @@ export default function CategoryComparison() {
       <div style={{
         fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
         color: "#5a7a5a", textTransform: "uppercase",
-        letterSpacing: ".08em", marginBottom: 14,
+        letterSpacing: ".08em", marginBottom: progress ? 4 : 14,
       }}>
-        vs. last month
+        vs. last {noun}
       </div>
+      {progress && (
+        <div style={{
+          fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
+          color: "#f0a030", letterSpacing: ".04em", marginBottom: 14,
+        }}>
+          {current.label} · {progress}
+        </div>
+      )}
 
       {rows.map(r => {
         const up    = r.delta > 0

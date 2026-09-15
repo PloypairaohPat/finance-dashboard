@@ -8,12 +8,14 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
+import { usePeriod } from "./PeriodProvider"
 import type { Range, NetWorthResponse } from "./types"
 import { colors, fonts } from "./tokens"
 import { SkeletonChart } from "./Skeleton"
@@ -30,6 +32,10 @@ import {
 
 const RANGES: Range[] = ["1M", "3M", "6M", "1Y", "All"]
 
+// M7.2: net worth keeps its day-based ranges and daily points. It only gains
+// faint markers where a new money period begins; the backend places them on
+// dates that exist in `history`, so they line up with the category axis.
+
 export default function NetWorthChart() {
   const { isSignedIn } = useAuth()
   const apiFetch = useApiFetch()
@@ -38,10 +44,11 @@ export default function NetWorthChart() {
   const [data, setData] = useState<NetWorthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
+  const { version: periodVersion } = usePeriod()
 
   // What the chart on screen was fetched for. A new range (or a demo/auth
-  // switch) shows the skeleton as before; a sync re-fetch of the same range
-  // keeps the chart visible until the new data arrives.
+  // switch) shows the skeleton as before; a sync or period-setting re-fetch of
+  // the same range keeps the chart visible until the new data arrives.
   const fetchKey = `${demoMode}|${isSignedIn}|${range}`
   const loadedKey = useRef<string | null>(null)
 
@@ -67,13 +74,14 @@ export default function NetWorthChart() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, range, fetchKey, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, range, fetchKey, syncVersion, periodVersion])
 
   if (loading || !data) {
     return <SkeletonChart height={240} />
   }
 
   const { history, summary } = data
+  const periodMarkers = data.periodMarkers ?? []
   const deltaPositive = (summary.deltaAbs ?? 0) >= 0
   const deltaColor = deltaPositive ? colors.greenDim : colors.coral
   const deltaSign = deltaPositive ? "+" : ""
@@ -192,6 +200,16 @@ export default function NetWorthChart() {
               formatter={(v: any, name: any) => [formatTooltipValue(v as number), name]}
             />
 
+            {periodMarkers.map((date) => (
+              <ReferenceLine
+                key={date}
+                x={date}
+                stroke={colors.border2}
+                strokeDasharray="2 4"
+                ifOverflow="hidden"
+              />
+            ))}
+
             <Area
               type="monotone"
               dataKey="depository"
@@ -228,6 +246,22 @@ export default function NetWorthChart() {
             />
           </ComposedChart>
         </ResponsiveContainer>
+      )}
+
+      {periodMarkers.length > 0 && (
+        <div
+          style={{
+            fontFamily: fonts.mono,
+            fontSize: 10,
+            color: colors.muted,
+            marginTop: 8,
+            textAlign: "center",
+            letterSpacing: ".04em",
+          }}
+        >
+          Dashed lines mark where each money period starts
+          {data.periodStartDay && data.periodStartDay !== 1 ? ` (day ${data.periodStartDay})` : ""}.
+        </div>
       )}
 
       {summary.dataLimited && (

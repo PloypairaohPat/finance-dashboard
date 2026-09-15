@@ -16,6 +16,9 @@ import OverviewView from "./OverviewView"
 import AppHeader from "./AppHeader"
 import AlertsProvider from "./AlertsProvider"
 import SyncProvider from "./SyncProvider"
+import PeriodProvider, { periodProgress } from "./PeriodProvider"
+import SettingsDialog from "./SettingsDialog"
+import type { PeriodInfo } from "./types"
 import { readWriteResult } from "./lib/writeResult"
 import useMediaQuery from "./useMediaQuery"
 import {
@@ -186,6 +189,9 @@ export default function App() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const [monthSaved,   setMonthSaved]   = useState<number | null>(null)
+  // The money period monthSaved covers (M7.2), from /insights.
+  const [savedPeriod,  setSavedPeriod]  = useState<PeriodInfo | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [syncing,        setSyncing]        = useState(false)
   const [updateLinkToken, setUpdateLinkToken] = useState<string | null>(null)
@@ -251,12 +257,15 @@ export default function App() {
         ? ((latest.netWorth - monthAgo.netWorth) / Math.abs(monthAgo.netWorth)) * 100
         : null
 
-    const now = new Date()
-    const monthLabel = now.toLocaleString("en-US", { month: "long" })
+    // The saved figure covers the user's current money period (M7.2), as
+    // reported by /insights; until that loads, fall back to the calendar month.
+    const monthLabel = savedPeriod?.longLabel ?? new Date().toLocaleString("en-US", { month: "long" })
+    const savedLabel = savedPeriod && savedPeriod.startDay !== 1 ? "Saved this period" : "Saved this month"
+    const savedProgress = periodProgress(savedPeriod)
     const lastSyncAt = lastSyncedAt
 
-    return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, lastSyncAt }
-  }, [accounts, netWorthHistory, monthSaved, lastSyncedAt])
+    return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, savedLabel, savedProgress, lastSyncAt }
+  }, [accounts, netWorthHistory, monthSaved, savedPeriod, lastSyncedAt])
 
   // ── Auto-connect check ───────────────────────────────────────────
   useEffect(() => {
@@ -310,8 +319,9 @@ export default function App() {
   const fetchInsightsSummary = useCallback(async () => {
     try {
       const res  = await authFetch(`${API_URL}/insights`)
-      const data = await res.json() as { summary?: { netSaved: number } }
+      const data = await res.json() as { summary?: { netSaved: number; period?: PeriodInfo } }
       setMonthSaved(data.summary?.netSaved ?? null)
+      setSavedPeriod(data.summary?.period ?? null)
     } catch (e: any) {
       console.error("Insights summary fetch failed:", e.message)
     }
@@ -583,7 +593,24 @@ export default function App() {
               Exit demo
             </button>
   ) : (
-            <UserButton afterSignOutUrl="/" />
+            // Settings (M7.2) sits in the account menu: the period start day it
+            // holds reaches the hero, Insights and five charts, not one chart.
+            // Signed-in only — demo mode is fixed at day 1 and has no account menu.
+            <UserButton afterSignOutUrl="/">
+              <UserButton.MenuItems>
+                <UserButton.Action
+                  label="Settings"
+                  labelIcon={
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+                    </svg>
+                  }
+                  onClick={() => setSettingsOpen(true)}
+                />
+              </UserButton.MenuItems>
+            </UserButton>
   );
 
   const header = (
@@ -771,6 +798,7 @@ export default function App() {
         <SignedIn>
           {header}
           {routes}
+          {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
         </SignedIn>
       </>
     );
@@ -788,9 +816,14 @@ export default function App() {
             route, fetching only in demo mode or once signed in, so the splash
             and sign-in screens cost nothing. */}
         <SyncProvider version={syncVersion}>
-          <AlertsProvider>
-            {content}
-          </AlertsProvider>
+          {/* PeriodProvider (M7.2): the money-period start day. Views that
+              group by period re-fetch when it changes; App re-fetches the
+              hero's saved figure through onChange. */}
+          <PeriodProvider onChange={fetchInsightsSummary}>
+            <AlertsProvider>
+              {content}
+            </AlertsProvider>
+          </PeriodProvider>
         </SyncProvider>
       </BrowserRouter>
     </DemoContext.Provider>

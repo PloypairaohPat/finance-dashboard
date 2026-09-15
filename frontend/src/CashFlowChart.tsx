@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import {
   ComposedChart,
   Bar,
+  Cell,
   Line,
   XAxis,
   YAxis,
@@ -13,12 +14,19 @@ import {
 import { useApiFetch } from "./lib/useApiFetch"
 import { API_URL } from "./config"
 import { useSyncVersion } from "./SyncProvider"
+import { periodProgress, usePeriod } from "./PeriodProvider"
+import type { PeriodInfo } from "./types"
 
-interface CashFlowMonth {
+// One bar group per money period (M7.2), oldest first. Every period in the
+// window is present, including empty ones (zero bars, not gaps). The current
+// period is in progress: its bars are drawn faded and labelled "so far" — it is
+// never projected to a full period.
+interface CashFlowPeriod extends PeriodInfo {
   month: string
   income: number
   expenses: number
   net: number
+  txCount: number
 }
 
 const fmt = (n: number) =>
@@ -29,15 +37,10 @@ const fmt = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n)
 
-const monthLabel = (m: string) => {
-  const [year, mo] = m.split("-")
-  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  return `${names[parseInt(mo, 10) - 1]} '${year.slice(2)}`
-}
-
 function CustomTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null
-  const d = payload[0]?.payload as CashFlowMonth
+  const d = payload[0]?.payload as CashFlowPeriod
+  const progress = periodProgress(d)
 
   return (
     <div
@@ -50,7 +53,8 @@ function CustomTooltip({ active, payload }: any) {
         fontSize: 12,
       }}
     >
-      <div style={{ color: "#5a7a5a", marginBottom: 6 }}>{monthLabel(d.month)}</div>
+      <div style={{ color: "#5a7a5a", marginBottom: progress ? 2 : 6 }}>{d.label}</div>
+      {progress && <div style={{ color: "#f0a030", fontSize: 10.5, marginBottom: 6 }}>{progress}</div>}
       <div style={{ color: "#00e87a", marginBottom: 3 }}>Income: {fmt(d.income)}</div>
       <div style={{ color: "#e85555", marginBottom: 3 }}>Expenses: {fmt(d.expenses)}</div>
       <div
@@ -70,13 +74,14 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 export default function CashFlowChart() {
-  const [data, setData] = useState<CashFlowMonth[]>([])
+  const [data, setData] = useState<CashFlowPeriod[]>([])
   const [loading, setLoading] = useState(true)
   const apiFetch = useApiFetch()
   const syncVersion = useSyncVersion()
+  const { version: periodVersion } = usePeriod()
 
-  // Re-runs after every sync; the current chart stays on screen meanwhile, and
-  // a superseded run's response is ignored.
+  // Re-runs after every sync and every period-setting change; the current chart
+  // stays on screen meanwhile, and a superseded run's response is ignored.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -91,7 +96,7 @@ export default function CashFlowChart() {
       }
     })()
     return () => { cancelled = true }
-  }, [apiFetch, syncVersion])
+  }, [apiFetch, syncVersion, periodVersion])
 
   if (loading) {
     return (
@@ -108,7 +113,7 @@ export default function CashFlowChart() {
     )
   }
 
-  if (data.length === 0) {
+  if (data.length === 0 || data.every((d) => d.txCount === 0)) {
     return (
       <div
         style={{
@@ -124,18 +129,21 @@ export default function CashFlowChart() {
   }
 
   const current = data[data.length - 1]
+  const noun = current.startDay === 1 ? "Month" : "Period"
+  const progress = periodProgress(current)
   const avgIncome = data.reduce((s, d) => s + d.income, 0) / data.length
   const avgExpenses = data.reduce((s, d) => s + d.expenses, 0) / data.length
   const avgNet = avgIncome - avgExpenses
+  const chartData = data.map((d) => ({ ...d, axisLabel: d.inProgress ? `${d.tickLabel} · so far` : d.tickLabel }))
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: progress ? 8 : 24, flexWrap: "wrap" }}>
         {[
-          { label: "Income This Month", value: current.income, color: "#00e87a" },
-          { label: "Expenses This Month", value: current.expenses, color: "#e85555" },
+          { label: `Income This ${noun}`, value: current.income, color: "#00e87a" },
+          { label: `Expenses This ${noun}`, value: current.expenses, color: "#e85555" },
           { label: "Net Cash Flow", value: current.net, color: current.net >= 0 ? "#00d4aa" : "#e85555" },
-          { label: "Avg Monthly Net", value: avgNet, color: avgNet >= 0 ? "#00d4aa" : "#e85555" },
+          { label: `Avg ${noun === "Month" ? "Monthly" : "Per-Period"} Net`, value: avgNet, color: avgNet >= 0 ? "#00d4aa" : "#e85555" },
         ].map((card) => (
           <div
             key={card.label}
@@ -167,12 +175,20 @@ export default function CashFlowChart() {
                 color: card.color,
               }}
             >
-              {card.value >= 0 ? "" : ""}
               {fmt(card.value)}
             </div>
           </div>
         ))}
       </div>
+
+      {progress && (
+        <div style={{
+          fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, color: "#f0a030",
+          marginBottom: 20, letterSpacing: ".04em",
+        }}>
+          {current.label} · {progress}
+        </div>
+      )}
 
       <div
         style={{
@@ -183,14 +199,13 @@ export default function CashFlowChart() {
         }}
       >
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
             <XAxis
-              dataKey="month"
+              dataKey="axisLabel"
               tick={{ fill: "#555", fontFamily: "IBM Plex Mono", fontSize: 10 }}
               tickLine={false}
               axisLine={{ stroke: "#222" }}
-              tickFormatter={monthLabel}
             />
             <YAxis
               tick={{ fill: "#555", fontFamily: "IBM Plex Mono", fontSize: 10 }}
@@ -200,8 +215,12 @@ export default function CashFlowChart() {
             />
             <Tooltip content={<CustomTooltip />} />
             <ReferenceLine y={0} stroke="#333" strokeDasharray="3 3" />
-            <Bar dataKey="income" fill="#00e87a" fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={28} />
-            <Bar dataKey="expenses" fill="#e85555" fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={28} />
+            <Bar dataKey="income" fill="#00e87a" fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={28}>
+              {chartData.map((d) => <Cell key={d.key} fillOpacity={d.inProgress ? 0.3 : 0.7} />)}
+            </Bar>
+            <Bar dataKey="expenses" fill="#e85555" fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={28}>
+              {chartData.map((d) => <Cell key={d.key} fillOpacity={d.inProgress ? 0.3 : 0.7} />)}
+            </Bar>
             <Line
               type="monotone"
               dataKey="net"
@@ -222,6 +241,7 @@ export default function CashFlowChart() {
             fontFamily: "IBM Plex Mono, monospace",
             fontSize: 10,
             color: "#555",
+            flexWrap: "wrap",
           }}
         >
           <span>
@@ -265,6 +285,7 @@ export default function CashFlowChart() {
             />
             Net Flow
           </span>
+          {current.inProgress && <span>Faded bars: period in progress</span>}
         </div>
       </div>
     </div>

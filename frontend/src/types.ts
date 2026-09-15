@@ -47,9 +47,28 @@ export interface RecurringData {
   monthlyOutflow: number
 }
 
-export interface MonthlyTotal {
+// M7.2 — one money period, as returned by the backend (src/lib/period.ts).
+export interface PeriodInfo {
+  /** Start date, YYYY-MM-DD. */
+  key: string
+  start: string
+  /** Exclusive end, YYYY-MM-DD. */
+  end: string
+  lastDay: string
+  /** "Sep 2026" at start day 1, otherwise "Sep 10 – Oct 9". */
+  label: string
+  /** "September" at start day 1, otherwise "Sep 10 – Oct 9". */
+  longLabel: string
+  /** "Sep '26" at start day 1, otherwise "Sep 10". */
+  tickLabel: string
+  startDay: number
+  daysInPeriod: number
+  inProgress: boolean
+  dayOfPeriod: number
+}
+
+export interface MonthlyTotal extends PeriodInfo {
   month:   string
-  label:   string
   total:   number
   txCount: number
 }
@@ -100,6 +119,8 @@ export interface InsightsResponse {
     expenses: number
     netSaved: number
     savingsRate: number | null
+    /** M7.2 — the period these figures cover. */
+    period: PeriodInfo
   }
   topMerchants: Array<{ merchant: string; total: number; count: number }>
   largestPurchases: Array<{
@@ -172,6 +193,9 @@ export interface NetWorthSummary {
 export interface NetWorthResponse {
   history: NetWorthPoint[]
   summary: NetWorthSummary
+  /** M7.2 — dates (YYYY-MM-DD, all present in history) where a new money period begins. */
+  periodMarkers?: string[]
+  periodStartDay?: number
 }
 
 export interface EnrichedTransaction {
