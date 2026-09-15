@@ -11,8 +11,8 @@ import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import SavingsTrend from "./SavingsTrend"
 import useMediaQuery from "./useMediaQuery"
-import { usePeriod } from "./PeriodProvider"
-import type { CategorySpend } from "./types"
+import { periodProgress, usePeriod } from "./PeriodProvider"
+import type { CategorySpend, PeriodInfo } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
 //  OverviewView — the Overview tab (index route).
@@ -68,6 +68,8 @@ export interface OverviewViewProps {
   /** Gates every data section, exactly as the old dashboard did. */
   hasAccounts: boolean
   categories: CategorySpend[]
+  /** The money period `categories` covers (from /categories), or null before it loads. */
+  categoriesPeriod: PeriodInfo | null
 }
 
 export default function OverviewView({
@@ -76,11 +78,13 @@ export default function OverviewView({
   showHero,
   hasAccounts,
   categories,
+  categoriesPeriod,
 }: OverviewViewProps) {
   const isMobile = useMediaQuery("(max-width: 640px)")
   // Section counts name the unit the charts below actually use (M7.2).
   const { startDay } = usePeriod()
   const unit = startDay === 1 ? "months" : "periods"
+  const breakdownProgress = periodProgress(categoriesPeriod)
 
   return (
     <div style={styles.root}>
@@ -104,7 +108,8 @@ export default function OverviewView({
           </section>
         )}
 
-        {/* Spending Breakdown + Month-over-Month */}
+        {/* Spending Breakdown + Month-over-Month — both cover the current money
+            period, so they can be read side by side (M7.2). */}
         {hasAccounts && (
           <div style={styles.section}>
             <section style={{
@@ -113,7 +118,16 @@ export default function OverviewView({
               gap: 24, marginBottom: 32,
             }}>
               <div style={panel}>
-                <h3 style={panelTitle}>Spending breakdown</h3>
+                <h3 style={{ ...panelTitle, marginBottom: categoriesPeriod ? 4 : 16 }}>Spending breakdown</h3>
+                {categoriesPeriod && (
+                  <div style={{
+                    fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5,
+                    color: "#5a7a5a", letterSpacing: ".04em", marginBottom: 12,
+                  }}>
+                    {categoriesPeriod.longLabel}
+                    {breakdownProgress && <span style={{ color: "#f0a030" }}> · {breakdownProgress}</span>}
+                  </div>
+                )}
                 <SpendingChart data={categories} />
               </div>
               <div style={panel}>

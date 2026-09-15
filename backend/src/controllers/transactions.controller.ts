@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import {
   fetchTransactions,
-  fetchCategorySpend,
+  fetchCurrentPeriodCategorySpend,
   fetchCategoryComparison,
   fetchMonthlyTotals,
   searchTransactions,
@@ -25,8 +25,11 @@ export async function getTransactions(req: Request, res: Response): Promise<void
 export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const categories = await fetchCategorySpend(userId)
-    res.json({ categories })
+    // The Overview "Spending breakdown" covers the current money period, the
+    // same window as Month over month beside it (M7.2).
+    const startDay = await getPeriodStartDay(userId)
+    const { categories, period } = await fetchCurrentPeriodCategorySpend(userId, startDay)
+    res.json({ categories, period })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
     res.status(500).json({ error: 'Failed to fetch categories' })

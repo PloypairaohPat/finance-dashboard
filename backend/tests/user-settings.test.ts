@@ -193,6 +193,12 @@ describe('period-grouped endpoints use the stored start day', () => {
     const insights = await request(app).get('/insights').set('X-Test-User', USER)
     expect(insights.body.summary.period).toMatchObject({ key: onBoundary.toISOString().slice(0, 10), inProgress: true })
 
+    // Spending breakdown follows the period too: only the $40 on the boundary
+    // day is in the current day-10 period, not the $100 the day before.
+    const categories = await request(app).get('/categories').set('X-Test-User', USER)
+    expect(categories.body.period).toMatchObject({ key: onBoundary.toISOString().slice(0, 10), inProgress: true })
+    expect(categories.body.categories).toEqual([expect.objectContaining({ category: 'Shopping', amount: 40 })])
+
     const networth = await request(app).get('/networth').set('X-Test-User', USER)
     expect(Array.isArray(networth.body.periodMarkers)).toBe(true)
   })

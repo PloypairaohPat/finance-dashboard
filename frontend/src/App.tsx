@@ -178,6 +178,8 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
+  // The money period `categories` covers (M7.2), from /categories.
+  const [categoriesPeriod, setCategoriesPeriod] = useState<PeriodInfo | null>(null);
   // Bumped whenever synced bank data changes — after a successful Sync (button,
   // auto-sync, Live Balances) and after linking a bank. SyncProvider hands it
   // to every view that shows synced data so each re-fetches (M7.1 stage 4).
@@ -346,9 +348,10 @@ export default function App() {
 
     try {
       const res  = await authFetch(`${API_URL}/categories`);
-      const data = await res.json() as { categories: CategorySpend[]; error?: string };
+      const data = await res.json() as { categories: CategorySpend[]; period?: PeriodInfo; error?: string };
       if (data.error) throw new Error(data.error);
       setCategories(data.categories || []);
+      setCategoriesPeriod(data.period ?? null);
     } catch (e: any) {
       setError(`Categories fetch failed: ${e.message}`);
     }
@@ -701,6 +704,7 @@ export default function App() {
       showHero={connected}
       hasAccounts={accounts.length > 0}
       categories={categories}
+      categoriesPeriod={categoriesPeriod}
     />
   );
 
@@ -832,9 +836,10 @@ export default function App() {
             and sign-in screens cost nothing. */}
         <SyncProvider version={syncVersion}>
           {/* PeriodProvider (M7.2): the money-period start day. Views that
-              group by period re-fetch when it changes; App re-fetches the
-              hero's saved figure through onChange. */}
-          <PeriodProvider onChange={fetchInsightsSummary}>
+              group by period re-fetch when it changes; App re-fetches what it
+              holds itself — the hero's saved figure and the Spending breakdown —
+              through onChange (held in a ref, so an inline function is fine). */}
+          <PeriodProvider onChange={() => { fetchData(); fetchInsightsSummary(); }}>
             <AlertsProvider>
               {content}
             </AlertsProvider>

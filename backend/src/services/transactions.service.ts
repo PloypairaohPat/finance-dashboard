@@ -24,9 +24,21 @@ export async function fetchTransactions(userId: string) {
   })
 }
 
-// Without a window this is the current calendar month, exactly as before M7.2 —
-// GET /categories (the Overview "Spending breakdown") still uses that default.
-// Month over month passes each period's window explicitly.
+// GET /categories — the Overview "Spending breakdown" — for the user's current
+// money period, with the period so the panel can label it and say "so far".
+// It sits beside Month over month, so it must use the same window (M7.2 Q1).
+export async function fetchCurrentPeriodCategorySpend(
+  userId: string,
+  startDay: number = DEFAULT_PERIOD_START_DAY,
+  now: Date = new Date(),
+) {
+  const [period] = recentPeriods(now, startDay, 1)
+  const categories = await fetchCategorySpend(userId, { start: fromDateKey(period.start), end: fromDateKey(period.end) })
+  return { categories, period }
+}
+
+// Category spend within a window. Without one it falls back to the current
+// calendar month; every caller in the app now passes a period window.
 export async function fetchCategorySpend(userId: string, window?: { start: Date; end: Date }) {
   let start: Date, end: Date
   if (window) {
