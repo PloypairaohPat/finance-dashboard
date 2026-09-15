@@ -1,5 +1,6 @@
 import { EnrichedTransaction } from "./types"
 import TransactionDetail from "./TransactionDetail"
+import { colors } from "./tokens"
 
 const fmt = (n: number, code = "USD") =>
   new Intl.NumberFormat("en-US", {
@@ -65,7 +66,7 @@ export default function TransactionCard({
               fontFamily: "IBM Plex Mono, monospace",
               fontSize: 15,
               fontWeight: 500,
-              color: tx.amount > 0 ? "#ff6b6b" : "#00e5a0",
+              color: tx.amount > 0 ? "#ff6b6b" : colors.green,
               whiteSpace: "nowrap",
             }}
           >

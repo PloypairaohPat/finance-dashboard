@@ -1,5 +1,6 @@
 import { CSSProperties } from "react"
 import type { Account } from "./types"
+import { colors } from "./tokens"
 
 // Moved out of App.tsx unchanged in M7.1 stage 2; only the Accounts tab renders it.
 
@@ -30,7 +31,7 @@ const balanceValue = (highlight: boolean): CSSProperties => ({
   fontFamily: "'IBM Plex Mono', monospace",
   fontSize: "18px",
   fontWeight: 500,
-  color: highlight ? "#00e5a0" : "#f0ede8",
+  color: highlight ? colors.green : "#f0ede8",
 })
 
 const fmt = (n: number | null | undefined, code = "USD") =>

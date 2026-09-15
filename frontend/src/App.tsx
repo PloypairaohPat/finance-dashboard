@@ -78,7 +78,7 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   step: (done: boolean) => ({
     padding: "14px 18px",
-    border: `1px solid ${done ? "#00e5a030" : "#222"}`,
+    border: `1px solid ${done ? `${colors.green}30` : "#222"}`,
     borderRadius: "8px",
     background: done ? "#0d1f15" : "#111",
     display: "flex",
@@ -90,19 +90,19 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     width: "8px",
     height: "8px",
     borderRadius: "50%",
-    background: done ? "#00e5a0" : "#333",
+    background: done ? colors.green : "#333",
     flexShrink: 0,
     transition: "all 0.3s",
-    boxShadow: done ? "0 0 8px #00e5a080" : "none",
+    boxShadow: done ? `0 0 8px ${colors.green}80` : "none",
   }),
   stepLabel: (done: boolean) => ({
     fontSize: "13px",
     fontFamily: "'IBM Plex Mono', monospace",
-    color: done ? "#00e5a0" : "#555",
+    color: done ? colors.green : "#555",
     transition: "color 0.3s",
   }),
   connectBtn: {
-    background: "#00e5a0",
+    background: colors.green,
     color: "#000",
     border: "none",
     padding: "16px 36px",
@@ -116,8 +116,8 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   loadingBtn: {
     background: "#1a2e20",
-    color: "#00e5a080",
-    border: "1px solid #00e5a020",
+    color: `${colors.green}80`,
+    border: `1px solid ${colors.green}20`,
     padding: "16px 36px",
     fontSize: "16px",
     fontWeight: 700,
@@ -673,10 +673,11 @@ export default function App() {
                 onClick={() => open()}
                 disabled={loading.link || !ready}
                 onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  if (ready) e.currentTarget.style.background = "#00c98d";
+                  // Hover darkens to the token's dim green (was an off-token #00c98d).
+                  if (ready) e.currentTarget.style.background = colors.greenDim;
                 }}
                 onMouseOut={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  if (ready) e.currentTarget.style.background = "#00e5a0";
+                  if (ready) e.currentTarget.style.background = colors.green;
                 }}
               >
                 {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
@@ -686,7 +687,7 @@ export default function App() {
           ) : (
             <button style={{
               ...(styles.connectBtn as CSSProperties),
-              background: "#1a2e20", color: "#00e5a0",
+              background: "#1a2e20", color: colors.green,
               ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
             }} onClick={fetchData}>
               ↻ Refresh Data
@@ -712,20 +713,20 @@ export default function App() {
   const demoBanner = (
     <div style={{
       background: "#1a2e20",
-      borderBottom: "1px solid #00e5a030",
+      borderBottom: `1px solid ${colors.green}30`,
       padding: "10px 20px",
       display: "flex", alignItems: "center", justifyContent: "center",
       gap: "16px", flexWrap: "wrap",
     }}>
       <span style={{
-        fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#00e5a0",
+        fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: colors.green,
       }}>
         Demo mode — sample data, changes aren't saved.
       </span>
       <button
         onClick={() => setDemoMode(false)}
         style={{
-          background: "#00e5a0", color: "#000", border: "none",
+          background: colors.green, color: "#000", border: "none",
           padding: "4px 14px", borderRadius: "4px", cursor: "pointer",
           fontSize: "11px", fontWeight: 700, fontFamily: "'Syne', sans-serif",
         }}
@@ -804,7 +805,7 @@ export default function App() {
         <button
           onClick={() => setDemoMode(true)}
           style={{
-            background: "transparent", color: "#00e5a0", border: "1px solid #00e5a040",
+            background: "transparent", color: colors.green, border: `1px solid ${colors.green}40`,
             padding: "10px 24px", borderRadius: "8px", cursor: "pointer",
             fontSize: "13px", fontFamily: "'IBM Plex Mono', monospace", letterSpacing: "0.3px",
           }}

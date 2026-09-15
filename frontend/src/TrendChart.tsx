@@ -8,6 +8,7 @@ import { MonthlyTotal } from './types'
 import { API_URL } from "./config"
 import { useSyncVersion } from "./SyncProvider"
 import { periodProgress, usePeriod } from "./PeriodProvider"
+import { colors } from "./tokens"
 
 // Spending per money period (M7.2), oldest first, including empty periods as
 // zero. The window starts on a period boundary, so the oldest point is a full
@@ -25,9 +26,10 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     fontSize: '11px',
     padding: '2px 8px',
     borderRadius: 4,
-    background: up ? 'rgba(240,160,48,0.1)' : 'rgba(0,229,160,0.08)',
-    color:      up ? '#f0a030'              : '#00e5a0',
-    border:     `1px solid ${up ? 'rgba(240,160,48,0.25)' : 'rgba(0,229,160,0.2)'}`,
+    // Green is tokens.ts colors.green (#00e87a = 0,232,122).
+    background: up ? 'rgba(240,160,48,0.1)' : 'rgba(0,232,122,0.08)',
+    color:      up ? '#f0a030'              : colors.green,
+    border:     `1px solid ${up ? 'rgba(240,160,48,0.25)' : 'rgba(0,232,122,0.2)'}`,
   }),
 }
 
@@ -39,7 +41,7 @@ function CustomTooltip({ active, payload, label }: any) {
     <div style={{ background: '#161e14', border: '1px solid #253325', borderRadius: 6, padding: '8px 12px', fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
       <div style={{ color: '#555', marginBottom: 4 }}>{label}</div>
       {progress && <div style={{ color: '#f0a030', fontSize: 10.5, marginBottom: 4 }}>{progress}</div>}
-      <div style={{ color: '#00e5a0' }}>${payload[0].value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+      <div style={{ color: colors.green }}>${payload[0].value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
       <div style={{ color: '#555', fontSize: 11 }}>{point.txCount} transactions</div>
     </div>
   )
@@ -110,8 +112,8 @@ export default function TrendChart() {
           <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#00e5a0" stopOpacity={0.18}/>
-                <stop offset="95%" stopColor="#00e5a0" stopOpacity={0}/>
+                <stop offset="5%"  stopColor={colors.green} stopOpacity={0.18}/>
+                <stop offset="95%" stopColor={colors.green} stopOpacity={0}/>
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
@@ -132,17 +134,17 @@ export default function TrendChart() {
             <Area
               type="monotone"
               dataKey="total"
-              stroke="#00e5a0"
+              stroke={colors.green}
               strokeWidth={2}
               fill="url(#greenGrad)"
               dot={(props: any) => {
                 const { cx, cy, payload, index } = props
                 // The in-progress period gets a hollow dot: a partial total.
                 return payload?.inProgress
-                  ? <circle key={`dot-${index}`} cx={cx} cy={cy} r={3.5} fill="#111" stroke="#00e5a0" strokeWidth={1.5} />
-                  : <circle key={`dot-${index}`} cx={cx} cy={cy} r={3} fill="#00e5a0" />
+                  ? <circle key={`dot-${index}`} cx={cx} cy={cy} r={3.5} fill="#111" stroke={colors.green} strokeWidth={1.5} />
+                  : <circle key={`dot-${index}`} cx={cx} cy={cy} r={3} fill={colors.green} />
               }}
-              activeDot={{ r: 5, fill: '#00e5a0' }}
+              activeDot={{ r: 5, fill: colors.green }}
             />
           </AreaChart>
         </ResponsiveContainer>
