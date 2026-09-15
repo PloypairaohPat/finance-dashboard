@@ -7,7 +7,12 @@ export interface HeroOverviewProps {
   cashAvailable: number | null
   debt: number | null
   monthSaved: number | null
+  /** The period the saved figure covers: "September", or "Sep 10 – Oct 9" (M7.2). */
   monthLabel: string
+  /** "Saved this month" at start day 1, otherwise "Saved this period". */
+  savedLabel: string
+  /** "so far · day 5 of 30" while that period is in progress, else null. */
+  savedProgress: string | null
   lastSyncAt: string | null
 }
 
@@ -75,6 +80,8 @@ export default function HeroOverview(props: HeroOverviewProps) {
     debt,
     monthSaved,
     monthLabel,
+    savedLabel,
+    savedProgress,
     lastSyncAt,
   } = props
 
@@ -120,9 +127,11 @@ export default function HeroOverview(props: HeroOverviewProps) {
       </div>
 
       <div style={card}>
-        <div style={label}>Saved this month</div>
+        <div style={label}>{savedLabel}</div>
         <div style={{ ...value, color: savedColor }}>{fmtCurrency(monthSaved)}</div>
         <div style={sub}>{monthLabel}</div>
+        {/* In progress: the figure is partial, and says so rather than being projected. */}
+        {savedProgress && <div style={{ ...sub, marginTop: 2, color: "#f0a030" }}>{savedProgress}</div>}
       </div>
 
       <div style={{

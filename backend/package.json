@@ -21,6 +21,8 @@
     "db:dev:reset": "dotenv -e .env.dev -- prisma migrate reset --force",
     "predb:dev:seed": "npm run db:guard",
     "db:dev:seed": "dotenv -e .env.dev -- tsx prisma/seed-demo.ts",
+    "predb:dev:studio": "npm run db:guard",
+    "db:dev:studio": "dotenv -e .env.dev -- prisma studio",
     "test:db:setup": "dotenv -e .env.test -- prisma migrate deploy"
   },
   "prisma": {

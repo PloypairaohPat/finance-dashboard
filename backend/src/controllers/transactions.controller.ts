@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import {
   fetchTransactions,
-  fetchCategorySpend,
+  fetchCurrentPeriodCategorySpend,
   fetchCategoryComparison,
   fetchMonthlyTotals,
   searchTransactions,
@@ -9,6 +9,7 @@ import {
   fetchUserTags,
 } from '../services/transactions.service'
 import { getUserId } from '../middleware/auth'
+import { getPeriodStartDay } from '../services/user.service'
 
 export async function getTransactions(req: Request, res: Response): Promise<void> {
   try {
@@ -24,8 +25,11 @@ export async function getTransactions(req: Request, res: Response): Promise<void
 export async function getCategories(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const categories = await fetchCategorySpend(userId)
-    res.json({ categories })
+    // The Overview "Spending breakdown" covers the current money period, the
+    // same window as Month over month beside it (M7.2).
+    const startDay = await getPeriodStartDay(userId)
+    const { categories, period } = await fetchCurrentPeriodCategorySpend(userId, startDay)
+    res.json({ categories, period })
   } catch (err: any) {
     console.error('❌ getCategories:', err)
     res.status(500).json({ error: 'Failed to fetch categories' })
@@ -35,8 +39,10 @@ export async function getCategories(req: Request, res: Response): Promise<void> 
 export async function getCategoryComparison(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const months = Math.min(Math.max(Number(req.query.months) || 3, 1), 12)
-    const data = await fetchCategoryComparison(userId, months)
+    // `months` is the historical name; it is a count of periods (M7.2).
+    const periods = Math.min(Math.max(Number(req.query.months) || 3, 1), 12)
+    const startDay = await getPeriodStartDay(userId)
+    const data = await fetchCategoryComparison(userId, periods, startDay)
     res.json(data)
   } catch (err: any) {
     console.error('❌ getCategoryComparison:', err.message)
@@ -47,9 +53,11 @@ export async function getCategoryComparison(req: Request, res: Response): Promis
 export async function getTrends(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const months = req.query.months ? parseInt(req.query.months as string) : 12
-    const trends = await fetchMonthlyTotals(userId, months)
-    res.json({ trends })
+    // `months` is the historical name; it is a count of periods (M7.2).
+    const periods = Math.min(Math.max(req.query.months ? parseInt(req.query.months as string, 10) || 12 : 12, 1), 24)
+    const startDay = await getPeriodStartDay(userId)
+    const trends = await fetchMonthlyTotals(userId, periods, startDay)
+    res.json({ trends, periodStartDay: startDay })
   } catch (err: any) {
     console.error('❌ getTrends:', err.message)
     res.status(500).json({ error: 'Failed to fetch trends' })

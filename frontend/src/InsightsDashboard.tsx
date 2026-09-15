@@ -4,6 +4,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
+import { periodProgress, usePeriod } from "./PeriodProvider"
 import type { InsightsResponse, Sentiment } from "./types"
 import TopMerchants from "./TopMerchants"
 import LargestPurchases from "./LargestPurchases"
@@ -116,9 +117,10 @@ export default function InsightsDashboard() {
   const [loading, setLoading] = useState(true)
   const isMobile = useMediaQuery("(max-width: 640px)")
   const syncVersion = useSyncVersion()
+  const { version: periodVersion } = usePeriod()
 
-  // Re-runs after every sync; the current cards stay on screen meanwhile, and a
-  // superseded run's response is ignored.
+  // Re-runs after every sync and every period-setting change; the current cards
+  // stay on screen meanwhile, and a superseded run's response is ignored.
   useEffect(() => {
     // Clearing `loading` here matters: this component renders a skeleton while
     // loading, so an early return that left it true showed a skeleton forever.
@@ -140,7 +142,7 @@ export default function InsightsDashboard() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
 
   if (loading || !data) {
     return <InsightsSkeleton isMobile={isMobile} />
@@ -154,7 +156,15 @@ export default function InsightsDashboard() {
     <div style={{ display: "grid", gap: 24 }}>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 24 }}>
         <div style={card}>
-          <div style={cardTitle}>Monthly summary · {summary.monthLabel}</div>
+          <div style={cardTitle}>
+            {summary.period?.startDay && summary.period.startDay !== 1 ? "Period" : "Monthly"} summary · {summary.monthLabel}
+          </div>
+          {/* In progress: these are partial-period figures, marked as such, never projected. */}
+          {periodProgress(summary.period) && (
+            <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, color: "#f0a030", margin: "-8px 0 12px" }}>
+              {periodProgress(summary.period)}
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={statBox}>

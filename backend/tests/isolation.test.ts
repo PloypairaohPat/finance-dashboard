@@ -213,6 +213,8 @@ const READ_ENDPOINTS = [
   '/budgets/status',
   '/alerts/digest',
   '/plaid-items',
+  '/user/settings',
+  '/categories/comparison',
 ]
 
 // ── Fixtures ──────────────────────────────────────────────────────

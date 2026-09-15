@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { readWriteResult } from "./lib/writeResult"
 import type { EnrichedTransaction, CategoryOption } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 
@@ -23,6 +24,8 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
   const [tagInput, setTagInput] = useState("")
   const [suggestedTags, setSuggestedTags] = useState<string[]>([])
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([])
+  // Why the latest auto-save didn't happen. Null while saves are succeeding.
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Fetch suggested tags + category list once on open
   useEffect(() => {
@@ -41,13 +44,25 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
     const t = setTimeout(async () => {
       const body: any = { tags, notes }
       if (category !== transaction.category) body.category = category
-      const res = await apiFetch(`${API_URL}/transactions/${transaction.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (res.ok) {
+      try {
+        const res = await apiFetch(`${API_URL}/transactions/${transaction.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        // Not res.ok alone: a blocked demo write is HTTP 200 { demo: true, ok: false },
+        // which used to update the list as if the edit had saved.
+        const result = await readWriteResult(res)
+        if (!result.ok) {
+          // The edits stay in the form so nothing typed is lost, but the list
+          // isn't updated and the footer says they weren't saved.
+          setSaveError(result.message)
+          return
+        }
+        setSaveError(null)
         onUpdate({ ...transaction, tags, notes, category })
+      } catch (e: any) {
+        setSaveError(e.message)
       }
     }, 500)
     return () => clearTimeout(t)
@@ -213,13 +228,22 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           />
         </div>
 
-        <div style={{
-          fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
-          color: "#5a7a5a", letterSpacing: ".08em", textTransform: "uppercase",
-          textAlign: "center", marginTop: 16,
-        }}>
-          Changes save automatically.
-        </div>
+        {saveError ? (
+          <div role="alert" style={{
+            fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5,
+            color: "#e85555", textAlign: "center", marginTop: 16,
+          }}>
+            ⚠ Changes not saved: {saveError}
+          </div>
+        ) : (
+          <div style={{
+            fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
+            color: "#5a7a5a", letterSpacing: ".08em", textTransform: "uppercase",
+            textAlign: "center", marginTop: 16,
+          }}>
+            Changes save automatically.
+          </div>
+        )}
       </div>
     </div>
   )

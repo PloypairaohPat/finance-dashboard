@@ -8,6 +8,15 @@ import { filterInternalTransfers } from "../utils/transferFilter"
 import { getSubscriptionMerchants } from "./subscriptions.service"
 import { plaidClient } from "../lib/plaidClient"
 import { logoUrlFor } from "../lib/merchantLogos"
+import {
+  DEFAULT_PERIOD_START_DAY,
+  fromDateKey,
+  periodKeyOf,
+  periodsFromFirstActivity,
+  recentPeriods,
+  type Period,
+} from "../lib/period"
+import { fetchFirstTransactionDate } from "./activity.service"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -17,12 +26,32 @@ export async function fetchTransactions(userId: string) {
   })
 }
 
-export async function fetchCategorySpend(userId: string, month?: string) {
-  const now = new Date()
-  const ym = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-  const [yr, mo] = ym.split("-").map(Number)
-  const start = new Date(Date.UTC(yr, mo - 1, 1))
-  const end   = new Date(Date.UTC(yr, mo, 1))
+// GET /categories — the Overview "Spending breakdown" — for the user's current
+// money period, with the period so the panel can label it and say "so far".
+// It sits beside Month over month, so it must use the same window (M7.2 Q1).
+export async function fetchCurrentPeriodCategorySpend(
+  userId: string,
+  startDay: number = DEFAULT_PERIOD_START_DAY,
+  now: Date = new Date(),
+) {
+  const [period] = recentPeriods(now, startDay, 1)
+  const categories = await fetchCategorySpend(userId, { start: fromDateKey(period.start), end: fromDateKey(period.end) })
+  return { categories, period }
+}
+
+// Category spend within a window. Without one it falls back to the current
+// calendar month; every caller in the app now passes a period window.
+export async function fetchCategorySpend(userId: string, window?: { start: Date; end: Date }) {
+  let start: Date, end: Date
+  if (window) {
+    ({ start, end } = window)
+  } else {
+    const now = new Date()
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    const [yr, mo] = ym.split("-").map(Number)
+    start = new Date(Date.UTC(yr, mo - 1, 1))
+    end   = new Date(Date.UTC(yr, mo, 1))
+  }
 
   // Fetch all transactions for the month (both legs needed for pair-match in Tier 2)
   const [allTxsRaw, rawAccounts, plaidItems] = await Promise.all([
@@ -84,31 +113,56 @@ export async function fetchCategorySpend(userId: string, month?: string) {
     .sort((a, b) => b.amount - a.amount)
 }
 
-export async function fetchCategoryComparison(userId: string, months = 3) {
-  const now = new Date()
-  const out: Array<{ month: string; total: number; categories: Record<string, number> }> = []
+// Month over month, per money period (M7.2). Oldest first; the last entry is
+// the current period and carries inProgress/dayOfPeriod so the UI can say
+// "so far" instead of comparing a partial period as if it were complete.
+export async function fetchCategoryComparison(
+  userId: string,
+  periodCount = 3,
+  startDay: number = DEFAULT_PERIOD_START_DAY,
+  now: Date = new Date(),
+) {
+  // Periods from before the user's first transaction are dropped (Q2): with
+  // no history, "was $0" / "new" against a period they didn't exist in misleads.
+  const periods = periodsFromFirstActivity(
+    recentPeriods(now, startDay, periodCount),
+    await fetchFirstTransactionDate(userId),
+  )
+  const out: Array<Period & { month: string; total: number; categories: Record<string, number> }> = []
 
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    const spend = await fetchCategorySpend(userId, ym)
+  for (const p of periods) {
+    const spend = await fetchCategorySpend(userId, { start: fromDateKey(p.start), end: fromDateKey(p.end) })
     const categories = Object.fromEntries(spend.map(s => [s.category, s.amount]))
     const total = spend.reduce((sum, s) => sum + s.amount, 0)
-    out.push({ month: ym, total, categories })
+    out.push({ ...p, month: p.key, total, categories })
   }
   return out
 }
 
-export interface MonthlyTotal {
+export interface MonthlyTotal extends Period {
+  /** The period key, kept under its historical name. */
   month:   string
-  label:   string
   total:   number
   txCount: number
 }
 
-export async function fetchMonthlyTotals(userId: string, months: number = 12): Promise<MonthlyTotal[]> {
-  const cutoff = new Date()
-  cutoff.setMonth(cutoff.getMonth() - months)
+// One entry per period, oldest first, including empty periods as zero (M7.2).
+// Before M7.2 the cutoff was "exactly N months before today", so the oldest
+// bucket was a partial month and plotted as an artificially low one; the
+// window now starts on a period boundary.
+export async function fetchMonthlyTotals(
+  userId: string,
+  periodCount: number = 12,
+  startDay: number = DEFAULT_PERIOD_START_DAY,
+  now: Date = new Date(),
+): Promise<MonthlyTotal[]> {
+  // Periods from before the user's first transaction are dropped (Q2); empty
+  // periods after it stay as zeros. No transactions at all means no periods.
+  const periods = periodsFromFirstActivity(
+    recentPeriods(now, startDay, periodCount),
+    await fetchFirstTransactionDate(userId),
+  )
+  if (periods.length === 0) return []
 
   const rows = await prisma.transaction.findMany({
     where: {
@@ -116,33 +170,28 @@ export async function fetchMonthlyTotals(userId: string, months: number = 12): P
       deletedAt: null,
       pending:   false,
       amount:    { gt: 0 },
-      date:      { gte: cutoff },
+      date:      { gte: fromDateKey(periods[0].start), lt: fromDateKey(periods[periods.length - 1].end) },
     },
     select: { date: true, amount: true },
   })
 
   const map: Record<string, { total: number; count: number }> = {}
   for (const tx of rows) {
-    const key = tx.date.toISOString().slice(0, 7)
+    const key = periodKeyOf(tx.date, startDay)
     if (!map[key]) map[key] = { total: 0, count: 0 }
     map[key].total += tx.amount.toNumber()
     map[key].count += 1
   }
 
-  return Object.entries(map)
-    .map(([month, { total, count }]) => ({
-      month,
-      label:   formatMonthLabel(month),
+  return periods.map((p) => {
+    const { total, count } = map[p.key] ?? { total: 0, count: 0 }
+    return {
+      ...p,
+      month:   p.key,
       total:   Math.round(total * 100) / 100,
       txCount: count,
-    }))
-    .sort((a, b) => a.month.localeCompare(b.month))
-}
-
-function formatMonthLabel(yyyymm: string): string {
-  const [year, month] = yyyymm.split('-')
-  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  return `${names[parseInt(month) - 1]} ${year}`
+    }
+  })
 }
 
 // ── M5.7 Step 2: Search with cursor pagination + enrichment ──────────

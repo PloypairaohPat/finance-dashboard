@@ -16,7 +16,11 @@ import OverviewView from "./OverviewView"
 import AppHeader from "./AppHeader"
 import AlertsProvider from "./AlertsProvider"
 import SyncProvider from "./SyncProvider"
+import PeriodProvider, { periodProgress } from "./PeriodProvider"
+import SettingsDialog from "./SettingsDialog"
+import type { PeriodInfo } from "./types"
 import { readWriteResult } from "./lib/writeResult"
+import { colors } from "./tokens"
 import useMediaQuery from "./useMediaQuery"
 import {
   SignedIn,
@@ -74,7 +78,7 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   step: (done: boolean) => ({
     padding: "14px 18px",
-    border: `1px solid ${done ? "#00e5a030" : "#222"}`,
+    border: `1px solid ${done ? `${colors.green}30` : "#222"}`,
     borderRadius: "8px",
     background: done ? "#0d1f15" : "#111",
     display: "flex",
@@ -86,19 +90,19 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     width: "8px",
     height: "8px",
     borderRadius: "50%",
-    background: done ? "#00e5a0" : "#333",
+    background: done ? colors.green : "#333",
     flexShrink: 0,
     transition: "all 0.3s",
-    boxShadow: done ? "0 0 8px #00e5a080" : "none",
+    boxShadow: done ? `0 0 8px ${colors.green}80` : "none",
   }),
   stepLabel: (done: boolean) => ({
     fontSize: "13px",
     fontFamily: "'IBM Plex Mono', monospace",
-    color: done ? "#00e5a0" : "#555",
+    color: done ? colors.green : "#555",
     transition: "color 0.3s",
   }),
   connectBtn: {
-    background: "#00e5a0",
+    background: colors.green,
     color: "#000",
     border: "none",
     padding: "16px 36px",
@@ -112,8 +116,8 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
   },
   loadingBtn: {
     background: "#1a2e20",
-    color: "#00e5a080",
-    border: "1px solid #00e5a020",
+    color: `${colors.green}80`,
+    border: `1px solid ${colors.green}20`,
     padding: "16px 36px",
     fontSize: "16px",
     fontWeight: 700,
@@ -174,6 +178,8 @@ export default function App() {
   const [connected,    setConnected]    = useState(false);
   const [accounts,     setAccounts]     = useState<Account[]>([]);
   const [categories,   setCategories]   = useState<CategorySpend[]>([]);
+  // The money period `categories` covers (M7.2), from /categories.
+  const [categoriesPeriod, setCategoriesPeriod] = useState<PeriodInfo | null>(null);
   // Bumped whenever synced bank data changes — after a successful Sync (button,
   // auto-sync, Live Balances) and after linking a bank. SyncProvider hands it
   // to every view that shows synced data so each re-fetches (M7.1 stage 4).
@@ -186,6 +192,9 @@ export default function App() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const [monthSaved,   setMonthSaved]   = useState<number | null>(null)
+  // The money period monthSaved covers (M7.2), from /insights.
+  const [savedPeriod,  setSavedPeriod]  = useState<PeriodInfo | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [syncing,        setSyncing]        = useState(false)
   const [updateLinkToken, setUpdateLinkToken] = useState<string | null>(null)
@@ -251,12 +260,15 @@ export default function App() {
         ? ((latest.netWorth - monthAgo.netWorth) / Math.abs(monthAgo.netWorth)) * 100
         : null
 
-    const now = new Date()
-    const monthLabel = now.toLocaleString("en-US", { month: "long" })
+    // The saved figure covers the user's current money period (M7.2), as
+    // reported by /insights; until that loads, fall back to the calendar month.
+    const monthLabel = savedPeriod?.longLabel ?? new Date().toLocaleString("en-US", { month: "long" })
+    const savedLabel = savedPeriod && savedPeriod.startDay !== 1 ? "Saved this period" : "Saved this month"
+    const savedProgress = periodProgress(savedPeriod)
     const lastSyncAt = lastSyncedAt
 
-    return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, lastSyncAt }
-  }, [accounts, netWorthHistory, monthSaved, lastSyncedAt])
+    return { netWorth, netWorthMomPct, cashAvailable, debt, monthSaved, monthLabel, savedLabel, savedProgress, lastSyncAt }
+  }, [accounts, netWorthHistory, monthSaved, savedPeriod, lastSyncedAt])
 
   // ── Auto-connect check ───────────────────────────────────────────
   useEffect(() => {
@@ -310,8 +322,9 @@ export default function App() {
   const fetchInsightsSummary = useCallback(async () => {
     try {
       const res  = await authFetch(`${API_URL}/insights`)
-      const data = await res.json() as { summary?: { netSaved: number } }
+      const data = await res.json() as { summary?: { netSaved: number; period?: PeriodInfo } }
       setMonthSaved(data.summary?.netSaved ?? null)
+      setSavedPeriod(data.summary?.period ?? null)
     } catch (e: any) {
       console.error("Insights summary fetch failed:", e.message)
     }
@@ -335,9 +348,10 @@ export default function App() {
 
     try {
       const res  = await authFetch(`${API_URL}/categories`);
-      const data = await res.json() as { categories: CategorySpend[]; error?: string };
+      const data = await res.json() as { categories: CategorySpend[]; period?: PeriodInfo; error?: string };
       if (data.error) throw new Error(data.error);
       setCategories(data.categories || []);
+      setCategoriesPeriod(data.period ?? null);
     } catch (e: any) {
       setError(`Categories fetch failed: ${e.message}`);
     }
@@ -452,13 +466,27 @@ export default function App() {
   const startBalanceUpdate = useCallback(async () => {
     setUpdatingBalance(true)
     try {
+      setSyncNotice(null)
       const res  = await authFetch(`${API_URL}/create-update-link-token`, { method: 'POST' })
-      const data = await res.json() as { link_token: string; error?: string }
-      if (data.error) throw new Error(data.error)
-      setUpdateLinkToken(data.link_token)
+      // Not data.error alone: a blocked demo write is HTTP 200 { demo: true, ok: false }
+      // with no link_token, which used to leave the button stuck on "opening…".
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        if (result.demo) {
+          setSyncNotice(result.message)
+          setUpdatingBalance(false)
+          return
+        }
+        throw new Error(result.message)
+      }
+      const linkToken = (result.data as { link_token?: string } | null)?.link_token
+      if (!linkToken) throw new Error('No link token returned')
+      setUpdateLinkToken(linkToken)
     } catch (e: any) {
       console.error('Balance update failed:', e.message)
-      setError(`Balance refresh failed: ${e.message}`)
+      // Next to the header buttons, which are on every route — the connect
+      // panel's error slot only exists on Overview.
+      setSyncNotice(`Live Balances failed: ${e.message}`)
       setUpdatingBalance(false)
     }
   }, [authFetch])
@@ -529,8 +557,8 @@ export default function App() {
               disabled={syncing}
               style={{
                 background: "transparent",
-                border: `1px solid ${syncing ? "#00e5a040" : "#333"}`,
-                color: syncing ? "#00e5a0" : "#666",
+                border: `1px solid ${syncing ? `${colors.green}40` : "#333"}`,
+                color: syncing ? colors.green : "#666",
                 padding: "4px 12px", borderRadius: "4px",
                 cursor: syncing ? "not-allowed" : "pointer",
                 fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
@@ -583,7 +611,24 @@ export default function App() {
               Exit demo
             </button>
   ) : (
-            <UserButton afterSignOutUrl="/" />
+            // Settings (M7.2) sits in the account menu: the period start day it
+            // holds reaches the hero, Insights and five charts, not one chart.
+            // Signed-in only — demo mode is fixed at day 1 and has no account menu.
+            <UserButton afterSignOutUrl="/">
+              <UserButton.MenuItems>
+                <UserButton.Action
+                  label="Settings"
+                  labelIcon={
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+                    </svg>
+                  }
+                  onClick={() => setSettingsOpen(true)}
+                />
+              </UserButton.MenuItems>
+            </UserButton>
   );
 
   const header = (
@@ -628,10 +673,11 @@ export default function App() {
                 onClick={() => open()}
                 disabled={loading.link || !ready}
                 onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  if (ready) e.currentTarget.style.background = "#00c98d";
+                  // Hover darkens to the token's dim green (was an off-token #00c98d).
+                  if (ready) e.currentTarget.style.background = colors.greenDim;
                 }}
                 onMouseOut={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  if (ready) e.currentTarget.style.background = "#00e5a0";
+                  if (ready) e.currentTarget.style.background = colors.green;
                 }}
               >
                 {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
@@ -641,7 +687,7 @@ export default function App() {
           ) : (
             <button style={{
               ...(styles.connectBtn as CSSProperties),
-              background: "#1a2e20", color: "#00e5a0",
+              background: "#1a2e20", color: colors.green,
               ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
             }} onClick={fetchData}>
               ↻ Refresh Data
@@ -659,6 +705,7 @@ export default function App() {
       showHero={connected}
       hasAccounts={accounts.length > 0}
       categories={categories}
+      categoriesPeriod={categoriesPeriod}
     />
   );
 
@@ -666,20 +713,20 @@ export default function App() {
   const demoBanner = (
     <div style={{
       background: "#1a2e20",
-      borderBottom: "1px solid #00e5a030",
+      borderBottom: `1px solid ${colors.green}30`,
       padding: "10px 20px",
       display: "flex", alignItems: "center", justifyContent: "center",
       gap: "16px", flexWrap: "wrap",
     }}>
       <span style={{
-        fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#00e5a0",
+        fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: colors.green,
       }}>
         Demo mode — sample data, changes aren't saved.
       </span>
       <button
         onClick={() => setDemoMode(false)}
         style={{
-          background: "#00e5a0", color: "#000", border: "none",
+          background: colors.green, color: "#000", border: "none",
           padding: "4px 14px", borderRadius: "4px", cursor: "pointer",
           fontSize: "11px", fontWeight: 700, fontFamily: "'Syne', sans-serif",
         }}
@@ -758,7 +805,7 @@ export default function App() {
         <button
           onClick={() => setDemoMode(true)}
           style={{
-            background: "transparent", color: "#00e5a0", border: "1px solid #00e5a040",
+            background: "transparent", color: colors.green, border: `1px solid ${colors.green}40`,
             padding: "10px 24px", borderRadius: "8px", cursor: "pointer",
             fontSize: "13px", fontFamily: "'IBM Plex Mono', monospace", letterSpacing: "0.3px",
           }}
@@ -771,6 +818,7 @@ export default function App() {
         <SignedIn>
           {header}
           {routes}
+          {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
         </SignedIn>
       </>
     );
@@ -788,9 +836,15 @@ export default function App() {
             route, fetching only in demo mode or once signed in, so the splash
             and sign-in screens cost nothing. */}
         <SyncProvider version={syncVersion}>
-          <AlertsProvider>
-            {content}
-          </AlertsProvider>
+          {/* PeriodProvider (M7.2): the money-period start day. Views that
+              group by period re-fetch when it changes; App re-fetches what it
+              holds itself — the hero's saved figure and the Spending breakdown —
+              through onChange (held in a ref, so an inline function is fine). */}
+          <PeriodProvider onChange={() => { fetchData(); fetchInsightsSummary(); }}>
+            <AlertsProvider>
+              {content}
+            </AlertsProvider>
+          </PeriodProvider>
         </SyncProvider>
       </BrowserRouter>
     </DemoContext.Provider>

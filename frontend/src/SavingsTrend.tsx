@@ -4,21 +4,22 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
+import { periodProgress, usePeriod } from "./PeriodProvider"
+import type { PeriodInfo } from "./types"
 
-interface CashFlowRow {
-  month: string    // YYYY-MM
+// Net saved per money period (M7.2), from the same /cashflow data as the Cash
+// flow chart. Empty periods are listed as $0, not skipped. The current period
+// is marked "so far · day X of Y" rather than projected.
+interface CashFlowRow extends PeriodInfo {
+  month: string
   income: number
   expenses: number
   net: number
+  txCount: number
 }
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
-
-const monthName = (ym: string) => {
-  const [y, m] = ym.split("-").map(Number)
-  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long" })
-}
 
 export default function SavingsTrend() {
   const { isSignedIn } = useAuth()
@@ -27,9 +28,10 @@ export default function SavingsTrend() {
   const [rows, setRows] = useState<CashFlowRow[]>([])
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
+  const { version: periodVersion } = usePeriod()
 
-  // Re-runs after every sync; the current rows stay on screen meanwhile, and a
-  // superseded run's response is ignored.
+  // Re-runs after every sync and every period-setting change; the current rows
+  // stay on screen meanwhile, and a superseded run's response is ignored.
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     let cancelled = false
@@ -38,20 +40,18 @@ export default function SavingsTrend() {
         const res = await apiFetch(`${API_URL}/cashflow?months=6`)
         if (res.ok) {
           const json = await res.json()
-          console.log("💰 cashflow raw response:", json)
           const all: CashFlowRow[] = Array.isArray(json)
             ? json
             : (json.cashflow ?? json.cashFlow ?? [])
-          console.log("💰 rows extracted:", all.length)
           if (!cancelled) setRows(all.slice(-6))
         }
       } finally { if (!cancelled) setLoading(false) }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
 
   if (loading) return <div style={{ color: "#5a7a5a", fontSize: 13 }}>Loading…</div>
-  if (rows.length === 0) {
+  if (rows.length === 0 || rows.every(r => r.txCount === 0)) {
     return (
       <div style={{ color: "#5a7a5a", fontSize: 13 }}>
         No cash flow data yet.
@@ -59,10 +59,7 @@ export default function SavingsTrend() {
     )
   }
 
-  // Current YYYY-MM — we'll label partial-month rows
-  const now = new Date()
-  const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-
+  const noun = rows[rows.length - 1].startDay === 1 ? "month" : "period"
   const total = rows.reduce((s, r) => s + r.net, 0)
   const avg = Math.round(total / rows.length)
   const avgColor = avg >= 0 ? "#00a856" : "#ff7a6b"
@@ -70,26 +67,26 @@ export default function SavingsTrend() {
   return (
     <div>
       {rows.map(r => {
-        const isCurrent = r.month === currentYM
+        const progress = periodProgress(r)
         const positive = r.net >= 0
         const color = positive ? "#00a856" : "#ff7a6b"
         const sign = positive ? "+" : "−"
         return (
-          <div key={r.month} style={{
+          <div key={r.key} style={{
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             padding: "10px 0",
             borderBottom: "1px solid #1e2b1e",
             fontSize: 13,
           }}>
             <div>
-              <span style={{ color: "#d4e8d4", fontWeight: isCurrent ? 600 : 400 }}>
-                {monthName(r.month)}
+              <span style={{ color: "#d4e8d4", fontWeight: r.inProgress ? 600 : 400 }}>
+                {r.longLabel}
               </span>
-              {isCurrent && (
+              {progress && (
                 <span style={{
                   fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
                   color: "#5a7a5a", marginLeft: 8,
-                }}>so far</span>
+                }}>{progress}</span>
               )}
             </div>
             <span style={{
@@ -107,9 +104,9 @@ export default function SavingsTrend() {
         fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a",
         letterSpacing: ".04em",
       }}>
-        {rows.length}-month avg:{" "}
+        {rows.length}-{noun} avg:{" "}
         <span style={{ color: avgColor, fontWeight: 600 }}>
-          {avg >= 0 ? "+" : "−"}{fmt(Math.abs(avg))}/mo
+          {avg >= 0 ? "+" : "−"}{fmt(Math.abs(avg))}/{noun === "month" ? "mo" : "period"}
         </span>
       </div>
     </div>

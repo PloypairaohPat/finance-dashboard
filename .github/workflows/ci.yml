@@ -59,3 +59,42 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+  # M7.2 — before this job, a frontend-only break (type error, lint error that
+  # fails the CRA build, or a URL-param regression) passed CI.
+  frontend:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 24, not 22: both repro scripts import .ts files directly and rely on
+          # Node's built-in TypeScript type stripping, verified on Node 24.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # npm ci installs exactly the lockfile; frontend/.npmrc's
+      # legacy-peer-deps only matters for `npm install`.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # CI=true makes react-scripts treat ESLint warnings (including the
+      # no-restricted-imports rule on useSearchParams) as build errors.
+      - name: Build (CI=true)
+        run: npm run build
+        env:
+          CI: "true"
+
+      - name: Repro — URL search-param writer race
+        run: npm run repro:url-params
+
+      - name: Repro — nav links keep ?demo=1
+        run: npm run repro:link-nav

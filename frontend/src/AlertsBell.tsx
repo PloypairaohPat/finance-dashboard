@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { useAlerts } from "./AlertsProvider"
 import useMediaQuery from "./useMediaQuery"
+import { colors } from "./tokens"
 import type { Severity } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ export default function AlertsBell() {
           <span aria-hidden="true" style={{
             position: "absolute", top: -7, right: -8,
             minWidth: 18, height: 18, padding: "0 5px", boxSizing: "border-box",
-            borderRadius: 9, background: "#00e5a0", color: "#000",
+            borderRadius: 9, background: colors.green, color: "#000",
             fontFamily: mono, fontSize: 10, fontWeight: 700, lineHeight: "18px",
             textAlign: "center",
           }}>{badge}</span>
