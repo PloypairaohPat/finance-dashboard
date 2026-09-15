@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { Budget } from "./types"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { readWriteResult } from "./lib/writeResult"
 
 const STATUS_COLORS = {
   on_track: {
@@ -45,6 +46,10 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
   const [limitInput, setLimitInput] = useState(String(budget.monthlyLimit))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // Why the last save or delete didn't happen. Writes are read through
+  // readWriteResult: a blocked demo write is HTTP 200 { demo: true, ok: false },
+  // which res.ok alone reads as success (M7.3 notes, "Blocked demo writes").
+  const [error, setError] = useState<string | null>(null)
   const apiFetch = useApiFetch()
 
   const colors = STATUS_COLORS[budget.status]
@@ -65,10 +70,11 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
       return
     }
     setSaving(true)
+    setError(null)
     try {
       // useApiFetch adds auth (or X-Demo-Mode); Content-Type is ours to set —
       // it does not add one, and express.json() won't parse the body without it.
-      await apiFetch(`${API_URL}/budgets`, {
+      const res = await apiFetch(`${API_URL}/budgets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -76,7 +82,14 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
           monthlyLimit: val,
         }),
       })
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        setError(`Limit not saved: ${result.message}`)
+        return
+      }
       onUpdated()
+    } catch (e: any) {
+      setError(`Limit not saved: ${e.message}`)
     } finally {
       setSaving(false)
       setEditing(false)
@@ -86,9 +99,17 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
   async function deleteBudget() {
     if (!window.confirm(`Remove budget for ${budget.category}?`)) return
     setDeleting(true)
+    setError(null)
     try {
-      await apiFetch(`${API_URL}/budgets/${budget.id}`, { method: "DELETE" })
+      const res = await apiFetch(`${API_URL}/budgets/${budget.id}`, { method: "DELETE" })
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        setError(`Budget not removed: ${result.message}`)
+        return
+      }
       onDeleted()
+    } catch (e: any) {
+      setError(`Budget not removed: ${e.message}`)
     } finally {
       setDeleting(false)
     }
@@ -265,6 +286,7 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
           <button
             onClick={() => {
               setLimitInput(String(budget.monthlyLimit))
+              setError(null)
               setEditing(true)
             }}
             style={{
@@ -281,6 +303,17 @@ export default function BudgetCard({ budget, onUpdated, onDeleted }: Props) {
           </button>
         )}
       </div>
+
+      {error && (
+        <div role="alert" style={{
+          fontFamily: "IBM Plex Mono, monospace",
+          fontSize: 10.5,
+          color: "#e85555",
+          marginTop: 8,
+        }}>
+          ⚠ {error}
+        </div>
+      )}
     </div>
   )
 }

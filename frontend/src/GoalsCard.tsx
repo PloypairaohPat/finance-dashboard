@@ -3,6 +3,7 @@ import { useSyncVersion } from "./SyncProvider"
 import { useAuth } from "@clerk/clerk-react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { readWriteResult } from "./lib/writeResult"
 import { useDemo } from "./lib/DemoContext"
 import type { EnrichedGoal, GoalType, GoalStatus, Account } from "./types"
 
@@ -34,6 +35,9 @@ export default function GoalsCard() {
   const [accountId, setAccountId] = useState("")
   const [months, setMonths] = useState("6")
   const [error, setError] = useState<string | null>(null)
+  // A failed delete, shown above the list (the add form's error slot only
+  // exists while the form is open).
+  const [listError, setListError] = useState<string | null>(null)
 
   const syncVersion = useSyncVersion()
   // reload runs on mount, after every sync, and after a goal is saved; only the
@@ -68,23 +72,43 @@ export default function GoalsCard() {
     if (type === "debt_payoff" || accountId) body.accountId = accountId
     if (type === "emergency_fund") body.data = { months: Number(months) || 6 }
 
-    const res = await apiFetch(`${API_URL}/goals`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Failed to save" }))
-      setError(err.error || "Failed to save")
+    try {
+      const res = await apiFetch(`${API_URL}/goals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      // Not res.ok alone: a blocked demo write is HTTP 200 { demo: true, ok: false },
+      // which used to reset the form as if the goal had been created.
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+    } catch (e: any) {
+      setError(`Failed to save: ${e.message}`)
       return
     }
     await reload()
     resetForm()
   }
 
+  // Removed from the list only after the server confirms. This used to remove
+  // it optimistically and ignore the response, so a failed or demo-blocked
+  // delete vanished until the next load.
   const remove = async (id: string) => {
-    await apiFetch(`${API_URL}/goals/${id}`, { method: "DELETE" })
-    setGoals(prev => prev.filter(g => g.id !== id))
+    setListError(null)
+    try {
+      const res = await apiFetch(`${API_URL}/goals/${id}`, { method: "DELETE" })
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        setListError(`Goal not deleted: ${result.message}`)
+        return
+      }
+      setGoals(prev => prev.filter(g => g.id !== id))
+    } catch (e: any) {
+      setListError(`Goal not deleted: ${e.message}`)
+    }
   }
 
   const creditLoanAccounts = accounts.filter(a => a.type === "credit" || a.type === "loan")
@@ -92,6 +116,12 @@ export default function GoalsCard() {
 
   return (
     <div>
+      {listError && (
+        <div role="alert" style={{ color: "#e85555", fontSize: 11, fontFamily: "IBM Plex Mono, monospace", marginBottom: 10 }}>
+          ⚠ {listError}
+        </div>
+      )}
+
       {goals.length === 0 && !adding && (
         <div style={{ color: "#5a7a5a", fontSize: 13, marginBottom: 14 }}>
           Start with an emergency fund.

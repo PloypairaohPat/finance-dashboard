@@ -462,13 +462,27 @@ export default function App() {
   const startBalanceUpdate = useCallback(async () => {
     setUpdatingBalance(true)
     try {
+      setSyncNotice(null)
       const res  = await authFetch(`${API_URL}/create-update-link-token`, { method: 'POST' })
-      const data = await res.json() as { link_token: string; error?: string }
-      if (data.error) throw new Error(data.error)
-      setUpdateLinkToken(data.link_token)
+      // Not data.error alone: a blocked demo write is HTTP 200 { demo: true, ok: false }
+      // with no link_token, which used to leave the button stuck on "opening…".
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        if (result.demo) {
+          setSyncNotice(result.message)
+          setUpdatingBalance(false)
+          return
+        }
+        throw new Error(result.message)
+      }
+      const linkToken = (result.data as { link_token?: string } | null)?.link_token
+      if (!linkToken) throw new Error('No link token returned')
+      setUpdateLinkToken(linkToken)
     } catch (e: any) {
       console.error('Balance update failed:', e.message)
-      setError(`Balance refresh failed: ${e.message}`)
+      // Next to the header buttons, which are on every route — the connect
+      // panel's error slot only exists on Overview.
+      setSyncNotice(`Live Balances failed: ${e.message}`)
       setUpdatingBalance(false)
     }
   }, [authFetch])

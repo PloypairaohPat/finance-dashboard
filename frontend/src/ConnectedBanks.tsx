@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { usePlaidLink, PlaidLinkError } from "react-plaid-link"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { readWriteResult } from "./lib/writeResult"
 import { useDemo } from "./lib/DemoContext"
 import type { PlaidItemStatus, PlaidItemSummary } from "./types"
 
@@ -101,9 +102,13 @@ export default function ConnectedBanks() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemId }),
       })
-      const data = await res.json() as { link_token: string; error?: string }
-      if (data.error) throw new Error(data.error)
-      setUpdateLinkToken(data.link_token)
+      // Not data.error alone: a blocked demo write is HTTP 200 { demo: true, ok: false }
+      // with no link_token, which used to leave this item stuck on "reconnecting".
+      const result = await readWriteResult(res)
+      if (!result.ok) throw new Error(result.message)
+      const linkToken = (result.data as { link_token?: string } | null)?.link_token
+      if (!linkToken) throw new Error("No link token returned")
+      setUpdateLinkToken(linkToken)
     } catch (e: any) {
       console.error("Reconnect failed:", e.message)
       setError(`Reconnect failed: ${e.message}`)
@@ -117,10 +122,10 @@ export default function ConnectedBanks() {
     setDisconnectingId(itemId)
     try {
       const res = await apiFetch(`${API_URL}/plaid-items/${itemId}`, { method: "DELETE" })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to disconnect" }))
-        throw new Error(data.error || "Failed to disconnect")
-      }
+      // Not res.ok alone: a blocked demo write is HTTP 200 { demo: true, ok: false },
+      // which used to read as disconnected.
+      const result = await readWriteResult(res)
+      if (!result.ok) throw new Error(result.message)
       setConfirmingId(null)
       await reload()
     } catch (e: any) {

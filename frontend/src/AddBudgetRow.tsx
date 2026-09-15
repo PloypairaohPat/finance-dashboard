@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { readWriteResult } from "./lib/writeResult"
 
 const ALL_CATEGORIES = [
   "Food & Dining",
@@ -25,6 +26,11 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
   const [category, setCategory] = useState("")
   const [limit, setLimit] = useState("")
   const [saving, setSaving] = useState(false)
+  // Why the last add didn't happen. The write is read through readWriteResult:
+  // a blocked demo write is HTTP 200 { demo: true, ok: false }, and a rejected
+  // category is a 500 — both used to close the form as if the budget was added.
+  // (The category list itself is still hardcoded — M7.3 notes, *Budgets*.)
+  const [error, setError] = useState<string | null>(null)
   const apiFetch = useApiFetch()
 
   const available = ALL_CATEGORIES.filter(c => !existingCategories.includes(c))
@@ -34,17 +40,26 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
     if (!category || isNaN(val) || val <= 0) return
 
     setSaving(true)
+    setError(null)
     try {
       // Content-Type must be set here — useApiFetch adds auth headers only.
-      await apiFetch(`${API_URL}/budgets`, {
+      const res = await apiFetch(`${API_URL}/budgets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category, monthlyLimit: val }),
       })
+      const result = await readWriteResult(res)
+      if (!result.ok) {
+        // Keep the form open with what was typed, so nothing is silently lost.
+        setError(`Budget not added: ${result.message}`)
+        return
+      }
       setCategory("")
       setLimit("")
       setOpen(false)
       onAdded()
+    } catch (e: any) {
+      setError(`Budget not added: ${e.message}`)
     } finally {
       setSaving(false)
     }
@@ -128,6 +143,16 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
         }}
       />
 
+      {error && (
+        <div role="alert" style={{
+          fontFamily: "IBM Plex Mono, monospace",
+          fontSize: 11,
+          color: "#e85555",
+        }}>
+          ⚠ {error}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8 }}>
         <button
           onClick={submit}
@@ -148,7 +173,7 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
           {saving ? "Saving…" : "Add"}
         </button>
         <button
-          onClick={() => { setOpen(false); setCategory(""); setLimit("") }}
+          onClick={() => { setOpen(false); setCategory(""); setLimit(""); setError(null) }}
           style={{
             background: "transparent",
             color: "#5a7a5a",
