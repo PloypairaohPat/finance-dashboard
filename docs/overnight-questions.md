@@ -59,3 +59,29 @@ frontend-only change.
 **Recommendation: (c),** excluding the in-progress period from averages too. It keeps
 every gap visible, never presents "no data" as "$0", and stops both averages from
 being distorted. (b) is the smaller change if you'd rather not touch chart styling.
+
+### Q3 · Section 3 — How should §7 be verified against real data?
+
+**What I found.** All four §7 observations fail to reproduce against the demo seed; three
+can't reproduce from it on any date (details and numbers in
+`docs/m7.3-data-trust-notes.md`, *§7 re-verified against the demo seed*). So ground rule 1
+can't be met from demo data. Each observation needs a named real account — which means
+production data, which I don't touch. This is a method decision for M7.3, not something to
+guess tonight.
+
+**Options.**
+- **(a) You read the numbers in the browser**, on your own account, from a short
+  checklist I write: which card, which month, which figure to compare with which. No new
+  code, and nobody touches the database. Slow, and limited to what the UI shows.
+- **(b) A signed-in diagnostics endpoint** (e.g. `GET /debug/metrics?period=…`) that
+  returns, *for the caller only*, each figure's components side by side: pending included
+  or not, transfers filtered or not, subscription override. You open it in your browser.
+  It is read-only and user-scoped like every other endpoint, but it's new API surface on a
+  finance app, so it should get an isolation test and be removed or admin-gated
+  afterwards.
+- **(c) A local copy of one real account's rows** in the dev database. The most thorough
+  option, but it puts real bank data on a laptop, and nothing in M7.0's rules covers doing
+  that safely.
+
+**Recommendation: (a) first, then (b) only for the observations (a) can't settle.**
+(a) costs no code and no new risk. (c) I'd avoid.
