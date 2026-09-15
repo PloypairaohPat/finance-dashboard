@@ -178,6 +178,16 @@ present.
 
 ## Parked questions
 
+### Decisions (answered 2026-09-15)
+
+| | Decision | Where it landed |
+|---|---|---|
+| **Q1** | Spending breakdown follows the period start day, for the same reason as the hero. | Commit on this branch: `/categories` uses the current period and returns it; the panel shows the label and "so far". |
+| **Q2** | Suppress empty periods **before** the user's first transaction; keep **interior** empty periods as zero bars. | Commit on this branch: `periodsFromFirstActivity` in `lib/period.ts`, applied to cash flow, trends and comparison. |
+| **Q3** | Deferred. | Moved to `docs/m7.3-data-trust-notes.md` as **M7.3's first task**, with both options (read production carefully, or extend the seed), not decided. |
+| **Q4** | Finish the green migration everywhere, demo banner included. | Commit on this branch: no `#00e5a0` left in `frontend/`. |
+| **Q5** | Guard every Prisma command that can write; over-broad is the right failure mode. | Commit on this branch, **except `migrate deploy`**, which is still open. See the note under Q5. |
+
 ### Q1 · Section 1 — Should "Spending breakdown" follow the period start day?
 
 **What I found.** Your scope decision anchors the five charts, Insights and the
@@ -319,3 +329,23 @@ repo, so the first deploy after merge is the real test.**
 **Recommendation: (a) for now, and confirm Railway's build and start commands** don't run a
 guarded command. An escape hatch is exactly the kind of bypass the M7.0 guard avoided on
 purpose.
+
+**Decision and what's still open (2026-09-15).** You chose to guard every Prisma command
+that can write. The guard now also covers `migrate resolve`, `db execute` (including its
+`--url` flag, which bypasses the environment) and `studio`. All three were refused in tests
+with fake non-local URLs.
+
+**`migrate deploy` is deliberately still unguarded and needs your call.** It writes, but it
+is how deployments apply migrations to the real database (README: "Deployments apply
+migrations with `prisma migrate deploy`"). If the guard refused it against non-local URLs,
+the next Railway deploy would not apply this branch's `periodStartDay` migration, and the new
+code would query a column that doesn't exist in production. Over-broad is the right failure
+mode for a laptop, but that one would break production. Options:
+- **(a) Leave `migrate deploy` unguarded,** as now.
+- **(b) Guard it, but allow it when running on Railway** (e.g. when Railway's own
+  `RAILWAY_ENVIRONMENT` variable is present) or in CI against localhost. A laptop run is
+  refused.
+- **(c) Guard it everywhere** and apply production migrations some other way.
+
+I haven't picked; (b) matches "over-broad" without breaking deploys, but it is a
+spoofable allow-rule, and that is a policy call.
