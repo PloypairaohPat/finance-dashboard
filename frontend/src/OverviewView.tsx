@@ -29,6 +29,10 @@ import type { CategorySpend, PeriodInfo } from "./types"
 //  already updates. The widgets below fetch for themselves and re-fetch on
 //  every sync through useSyncVersion (SyncProvider, M7.1 stage 4).
 //
+//  Section headers don't state how many periods a chart covers ("last 12
+//  months"): since periods before a user's first transaction are dropped, the
+//  count varies per user, and the charts themselves report their real length.
+//
 //  The connect/setup block is passed in as a rendered slot: it depends on
 //  App-owned Plaid Link state, and slotting it keeps the DOM order identical.
 // ─────────────────────────────────────────────────────────────────
@@ -53,7 +57,6 @@ const styles: Record<string, CSSProperties> = {
     paddingBottom: "16px",
   },
   sectionTitle: { fontSize: "22px", fontWeight: 700, letterSpacing: "-0.5px" },
-  sectionCount: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#555" },
 }
 
 const panel: CSSProperties = { background: "#161e14", border: "1px solid #253325", borderRadius: 10, padding: 20 }
@@ -81,9 +84,7 @@ export default function OverviewView({
   categoriesPeriod,
 }: OverviewViewProps) {
   const isMobile = useMediaQuery("(max-width: 640px)")
-  // Section counts name the unit the charts below actually use (M7.2).
   const { startDay } = usePeriod()
-  const unit = startDay === 1 ? "months" : "periods"
   const breakdownProgress = periodProgress(categoriesPeriod)
 
   return (
@@ -138,12 +139,11 @@ export default function OverviewView({
           </div>
         )}
 
-        {/* Monthly Spending Trend */}
+        {/* Monthly Spending Trend — the chart reports how many periods it covers. */}
         {hasAccounts && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Monthly Spending</h2>
-              <span style={styles.sectionCount}>last 12 {unit}</span>
             </div>
             <TrendChart />
           </div>
@@ -174,12 +174,11 @@ export default function OverviewView({
           </div>
         )}
 
-        {/* Cash Flow + Savings Trend */}
+        {/* Cash Flow + Savings Trend — Monthly savings reports its own period count. */}
         {hasAccounts && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Cash Flow</h2>
-              <span style={styles.sectionCount}>last 6 {unit}</span>
             </div>
             <section style={{
               display: "grid",
