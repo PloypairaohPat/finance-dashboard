@@ -21,3 +21,9 @@ __pycache__/
 
 # Accidental output files
 response.txt
+
+# Calibration query RESULTS (M7.3). Counts-only, but still a behavioural profile
+# of real users, and this repo is public. The .sql queries are fine to commit;
+# their output never is.
+docs/calibration-results/
+docs/*calibration*.csv
