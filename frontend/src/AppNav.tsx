@@ -18,13 +18,14 @@ import { colors, fonts } from "./tokens"
 //  the query string and DemoUrlSync puts `?demo=1` back. Verified by
 //  scripts/url-params-repro/link-nav-check.mjs.
 //
-//  Styling follows AppHeader (surface #0d0d0d, border #222, the #00e5a0 accent
-//  the bell uses) and tokens.ts for type and text colours.
+//  Styling follows AppHeader (surface #0d0d0d, border #222) and tokens.ts for
+//  type, text colours and the accent (colors.green, which the header, nav and
+//  bell all use since the M7.2 run replaced a second, near-identical green).
 // ─────────────────────────────────────────────────────────────────
 
 const HEADER_BG = "#0d0d0d"
 const HEADER_BORDER = "#222"
-const ACCENT = "#00e5a0"
+const ACCENT = colors.green
 const BOTTOM_BAR_HEIGHT = 56
 
 const css = `

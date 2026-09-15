@@ -20,6 +20,7 @@ import PeriodProvider, { periodProgress } from "./PeriodProvider"
 import SettingsDialog from "./SettingsDialog"
 import type { PeriodInfo } from "./types"
 import { readWriteResult } from "./lib/writeResult"
+import { colors } from "./tokens"
 import useMediaQuery from "./useMediaQuery"
 import {
   SignedIn,
@@ -553,8 +554,8 @@ export default function App() {
               disabled={syncing}
               style={{
                 background: "transparent",
-                border: `1px solid ${syncing ? "#00e5a040" : "#333"}`,
-                color: syncing ? "#00e5a0" : "#666",
+                border: `1px solid ${syncing ? `${colors.green}40` : "#333"}`,
+                color: syncing ? colors.green : "#666",
                 padding: "4px 12px", borderRadius: "4px",
                 cursor: syncing ? "not-allowed" : "pointer",
                 fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",

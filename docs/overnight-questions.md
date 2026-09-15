@@ -85,3 +85,64 @@ guess tonight.
 
 **Recommendation: (a) first, then (b) only for the observations (a) can't settle.**
 (a) costs no code and no new risk. (c) I'd avoid.
+
+### Q4 · Section 5 — The second green outside the header and nav
+
+**What I found.** You asked me to pick the token and bring the header and nav in line.
+Done: the nav's active state, the alerts bell's count badge and the header's
+Sync-in-progress state now use `colors.green` (`#00e87a`). But `#00e5a0` appears in many
+more places than the header and nav:
+
+- `App.tsx`: the demo banner (it sits directly above the header), the connect panel's
+  checklist dots and "Connect Bank Account" button (including its `#00c98d` hover), and
+  the "View demo" button on the sign-in screen.
+- `TrendChart.tsx`: the whole Monthly Spending line, its fill, dots and tooltip.
+- `AccountCard.tsx`: highlighted balances.
+- `TransactionCard.tsx`: incoming amounts.
+
+I left all of these alone: they're outside "header/nav", and changing chart colours isn't
+a mechanical swap. The two greens are close but visibly different side by side, most
+noticeably the demo banner directly above the now-token-green header.
+
+**Options.**
+- **(a) Replace every `#00e5a0` with the token.** Consistent; changes the demo banner,
+  connect panel, one chart and two cards.
+- **(b) Replace only the chrome** (demo banner, connect panel, sign-in button) and leave
+  data colours for M7.3.
+- **(c) Leave as shipped.**
+
+**Recommendation: (b).** The banner-above-header mismatch is what's visible on every
+demo page. Data colours deserve a deliberate pass.
+
+### Q5 · Section 5 — Which Prisma commands the new config guard should cover
+
+**What I found.** `backend/prisma.config.ts` now refuses `migrate dev`, `migrate reset`,
+`db push` and `db seed` against any non-local database. That is exactly what the M7.0
+npm guard protects, plus `db push`, which the README already forbids. It deliberately
+does **not** cover:
+
+- `migrate resolve`, which writes the migration history table. It's a legitimate
+  production repair step: M6 used this kind of history repair.
+- `db execute`, which runs arbitrary SQL.
+- `studio`, which can edit rows.
+
+Those three can each be a legitimate thing to do to production on purpose, so blocking
+them is a policy choice, not a mechanical fix.
+
+**Also worth knowing** (verified, not guessed): with a config file present, Prisma 6.11
+**stops loading `backend/.env` for every CLI command** ("Prisma config detected, skipping
+environment variable loading"). So `npx prisma studio` or `npx prisma migrate status`
+against production from this laptop no longer work without exporting the variables in
+the shell first. `migrate deploy`, as Railway and CI run it with injected env vars, is
+unaffected. I checked the CI path locally, but **Railway's deploy settings aren't in the
+repo, so the first deploy after merge is the real test.**
+
+**Options.**
+- **(a) Keep the current set.**
+- **(b) Add `db execute` and `studio`**, and leave `migrate resolve` for deliberate repairs.
+- **(c) Add all three**, and do deliberate production operations by temporarily
+  exporting the URLs and removing the guard, or through an explicit escape hatch.
+
+**Recommendation: (a) for now, and confirm Railway's build and start commands** don't run a
+guarded command. An escape hatch is exactly the kind of bypass the M7.0 guard avoided on
+purpose.

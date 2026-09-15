@@ -414,7 +414,7 @@ Schema changes are made with `npm run db:dev:migrate` against the **local** dev 
 
 **The safety gate.** `backend/scripts/guard-local-db.ts` runs as a `pre` script before every migrate, reset, and seed. It refuses to continue unless `DATABASE_URL`, `DIRECT_URL`, **and** `SHADOW_DATABASE_URL` all resolve to `localhost`/`127.0.0.1`, and it additionally rejects any value byte-identical to one in `backend/.env`. It fails closed — a missing or unparseable URL is a refusal, and there is no bypass flag. All three URLs are checked because Prisma Migrate connects through `DIRECT_URL` rather than `DATABASE_URL`, and rebuilds the shadow database from scratch on every run.
 
-Because the guard is wired as a `pre` script, it cannot be skipped by forgetting a flag. It does not intercept a bare `npx prisma migrate dev`, though — that path reads `backend/.env` directly, so use the npm scripts.
+Because the guard is wired as a `pre` script, it cannot be skipped by forgetting a flag. A bare `npx prisma migrate dev` never runs npm's `pre` scripts, so `backend/prisma.config.ts` applies the same check inside the Prisma CLI itself: `migrate dev`, `migrate reset`, `db push` and `db seed` are refused unless every database URL is localhost, however Prisma is started. With that config file present, the Prisma CLI also **no longer loads `backend/.env`**, so a bare command gets no database URL at all and is refused for that reason. `migrate deploy`, `generate` and read-only commands are not affected. Still use the npm scripts: they're what load `backend/.env.dev`.
 
 Deployments apply migrations with `prisma migrate deploy`, which never creates or drops a database. That is also what CI runs.
 
