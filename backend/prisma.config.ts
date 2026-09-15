@@ -15,10 +15,23 @@
 //    migrate dev · migrate reset · migrate resolve · db push · db execute ·
 //    db seed · studio
 //
-//  NOT guarded:
-//    migrate deploy — how deployments apply migrations to the real database.
-//      Refusing it would stop production migrations from being applied, so it
-//      is left open pending an explicit decision; see docs/overnight-questions.md.
+//  NOT guarded, by decision (M7.2, Q5):
+//    migrate deploy. The threat this guard exists for is an ACCIDENTAL
+//      destructive command run from a dev machine: a reset, a push, a studio
+//      edit, pointed at production by a stray URL. migrate deploy isn't that.
+//      It is forward-only and non-destructive: it applies committed migration
+//      files that haven't run yet, in order, and never drops, resets or
+//      re-creates a database. And it is the sanctioned production path —
+//      deployments (Railway) and CI apply migrations with it. Guarding it would
+//      block the legitimate path to protect against a command that can't do
+//      the damage the guard is for.
+//
+//      Rejected alternative — "guard it, but allow it when RAILWAY_ENVIRONMENT
+//      is set" (or any similar environment flag). RAILWAY_ENVIRONMENT is an
+//      ordinary environment variable: anyone can set it on a laptop in one
+//      line. That would be a guard that looks enforced and isn't, which is
+//      worse than an honest, documented exception. Don't add it.
+//
 //    generate, validate, format, version, migrate status / diff, db pull —
 //      none of these write to a database (db pull writes the local schema file).
 //
