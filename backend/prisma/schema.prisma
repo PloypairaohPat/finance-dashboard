@@ -139,12 +139,18 @@ model Alert {
   data         Json?
   triggeredAt  DateTime  @default(now())
   dismissedAt  DateTime?
+  // M7.3: set when the condition that raised the alert stops being true, so an
+  // alert can stop being active without the user dismissing it. An alert that is
+  // resolved and later becomes true again is re-triggered, and its dismissal is
+  // cleared — see runDetectors.
+  resolvedAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
   @@unique([userId, fingerprint])
   @@index([userId, triggeredAt(sort: Desc)])
+  @@index([userId, resolvedAt])
 }
 
 model Goal {

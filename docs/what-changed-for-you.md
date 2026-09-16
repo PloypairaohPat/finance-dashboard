@@ -77,6 +77,24 @@ A card payment you made yesterday that hasn't fully settled now counts on every 
 Previously some screens included it and some didn't, so a total could change slightly
 overnight for no reason you could see.
 
+## Alerts now clear themselves — and a few old ones may reappear once
+
+Previously an alert stayed in the bell until you dismissed it by hand, whether or not it
+was still true. A budget alert from three months ago sat there exactly as loudly as one
+from this morning. Now, when the thing that caused an alert stops being true — a refund
+brings a category back under its budget, a late paycheck arrives, a balance recovers —
+the alert clears itself.
+
+**The one-off you may notice:** alerts are now filed against your month rather than the
+calendar's, which changes how they're identified internally. If you dismissed an alert
+in the last few weeks, it may appear once more. Dismiss it again and it will stay gone.
+Nothing has gone wrong, and it only happens once.
+
+One deliberate exception to "dismissed means dismissed": if a problem clears up and then
+happens *again*, the alert comes back even though you dismissed the earlier one. A budget
+you fixed and then went over a second time is news, and staying quiet about it would be
+hiding something rather than respecting your dismissal.
+
 ## A category can now show a negative number
 
 If you got more back in refunds in a category than you spent in it, that category shows

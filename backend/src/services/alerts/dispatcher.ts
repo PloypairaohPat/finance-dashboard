@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma"
-import type { Detector, DetectorContext, DetectedAlert } from "./types"
+import type { AlertKind, Detector, DetectorContext, DetectedAlert } from "./types"
 import { fetchSubscriptionAnalysis } from "../subscriptions.service"
 import { classifyWindow } from "../classification.service"
 import { getPeriodStartDay } from "../user.service"
@@ -15,15 +15,23 @@ import { detectSubscriptionPriceUp } from "./detectors/subscriptionPriceUp"
 import { detectBudgetExceeded, detectBudgetProjectedOver } from "./detectors/budgetStatus"
 import { detectPositiveMilestones } from "./detectors/positiveMilestones"
 
-const DETECTORS: Detector[] = [
-  detectOverspending,
-  detectLowBalance,
-  detectMissedPaycheck,
-  detectLargeTransaction,
-  detectSubscriptionPriceUp,
-  detectBudgetExceeded,
-  detectBudgetProjectedOver,
-  detectPositiveMilestones,
+// Each detector owns the alert kinds it emits. Resolution works by absence — an
+// alert its owner no longer emits is no longer true — so ownership has to be
+// declared rather than inferred.
+interface Registration {
+  detector: Detector
+  kinds: AlertKind[]
+}
+
+const DETECTORS: Registration[] = [
+  { detector: detectOverspending, kinds: ["overspending"] },
+  { detector: detectLowBalance, kinds: ["low_balance"] },
+  { detector: detectMissedPaycheck, kinds: ["missed_paycheck"] },
+  { detector: detectLargeTransaction, kinds: ["large_transaction"] },
+  { detector: detectSubscriptionPriceUp, kinds: ["subscription_price_up"] },
+  { detector: detectBudgetExceeded, kinds: ["budget_exceeded"] },
+  { detector: detectBudgetProjectedOver, kinds: ["budget_projected_over"] },
+  { detector: detectPositiveMilestones, kinds: ["positive_milestone"] },
 ]
 
 /** How many money periods of history the detectors need: current + 3 prior, plus one spare. */
@@ -38,7 +46,7 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
   // refuses to report for a period it only partly covers.
   const periods = recentPeriods(now, startDay, CONTEXT_PERIODS)
 
-  const [accounts, classification, budgets, subsAnalysis] = await Promise.all([
+  const [accounts, classification, budgets, subsAnalysis, active] = await Promise.all([
     prisma.account.findMany({
       where: { userId },
     }),
@@ -49,6 +57,11 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
     }),
     prisma.budget.findMany({ where: { userId } }),
     fetchSubscriptionAnalysis(userId, plaidClient).catch(() => null),
+    // Alerts still standing. A detector needs these for hysteresis: whether a
+    // condition counts as "still true" can depend on whether it is already
+    // firing. Dismissed-but-unresolved alerts count as firing — the user hid
+    // the alert, they did not fix the thing.
+    prisma.alert.findMany({ where: { userId, deletedAt: null, resolvedAt: null } }),
   ])
 
   return {
@@ -61,24 +74,44 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
     paymentAppByPeriod: classification.paymentAppByPeriod,
     budgets,
     subscriptionAnalysis: subsAnalysis,
+    activeAlerts: new Map(active.map((a) => [a.fingerprint, a])),
   }
 }
 
 export async function runDetectors(userId: string): Promise<void> {
   const ctx = await loadContext(userId)
   const results: DetectedAlert[] = []
+  // Only a detector that actually ran can speak for its kinds. If one throws,
+  // its alerts are left exactly as they were: resolving by absence after a
+  // failure would clear every alert the broken detector owns and call it good news.
+  const answeredFor = new Set<AlertKind>()
 
-  for (const detector of DETECTORS) {
+  for (const { detector, kinds } of DETECTORS) {
     try {
       const out = await detector(ctx)
       results.push(...out)
+      for (const kind of kinds) answeredFor.add(kind)
     } catch (err: any) {
       console.error(`Detector ${detector.name} failed:`, err.message)
     }
   }
 
-  await Promise.all(results.map(alert =>
-    prisma.alert.upsert({
+  const emitted = results.map((r) => r.fingerprint)
+  const existing = await prisma.alert.findMany({
+    where: { userId, fingerprint: { in: emitted } },
+  })
+  const byFingerprint = new Map(existing.map((a) => [a.fingerprint, a]))
+  const now = new Date()
+
+  await Promise.all(results.map(alert => {
+    const prior = byFingerprint.get(alert.fingerprint)
+    // A resolved alert that fires again is a NEW occurrence, not a continuation:
+    // clear the resolution, clear any old dismissal, and re-date it. Leaving the
+    // dismissal in place would silence a condition the user fixed and then hit
+    // again — silence by accident rather than by choice.
+    const reTriggered = prior?.resolvedAt != null
+
+    return prisma.alert.upsert({
       where: {
         userId_fingerprint: { userId, fingerprint: alert.fingerprint },
       },
@@ -97,20 +130,39 @@ export async function runDetectors(userId: string): Promise<void> {
         title: alert.title,
         body: alert.body,
         data: (alert.data ?? {}) as Prisma.InputJsonValue,
-        // dismissedAt deliberately NOT reset: this runs on every GET /alerts,
-        // so resetting it undid every dismissal whose condition still held.
-        // A dismissal now lasts for the fingerprint's period (a day for
-        // low_balance, a month for most detectors). See
-        // tests/alerts-dismissal.test.ts and docs/m7.3-data-trust-notes.md.
-        updatedAt: new Date(),
+        // While an occurrence continues, dismissedAt is deliberately NOT reset:
+        // this runs on every GET /alerts, and resetting it undid every dismissal
+        // whose condition still held (M7.1). See tests/alerts-dismissal.test.ts.
+        ...(reTriggered ? { resolvedAt: null, dismissedAt: null, triggeredAt: now } : {}),
+        updatedAt: now,
       },
     })
-  ))
+  }))
+
+  // Resolution by absence: anything an answering detector did not emit this run
+  // is no longer true. For event-shaped alerts this also supplies the lifetime —
+  // large_transaction stops being emitted when its transaction leaves the
+  // detector's own lookback window, so detection and resolution share one
+  // constant by construction rather than by a second number kept in step.
+  if (answeredFor.size > 0) {
+    await prisma.alert.updateMany({
+      where: {
+        userId,
+        deletedAt: null,
+        resolvedAt: null,
+        kind: { in: [...answeredFor] },
+        ...(emitted.length > 0 ? { fingerprint: { notIn: emitted } } : {}),
+      },
+      data: { resolvedAt: now },
+    })
+  }
 }
 
 export async function fetchActiveAlerts(userId: string) {
   return prisma.alert.findMany({
-    where: { userId, deletedAt: null, dismissedAt: null },
+    // resolvedAt: an alert whose condition stopped being true leaves the bell
+    // without the user having to dismiss it (M7.3).
+    where: { userId, deletedAt: null, dismissedAt: null, resolvedAt: null },
     orderBy: [
       { severity: "asc" },
       { triggeredAt: "desc" },

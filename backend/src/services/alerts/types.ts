@@ -1,4 +1,4 @@
-import type { Account, Budget } from "@prisma/client"
+import type { Account, Alert, Budget } from "@prisma/client"
 import type { SubscriptionAnalysis } from "../subscriptions.service"
 import type { ClassifiedRow } from "../classification.service"
 import type { Period } from "../../lib/period"
@@ -45,6 +45,12 @@ export interface DetectorContext {
   paymentAppByPeriod: Map<string, number>
   budgets: Budget[]
   subscriptionAnalysis: SubscriptionAnalysis | null  // null if we couldn't fetch
+  /**
+   * Alerts still standing, by fingerprint — not resolved, not deleted, whether
+   * or not the user dismissed them. A detector needs this when "still true"
+   * depends on whether it is already firing (hysteresis).
+   */
+  activeAlerts: Map<string, Alert>
 }
 
 /** The period every "this month" figure in a detector refers to. */
