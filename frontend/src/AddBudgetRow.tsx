@@ -1,20 +1,15 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { readWriteResult } from "./lib/writeResult"
 
-const ALL_CATEGORIES = [
-  "Food & Dining",
-  "Shopping",
-  "Bills & Utilities",
-  "Transportation",
-  "Entertainment",
-  "Health & Fitness",
-  "Travel",
-  "Personal Care",
-  "Education",
-  "Other",
-]
+// The category list comes from GET /budgets/categories (M7.3). It used to be
+// hardcoded here and had drifted from what the API accepts in both directions:
+// it offered Health & Fitness, Personal Care and Education, which upsertBudget
+// rejects, and hid Housing, Subscriptions and Debt, which it accepts. Choosing
+// a rejected one failed the write — silently, until readWriteResult surfaced it.
+// backend/tests/budget-categories.test.ts pins that the endpoint's list is
+// exactly the set the API accepts, which is what makes this safe.
 
 interface Props {
   existingCategories: string[]
@@ -31,9 +26,30 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
   // category is a 500 — both used to close the form as if the budget was added.
   // (The category list itself is still hardcoded — M7.3 notes, *Budgets*.)
   const [error, setError] = useState<string | null>(null)
+  // null while the list is still loading — an empty array is a real answer.
+  const [allCategories, setAllCategories] = useState<string[] | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
   const apiFetch = useApiFetch()
 
-  const available = ALL_CATEGORIES.filter(c => !existingCategories.includes(c))
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await apiFetch(`${API_URL}/budgets/categories`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = (await res.json()) as Array<{ category: string }>
+        if (!cancelled) setAllCategories(data.map(c => c.category))
+      } catch (e: any) {
+        // Say so rather than falling back to a guess: a stale local list is
+        // exactly what this change removes.
+        if (!cancelled) setListError(e.message ?? "could not load categories")
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiFetch])
+
+  const available = (allCategories ?? []).filter(c => !existingCategories.includes(c))
+  const loading = allCategories === null && listError === null
 
   async function submit() {
     const val = parseFloat(limit)
@@ -65,7 +81,8 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
     }
   }
 
-  if (available.length === 0) return null
+  // Only hide the control once the real list says every category is budgeted.
+  if (allCategories !== null && available.length === 0) return null
 
   if (!open) {
     return (
@@ -104,6 +121,7 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
       <select
         autoFocus
         value={category}
+        disabled={loading || listError !== null}
         onChange={e => setCategory(e.target.value)}
         style={{
           background: "#161e14",
@@ -114,13 +132,26 @@ export default function AddBudgetRow({ existingCategories, onAdded }: Props) {
           fontFamily: "IBM Plex Mono, monospace",
           fontSize: 12,
           outline: "none",
+          opacity: loading || listError ? 0.5 : 1,
         }}
       >
-        <option value="">Select category…</option>
+        <option value="">
+          {loading ? "Loading categories…" : listError ? "Categories unavailable" : "Select category…"}
+        </option>
         {available.map(c => (
           <option key={c} value={c}>{c}</option>
         ))}
       </select>
+
+      {listError && (
+        <div role="alert" style={{
+          fontFamily: "IBM Plex Mono, monospace",
+          fontSize: 11,
+          color: "#e85555",
+        }}>
+          ⚠ Couldn't load the category list: {listError}
+        </div>
+      )}
 
       <input
         type="number"
