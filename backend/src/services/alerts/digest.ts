@@ -1,5 +1,7 @@
 import prisma from "../../lib/prisma"
-import { isSpending, mapPlaidCategory } from "../../lib/categoryMap"
+import { PAYMENTS_TO_PEOPLE } from "../../lib/classifier"
+import { classifyWindow, spendByBucketForRows, type ClassifiedRow } from "../classification.service"
+import { getPeriodStartDay } from "../user.service"
 
 export interface WeeklyDigest {
   weekStart: string
@@ -19,41 +21,32 @@ export async function buildWeeklyDigest(userId: string): Promise<WeeklyDigest> {
   const weekEnd = new Date(weekStart); weekEnd.setUTCDate(weekStart.getUTCDate() + 7)
   const prevWeekStart = new Date(weekStart); prevWeekStart.setUTCDate(weekStart.getUTCDate() - 7)
 
-  const [thisWeekTxs, lastWeekTxs, recentAlerts] = await Promise.all([
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, date: { gte: weekStart, lt: weekEnd } },
-    }),
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, date: { gte: prevWeekStart, lt: weekStart } },
-    }),
+  // M7.3: classified rows, so a transfer between your own accounts is no longer
+  // a week's income and paying a card is no longer a week's spending.
+  //
+  // A week is NOT a money period, so the payment-app total here is netted within
+  // the week rather than capped per period. That is a different quantity, by
+  // design: a weekly digest reports the week. It means these figures do not sum
+  // to the period figures on the Overview, and should not be expected to.
+  const startDay = await getPeriodStartDay(userId)
+  const [classification, recentAlerts] = await Promise.all([
+    classifyWindow(userId, { since: prevWeekStart, until: weekEnd, startDay }),
     prisma.alert.count({
       where: { userId, deletedAt: null, triggeredAt: { gte: weekStart, lt: weekEnd } },
     }),
   ])
 
-  let spent = 0, income = 0
-  for (const tx of thisWeekTxs) {
-    const amt = Number(tx.amount)
-    if (amt > 0 && isSpending(tx.categoryPrimary)) spent += amt
-    else if (amt < 0) income += Math.abs(amt)
-  }
+  const inWeek = (row: ClassifiedRow, from: Date, to: Date) => row.date >= from && row.date < to
+  const thisWeekRows = classification.rows.filter((r) => inWeek(r, weekStart, weekEnd))
+  const lastWeekRows = classification.rows.filter((r) => inWeek(r, prevWeekStart, weekStart))
 
-  const thisCats: Record<string, number> = {}
-  const lastCats: Record<string, number> = {}
-  for (const tx of thisWeekTxs) {
-    const amt = Number(tx.amount)
-    if (amt > 0 && isSpending(tx.categoryPrimary)) {
-      const c = mapPlaidCategory(tx.categoryPrimary)
-      thisCats[c] = (thisCats[c] ?? 0) + amt
-    }
-  }
-  for (const tx of lastWeekTxs) {
-    const amt = Number(tx.amount)
-    if (amt > 0 && isSpending(tx.categoryPrimary)) {
-      const c = mapPlaidCategory(tx.categoryPrimary)
-      lastCats[c] = (lastCats[c] ?? 0) + amt
-    }
-  }
+  const thisCats = spendByBucketForRows(thisWeekRows, PAYMENTS_TO_PEOPLE)
+  const lastCats = spendByBucketForRows(lastWeekRows, PAYMENTS_TO_PEOPLE)
+
+  const spent = Object.values(thisCats).reduce((s, v) => s + v, 0)
+  const income = thisWeekRows
+    .filter((r) => r.verdict.kind === "income")
+    .reduce((s, r) => s + Math.abs(r.amount), 0)
 
   let biggestMover: WeeklyDigest["biggestMover"] = null
   for (const c of Object.keys(thisCats)) {

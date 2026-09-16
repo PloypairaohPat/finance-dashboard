@@ -211,12 +211,13 @@ export function spendByBucket(
 }
 
 /**
- * The payment-app cap over exactly the rows given.
+ * Payments to people, netted within exactly the rows given.
  *
- * PERIOD-SCOPED: only correct when those rows are a whole money period. See the
- * warning on classifyWindow — a cap computed over part of a period, or over a
- * window that straddles two, is not a smaller version of the right answer, it
- * is a wrong one.
+ * Over a whole money period this IS the period cap (D5). Over any other window —
+ * a week, part of a period — it is a different quantity: "net payments to people
+ * in this window". That can be a legitimate figure to report, but it is not a
+ * smaller version of the period figure and weekly numbers computed this way do
+ * not sum to the period's. Use it deliberately, and say which one you mean.
  */
 export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
   let out = 0

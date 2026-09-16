@@ -1,6 +1,8 @@
 import prisma from "../lib/prisma"
 import { fetchRecurring } from "./recurring.service"
 import { mapPlaidCategory } from "../lib/categoryMap"
+import { classifyWindow } from "./classification.service"
+import { getPeriodStartDay } from "./user.service"
 
 export type StreamKind = "subscription" | "bill" | "income"
 export type Frequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "SEMI_MONTHLY" | "ANNUALLY" | "UNKNOWN"
@@ -228,19 +230,25 @@ export async function fetchSubscriptionAnalysis(
   }
 
   // 2. Pull recent transactions for custom detection + enrichment
-  const txs = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, date: { gte: ninetyAgo } },
-    select: { date: true, amount: true, categoryPrimary: true, cleanName: true, name: true },
-  })
+  //
+  // M7.3, minimum change only: a row the classifier does not call spending
+  // cannot become a subscription. Any repeating positive amount used to qualify,
+  // so a monthly transfer to savings, or a card payment, could be detected as a
+  // recurring "bill". Detection itself is untouched — whether "subscription" is
+  // a classifier concept at all is M7.6's question, and this machinery is being
+  // replaced with Plaid Recurring Transactions there.
+  const startDay = await getPeriodStartDay(userId)
+  const { rows } = await classifyWindow(userId, { since: ninetyAgo, until: now, startDay })
 
-  // Convert Decimal amounts + remap categoryPrimary → category for internal use
-  const txsNormalized = txs.map(tx => ({
-    date: tx.date,
-    amount: tx.amount.toNumber(),
-    category: tx.categoryPrimary,
-    cleanName: tx.cleanName,
-    name: tx.name,
-  }))
+  const txsNormalized = rows
+    .filter(row => row.verdict.kind === "spend")
+    .map(row => ({
+      date: row.date,
+      amount: row.amount,
+      category: row.categoryPrimary,
+      cleanName: row.merchantLabel,
+      name: row.merchantLabel,
+    }))
 
   // 3. Custom detection — exclude merchants already in Plaid streams
   const plaidMerchants = new Set(plaidStreams.map(s => normalizeMerchant(s.merchant)))
