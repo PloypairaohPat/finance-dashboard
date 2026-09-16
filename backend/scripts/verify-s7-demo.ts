@@ -126,3 +126,7 @@ main().catch((err) => {
   console.error('[verify-s7-demo] failed:', err)
   process.exit(1)
 })
+
+// Module scope: these scripts declare top-level names (LOCAL_HOSTS, main) and
+// would otherwise collide with each other in a shared global scope.
+export {}

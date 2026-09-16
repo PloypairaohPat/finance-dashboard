@@ -1,12 +1,9 @@
 import prisma from '../lib/prisma'
 import {
-  mapPlaidCategory, labelForPrimary, isSpending,
-  CATEGORY_COLORS, DISPLAY_CATEGORIES,
+  mapPlaidCategory, labelForPrimary,
+  CATEGORY_COLORS,
   type DisplayCategory,
 } from "../lib/categoryMap"
-import { filterInternalTransfers } from "../utils/transferFilter"
-import { getSubscriptionMerchants } from "./subscriptions.service"
-import { plaidClient } from "../lib/plaidClient"
 import { logoUrlFor } from "../lib/merchantLogos"
 import {
   DEFAULT_PERIOD_START_DAY,
@@ -19,12 +16,6 @@ import {
 import { fetchFirstTransactionDate } from "./activity.service"
 import { PAYMENTS_TO_PEOPLE } from "../lib/classifier"
 import { classifyWindow, spendByBucket, spendForPeriod } from "./classification.service"
-
-/**
- * M7.3: "classifier" is the live path; "legacy" keeps the pre-M7.3 code
- * reachable for scripts/reconcile-m73.ts until every endpoint is converted.
- */
-export type CategoryEngine = "classifier" | "legacy"
 
 export async function fetchTransactions(userId: string) {
   return prisma.transaction.findMany({
@@ -41,118 +32,47 @@ export async function fetchCurrentPeriodCategorySpend(
   userId: string,
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
-  engine: CategoryEngine = "classifier",
 ) {
   const [period] = recentPeriods(now, startDay, 1)
   const categories = await fetchCategorySpend(
     userId,
     { start: fromDateKey(period.start), end: fromDateKey(period.end) },
-    engine,
     startDay,
   )
   return { categories, period }
 }
 
-// Category spend within a window. Without one it falls back to the current
-// calendar month; every caller in the app now passes a period window.
+// Category spend within one money period. Without a window it uses the user's
+// current period; every caller in the app passes one explicitly.
 export async function fetchCategorySpend(
   userId: string,
   window?: { start: Date; end: Date },
-  engine: CategoryEngine = "classifier",
   startDay: number = DEFAULT_PERIOD_START_DAY,
 ) {
+  // The classifier buckets by money period, so the window has to BE a period.
+  // Every caller passes one; without a window, use the user's current period.
   let start: Date, end: Date
   if (window) {
     ({ start, end } = window)
   } else {
-    const now = new Date()
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-    const [yr, mo] = ym.split("-").map(Number)
-    start = new Date(Date.UTC(yr, mo - 1, 1))
-    end   = new Date(Date.UTC(yr, mo, 1))
+    const [current] = recentPeriods(new Date(), startDay, 1)
+    start = fromDateKey(current.start)
+    end = fromDateKey(current.end)
   }
 
-  if (engine === "classifier") {
-    // The classifier buckets by money period, so the window has to BE a period.
-    // Callers all pass one; the no-window fallback above is a calendar month,
-    // which is only a period when the start day is 1 — so derive it properly.
-    if (!window) {
-      const [current] = recentPeriods(new Date(), startDay, 1)
-      start = fromDateKey(current.start)
-      end = fromDateKey(current.end)
-    }
-    const { rows, paymentAppByPeriod } = await classifyWindow(userId, { since: start, until: end, startDay })
-    const periodKey = periodKeyOf(start, startDay)
-    const buckets = spendByBucket(rows, periodKey, startDay, paymentAppByPeriod, PAYMENTS_TO_PEOPLE)
-    const total = Object.values(buckets).reduce((a, b) => a + b, 0)
-    return Object.entries(buckets)
-      .filter(([, amount]) => amount !== 0)
-      .map(([category, amount]) => ({
-        category,
-        amount: Number(amount.toFixed(2)),
-        color: CATEGORY_COLORS[category as DisplayCategory] ?? "#5a7a5a",
-        percentage: total > 0 ? Number(((amount / total) * 100).toFixed(1)) : 0,
-      }))
-      .sort((a, b) => b.amount - a.amount)
-  }
-
-  // Fetch all transactions for the month (both legs needed for pair-match in Tier 2)
-  const [allTxsRaw, rawAccounts, plaidItems] = await Promise.all([
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      select: { id: true, amount: true, categoryPrimary: true, cleanName: true, name: true, accountId: true, date: true },
-    }),
-    prisma.account.findMany({ where: { userId }, select: { id: true } }),
-    prisma.plaidItem.findMany({ where: { userId }, select: { institutionName: true } }),
-  ])
-
-  const userAccountIds = new Set(rawAccounts.map(a => a.id))
-  const linkedInstitutionNames = plaidItems.map(i => i.institutionName).filter(Boolean) as string[]
-  const allNums = allTxsRaw.map(tx => ({ ...tx, amount: tx.amount.toNumber() }))
-
-  const { internalIds, soloCount, pairedCount } = await filterInternalTransfers(
-    userId, allNums, userAccountIds, linkedInstitutionNames,
-  )
-  if (soloCount > 0 || pairedCount > 0) {
-    console.log(`🔁 [breakdown] filtered ${soloCount} solo (counterparty), ${pairedCount} paired`)
-  }
-
-  // Only positive-amount, non-internal transactions feed the spending buckets
-  const txs = allNums.filter(tx => tx.amount > 0 && !internalIds.has(tx.id))
-
-  let subMerchants: Set<string>
-  try {
-    subMerchants = await getSubscriptionMerchants(userId, plaidClient)
-  } catch (err) {
-    console.warn("Subscription override unavailable, falling back:", err)
-    subMerchants = new Set()
-  }
-
-  const buckets: Record<DisplayCategory, number> = Object.fromEntries(
-    DISPLAY_CATEGORIES.map(c => [c, 0])
-  ) as Record<DisplayCategory, number>
-
-  for (const tx of txs) {
-    if (!isSpending(tx.categoryPrimary)) continue
-    const merchant = (tx.cleanName ?? tx.name ?? "").toLowerCase()
-    const display: DisplayCategory = subMerchants.has(merchant)
-      ? "Subscriptions"
-      : mapPlaidCategory(tx.categoryPrimary)
-    buckets[display] += tx.amount
-  }
-
+  const { rows, paymentAppByPeriod } = await classifyWindow(userId, { since: start, until: end, startDay })
+  const periodKey = periodKeyOf(start, startDay)
+  const buckets = spendByBucket(rows, periodKey, startDay, paymentAppByPeriod, PAYMENTS_TO_PEOPLE)
   const total = Object.values(buckets).reduce((a, b) => a + b, 0)
 
-  return DISPLAY_CATEGORIES
-    .map(category => ({
+  return Object.entries(buckets)
+    .filter(([, amount]) => amount !== 0)
+    .map(([category, amount]) => ({
       category,
-      amount: Number(buckets[category].toFixed(2)),
-      color: CATEGORY_COLORS[category],
-      percentage: total > 0
-        ? Number(((buckets[category] / total) * 100).toFixed(1))
-        : 0,
+      amount: Number(amount.toFixed(2)),
+      color: CATEGORY_COLORS[category as DisplayCategory] ?? "#5a7a5a",
+      percentage: total > 0 ? Number(((amount / total) * 100).toFixed(1)) : 0,
     }))
-    .filter(c => c.amount > 0)
     .sort((a, b) => b.amount - a.amount)
 }
 
@@ -164,7 +84,6 @@ export async function fetchCategoryComparison(
   periodCount = 3,
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
-  engine: CategoryEngine = "classifier",
 ) {
   // Periods from before the user's first transaction are dropped (Q2): with
   // no history, "was $0" / "new" against a period they didn't exist in misleads.
@@ -174,21 +93,6 @@ export async function fetchCategoryComparison(
   )
   const out: Array<Period & { month: string; total: number; categories: Record<string, number> }> = []
   if (periods.length === 0) return out
-
-  if (engine === "legacy") {
-    for (const p of periods) {
-      const spend = await fetchCategorySpend(
-        userId,
-        { start: fromDateKey(p.start), end: fromDateKey(p.end) },
-        "legacy",
-        startDay,
-      )
-      const categories = Object.fromEntries(spend.map(s => [s.category, s.amount]))
-      const total = spend.reduce((sum, s) => sum + s.amount, 0)
-      out.push({ ...p, month: p.key, total, categories })
-    }
-    return out
-  }
 
   // One classified window for every period, rather than a query and a transfer
   // filter per period. Pairs that straddle a period boundary depend on it.
@@ -225,7 +129,6 @@ export async function fetchMonthlyTotals(
   periodCount: number = 12,
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
-  engine: CategoryEngine = "classifier",
 ): Promise<MonthlyTotal[]> {
   // Periods from before the user's first transaction are dropped (Q2); empty
   // periods after it stay as zeros. No transactions at all means no periods.
@@ -235,55 +138,25 @@ export async function fetchMonthlyTotals(
   )
   if (periods.length === 0) return []
 
-  if (engine === "classifier") {
-    const { rows: classified, paymentAppByPeriod } = await classifyWindow(userId, {
-      since: fromDateKey(periods[0].start),
-      until: fromDateKey(periods[periods.length - 1].end),
-      startDay,
-    })
-    return periods.map((p) => ({
-      ...p,
-      month: p.key,
-      total: spendForPeriod(classified, p.key, startDay, paymentAppByPeriod),
-      // Counts the rows that make up the bar: spending and the refunds netted
-      // off it. Transfers and card payments are no longer spending, so a period
-      // of nothing but transfers is honestly an empty bar.
-      txCount: classified.filter(
-        (r) =>
-          periodKeyOf(r.date, startDay) === p.key &&
-          (r.verdict.kind === "spend" || r.verdict.kind === "refund"),
-      ).length,
-    }))
-  }
-
-  const rows = await prisma.transaction.findMany({
-    where: {
-      userId,
-      deletedAt: null,
-      pending:   false,
-      amount:    { gt: 0 },
-      date:      { gte: fromDateKey(periods[0].start), lt: fromDateKey(periods[periods.length - 1].end) },
-    },
-    select: { date: true, amount: true },
+  const { rows: classified, paymentAppByPeriod } = await classifyWindow(userId, {
+    since: fromDateKey(periods[0].start),
+    until: fromDateKey(periods[periods.length - 1].end),
+    startDay,
   })
 
-  const map: Record<string, { total: number; count: number }> = {}
-  for (const tx of rows) {
-    const key = periodKeyOf(tx.date, startDay)
-    if (!map[key]) map[key] = { total: 0, count: 0 }
-    map[key].total += tx.amount.toNumber()
-    map[key].count += 1
-  }
-
-  return periods.map((p) => {
-    const { total, count } = map[p.key] ?? { total: 0, count: 0 }
-    return {
-      ...p,
-      month:   p.key,
-      total:   Math.round(total * 100) / 100,
-      txCount: count,
-    }
-  })
+  return periods.map((p) => ({
+    ...p,
+    month: p.key,
+    total: spendForPeriod(classified, p.key, startDay, paymentAppByPeriod),
+    // Counts the rows that make up the bar: spending and the refunds netted off
+    // it. Transfers and card payments are no longer spending, so a period of
+    // nothing but transfers is honestly an empty bar.
+    txCount: classified.filter(
+      (r) =>
+        periodKeyOf(r.date, startDay) === p.key &&
+        (r.verdict.kind === "spend" || r.verdict.kind === "refund"),
+    ).length,
+  }))
 }
 
 // ── M5.7 Step 2: Search with cursor pagination + enrichment ──────────

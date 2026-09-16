@@ -104,23 +104,18 @@ describe('budgets cover the money period, not the calendar month', () => {
     expect(res.body.budgets[0].month).toBe(currentPeriodKey)
   })
 
-  it('the legacy path still uses the calendar month, which is a different window', async () => {
-    const legacy = await fetchBudgetsWithSpend(USER, undefined, 'legacy', START_DAY)
-    const classifier = await fetchBudgetsWithSpend(USER, undefined, 'classifier', START_DAY)
-    // Both transactions are within a day of each other, so whenever the calendar
-    // month and the period disagree about the boundary, the totals differ.
-    const sameWindow = beforeBoundary.getUTCMonth() === onBoundary.getUTCMonth()
-    if (sameWindow) {
-      expect(legacy[0].currentSpend).toBe(140)
-      expect(classifier[0].currentSpend).toBe(40)
-    } else {
-      // The boundary day is also a month boundary: both windows start there.
-      expect(legacy[0].currentSpend).toBe(classifier[0].currentSpend)
-    }
+  it('asking for the previous period returns that period, not this one', async () => {
+    const [previous] = recentPeriods(new Date(), START_DAY, 2)
+    const [budget] = await fetchBudgetsWithSpend(USER, previous.key, START_DAY)
+    // The $100 the day before the boundary belongs to the previous period, and
+    // asking for that period is how you see it.
+    expect(budget.currentSpend).toBe(100)
+    expect(budget.month).toBe(previous.key)
+    expect(beforeBoundary.getTime()).toBeLessThan(onBoundary.getTime())
   })
 
   it('paces the projection against the period, not the calendar month', async () => {
-    const [budget] = await fetchBudgetsWithSpend(USER, undefined, 'classifier', START_DAY)
+    const [budget] = await fetchBudgetsWithSpend(USER, undefined, START_DAY)
     const [, current] = recentPeriods(new Date(), START_DAY, 2)
     if (current.inProgress && current.dayOfPeriod >= 7) {
       const expected = Math.round(((40 / current.dayOfPeriod) * current.daysInPeriod) * 100) / 100

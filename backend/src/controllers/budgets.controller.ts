@@ -41,7 +41,7 @@ export async function getBudgets(
     const month = req.query.month as string | undefined
     // M7.3: budgets run on the user's money period, so the start day matters.
     const startDay = await getPeriodStartDay(userId)
-    const budgets = await fetchBudgetsWithSpend(userId, month, "classifier", startDay)
+    const budgets = await fetchBudgetsWithSpend(userId, month, startDay)
     res.json({ budgets, periodStartDay: startDay })
   } catch (err: any) {
     console.error("getBudgets:", err.message)
@@ -57,7 +57,7 @@ export async function getBudgetStatus(
     const userId = getUserId(req)
     const month = req.query.month as string | undefined
     const startDay = await getPeriodStartDay(userId)
-    const status = await fetchBudgetStatus(userId, month, "classifier", startDay)
+    const status = await fetchBudgetStatus(userId, month, startDay)
     res.json(status)
   } catch (err: any) {
     console.error("getBudgetStatus:", err.message)
