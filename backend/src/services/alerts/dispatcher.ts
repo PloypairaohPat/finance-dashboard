@@ -1,6 +1,9 @@
 import prisma from "../../lib/prisma"
 import type { Detector, DetectorContext, DetectedAlert } from "./types"
 import { fetchSubscriptionAnalysis } from "../subscriptions.service"
+import { classifyWindow } from "../classification.service"
+import { getPeriodStartDay } from "../user.service"
+import { fromDateKey, recentPeriods } from "../../lib/period"
 import { plaidClient } from "../../lib/plaidClient"
 import { Prisma } from "@prisma/client"
 
@@ -23,23 +26,42 @@ const DETECTORS: Detector[] = [
   detectPositiveMilestones,
 ]
 
-async function loadContext(userId: string): Promise<DetectorContext> {
-  const now = new Date()
-  const since = new Date(now); since.setDate(since.getDate() - 120)
+/** How many money periods of history the detectors need: current + 3 prior, plus one spare. */
+const CONTEXT_PERIODS = 5
 
-  const [accounts, transactions, budgets, subsAnalysis] = await Promise.all([
+export async function loadContext(userId: string): Promise<DetectorContext> {
+  const now = new Date()
+  const startDay = await getPeriodStartDay(userId)
+
+  // Whole periods, not "120 days ago". Detectors compare a period against prior
+  // periods, and the payment-app cap is a whole-period figure that classifyWindow
+  // refuses to report for a period it only partly covers.
+  const periods = recentPeriods(now, startDay, CONTEXT_PERIODS)
+
+  const [accounts, classification, budgets, subsAnalysis] = await Promise.all([
     prisma.account.findMany({
       where: { userId },
     }),
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, date: { gte: since } },
-      orderBy: { date: "desc" },
+    classifyWindow(userId, {
+      since: fromDateKey(periods[0].start),
+      until: fromDateKey(periods[periods.length - 1].end),
+      startDay,
     }),
     prisma.budget.findMany({ where: { userId } }),
     fetchSubscriptionAnalysis(userId, plaidClient).catch(() => null),
   ])
 
-  return { userId, now, accounts, transactions, budgets, subscriptionAnalysis: subsAnalysis }
+  return {
+    userId,
+    now,
+    startDay,
+    accounts,
+    periods,
+    classified: classification.rows,
+    paymentAppByPeriod: classification.paymentAppByPeriod,
+    budgets,
+    subscriptionAnalysis: subsAnalysis,
+  }
 }
 
 export async function runDetectors(userId: string): Promise<void> {

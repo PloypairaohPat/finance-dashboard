@@ -73,15 +73,10 @@ async function main() {
   const comparison = await fetchCategoryComparison(DEMO, 3, 1, now)
   const breakdown = await fetchCategorySpend(DEMO)
   const budgets = await fetchBudgetsWithSpend(DEMO)
-  const since = new Date(now); since.setDate(since.getDate() - 120)
-  const ctxTransactions = await prisma.transaction.findMany({ where: { userId: DEMO, deletedAt: null, date: { gte: since } }, orderBy: { date: 'desc' } })
-  const ctx = {
-    userId: DEMO, now,
-    accounts: await prisma.account.findMany({ where: { userId: DEMO } }),
-    transactions: ctxTransactions,
-    budgets: await prisma.budget.findMany({ where: { userId: DEMO } }),
-    subscriptionAnalysis: null,
-  } as any
+  // M7.3: detectors run on classified rows, so build the context the same way
+  // the dispatcher does rather than hand-rolling one that no longer matches.
+  const { loadContext } = await import('../src/services/alerts/dispatcher')
+  const ctx = await loadContext(DEMO)
   const detected = [
     ...(await detectOverspending(ctx)),
     ...(await detectBudgetExceeded(ctx)),

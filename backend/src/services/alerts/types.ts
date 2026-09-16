@@ -1,5 +1,7 @@
-import type { Account, Budget, Transaction } from "@prisma/client"
+import type { Account, Budget } from "@prisma/client"
 import type { SubscriptionAnalysis } from "../subscriptions.service"
+import type { ClassifiedRow } from "../classification.service"
+import type { Period } from "../../lib/period"
 
 export type AlertKind =
   | "overspending"
@@ -23,14 +25,36 @@ export interface DetectedAlert {
 }
 
 // Shared context — loaded once, passed to every detector.
-// Loading once avoids N DB round-trips when we run 7 detectors.
+//
+// M7.3: detectors are given CLASSIFIED rows, not raw transactions. Raw rows are
+// deliberately not here: while they were, each detector re-decided what counted
+// as spending, and five of them decided differently from the screens their
+// alerts refer to. A detector that needs to know what a transaction means now
+// has to read the verdict.
 export interface DetectorContext {
   userId: string
   now: Date
+  /** The user's money-period start day (1–28). */
+  startDay: number
   accounts: Account[]
-  transactions: Transaction[]       // last 120 days
-  budgets: Budget[]                 // current month
+  /** The money periods covered, oldest first; the last one is in progress. */
+  periods: Period[]
+  /** Every row in those periods, with its classifier verdict. */
+  classified: ClassifiedRow[]
+  /** Payment-app spend after the per-period cap, by period key. */
+  paymentAppByPeriod: Map<string, number>
+  budgets: Budget[]
   subscriptionAnalysis: SubscriptionAnalysis | null  // null if we couldn't fetch
+}
+
+/** The period every "this month" figure in a detector refers to. */
+export function currentPeriod(ctx: DetectorContext): Period {
+  return ctx.periods[ctx.periods.length - 1]
+}
+
+/** The completed periods before the current one, most recent last. */
+export function priorPeriods(ctx: DetectorContext, count: number): Period[] {
+  return ctx.periods.slice(Math.max(0, ctx.periods.length - 1 - count), ctx.periods.length - 1)
 }
 
 export type Detector = (ctx: DetectorContext) => DetectedAlert[] | Promise<DetectedAlert[]>

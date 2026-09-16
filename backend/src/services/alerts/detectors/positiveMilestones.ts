@@ -1,76 +1,68 @@
 import type { Detector } from "../types"
-import { isSpending } from "../../../lib/categoryMap"
+import { currentPeriod, priorPeriods } from "../types"
+import { incomeForPeriod, savingsRateFor, spendForPeriod } from "../../classification.service"
 
+const MILESTONE_RATE = 30
+const PRIOR_PERIODS = 3
+
+// M7.3: every figure here comes from the classifier. The savings-rate milestone
+// also respects the same floor as the Monthly summary, so a period with almost
+// no income can no longer produce a celebratory "you saved 97%".
 export const detectPositiveMilestones: Detector = (ctx) => {
-  const { transactions, accounts, now } = ctx
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  const { accounts } = ctx
+  const period = currentPeriod(ctx)
+  const priors = priorPeriods(ctx, PRIOR_PERIODS)
   const out = []
 
-  // ── 1. Savings rate ≥ 30% this month ────────────────────────────────────
-  const monthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))
-  let monthSpent = 0, monthIncome = 0
-  for (const tx of transactions) {
-    const amt = Number(tx.amount)
-    if (tx.date < monthStart) continue
-    if (amt > 0 && isSpending(tx.categoryPrimary)) monthSpent += amt
-    else if (amt < 0) monthIncome += Math.abs(amt)
-  }
+  const spendIn = (key: string) => spendForPeriod(ctx.classified, key, ctx.startDay, ctx.paymentAppByPeriod)
+  const incomeIn = (key: string) => incomeForPeriod(ctx.classified, key, ctx.startDay)
 
-  if (monthIncome > 0) {
-    const savingsRate = ((monthIncome - monthSpent) / monthIncome) * 100
-    if (savingsRate >= 30) {
-      let priorHighCount = 0
-      for (let i = 1; i <= 3; i++) {
-        const pStart = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i, 1))
-        const pEnd   = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i + 1, 1))
-        let ps = 0, pi = 0
-        for (const tx of transactions) {
-          const amt = Number(tx.amount)
-          if (tx.date < pStart || tx.date >= pEnd) continue
-          if (amt > 0 && isSpending(tx.categoryPrimary)) ps += amt
-          else if (amt < 0) pi += Math.abs(amt)
-        }
-        if (pi > 0 && ((pi - ps) / pi) * 100 >= 30) priorHighCount++
-      }
-      if (priorHighCount === 0) {
-        out.push({
-          kind: "positive_milestone" as const,
-          fingerprint: `milestone:savings_rate_high:${ym}`,
-          severity: "positive" as const,
-          title: `You saved ${savingsRate.toFixed(0)}% of your income this month`,
-          body: `That's above the 30% milestone and your best savings rate in the past 3 months. Keep it up!`,
-          data: { savingsRate: Number(savingsRate.toFixed(1)), monthSpent, monthIncome },
-        })
-      }
+  const monthSpent = spendIn(period.key)
+  const monthIncome = incomeIn(period.key)
+  const priorIncomes = priors.map((p) => incomeIn(p.key))
+  const noun = ctx.startDay === 1 ? "month" : "period"
+
+  // ── 1. Savings rate ≥ 30% this period ───────────────────────────────────
+  const { rate } = savingsRateFor(monthIncome, monthIncome - monthSpent, priorIncomes)
+  if (rate !== null && rate >= MILESTONE_RATE) {
+    const priorHighCount = priors.filter((p) => {
+      const pIncome = incomeIn(p.key)
+      const pRate = savingsRateFor(pIncome, pIncome - spendIn(p.key), priorIncomes).rate
+      return pRate !== null && pRate >= MILESTONE_RATE
+    }).length
+
+    if (priorHighCount === 0) {
+      out.push({
+        kind: "positive_milestone" as const,
+        fingerprint: `milestone:savings_rate_high:${period.key}`,
+        severity: "positive" as const,
+        title: `You saved ${rate.toFixed(0)}% of your income this ${noun}`,
+        body: `That's above the 30% milestone and your best savings rate in the past 3 ${noun}s. Keep it up!`,
+        data: { savingsRate: rate, monthSpent, monthIncome },
+      })
     }
   }
 
-  // ── 2. Spending down >10% month-over-month ───────────────────────────────
-  const prevMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1))
-  const prevMonthEnd   = new Date(monthStart)
-  let prevSpent = 0
-  for (const tx of transactions) {
-    const amt = Number(tx.amount)
-    if (tx.date < prevMonthStart || tx.date >= prevMonthEnd) continue
-    if (amt > 0 && isSpending(tx.categoryPrimary)) prevSpent += amt
-  }
+  // ── 2. Spending down >10% against the previous period ───────────────────
+  const previous = priors[priors.length - 1]
+  const prevSpent = previous ? spendIn(previous.key) : 0
   if (prevSpent > 100 && monthSpent > 0) {
     const dropPct = ((prevSpent - monthSpent) / prevSpent) * 100
     if (dropPct >= 10) {
       out.push({
         kind: "positive_milestone" as const,
-        fingerprint: `milestone:spending_down_mom:${ym}`,
+        fingerprint: `milestone:spending_down_mom:${period.key}`,
         severity: "positive" as const,
-        title: `Spending is down ${dropPct.toFixed(0)}% from last month`,
-        body: `You've spent $${monthSpent.toFixed(0)} so far this month vs $${prevSpent.toFixed(0)} last month. Nice discipline.`,
+        title: `Spending is down ${dropPct.toFixed(0)}% from last ${noun}`,
+        body: `You've spent $${monthSpent.toFixed(0)} so far this ${noun} vs $${prevSpent.toFixed(0)} last ${noun}. Nice discipline.`,
         data: { currentSpent: monthSpent, prevSpent, dropPct: Number(dropPct.toFixed(1)) },
       })
     }
   }
 
-  // ── 3. Runway ≥ 6 months ─────────────────────────────────────────────────
+  // ── 3. Runway ≥ 6 periods ───────────────────────────────────────────────
   const totalLiquid = accounts
-    .filter(a => a.type === "depository")
+    .filter((a) => a.type === "depository")
     .reduce((s, a) => s + Number(a.currentBalance ?? a.availableBalance ?? 0), 0)
   const avgMonthlySpend = prevSpent > 0 ? (monthSpent + prevSpent) / 2 : monthSpent
   if (avgMonthlySpend > 0) {
@@ -78,10 +70,10 @@ export const detectPositiveMilestones: Detector = (ctx) => {
     if (runwayMonths >= 6) {
       out.push({
         kind: "positive_milestone" as const,
-        fingerprint: `milestone:runway_6mo:${ym}`,
+        fingerprint: `milestone:runway_6mo:${period.key}`,
         severity: "positive" as const,
-        title: `You have ${runwayMonths.toFixed(1)} months of runway`,
-        body: `With $${totalLiquid.toFixed(0)} liquid and ~$${avgMonthlySpend.toFixed(0)}/mo in expenses, you're above the 6-month safety net target.`,
+        title: `You have ${runwayMonths.toFixed(1)} ${noun}s of runway`,
+        body: `With $${totalLiquid.toFixed(0)} liquid and ~$${avgMonthlySpend.toFixed(0)}/${noun} in expenses, you're above the 6-${noun} safety net target.`,
         data: { totalLiquid, avgMonthlySpend, runwayMonths: Number(runwayMonths.toFixed(1)) },
       })
     }
