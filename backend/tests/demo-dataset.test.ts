@@ -24,10 +24,13 @@ import { describe, expect, it } from 'vitest'
 import {
   DEMO_ACCOUNTS,
   DEMO_ITEMS,
-  GATE_PASSING_CONFIDENCE,
+  GATE_HIGH,
+  GATE_MEDIUM,
   LINKED_BANK_ALLOWLIST,
   MONTHS_OF_HISTORY,
   PAYMENTS_TO_PEOPLE,
+  R1_WINDOW_DAYS,
+  R2_WINDOW_DAYS,
   SAVINGS_EXCLUSION_CODES,
   UNTESTED_BRANCHES,
   buildDemoDataset,
@@ -65,8 +68,11 @@ const hasMerchantCp = (t: DemoTransaction) =>
   t.counterparties.some((c) => c.type === 'merchant' || c.type === 'marketplace')
 const hasTransferSignal = (t: DemoTransaction) =>
   /^TRANSFER_(IN|OUT)_/.test(t.detailed) || hasLinkedBankCp(t)
-const gatePasses = (t: DemoTransaction) =>
-  t.confidence !== null && (GATE_PASSING_CONFIDENCE as readonly string[]).includes(t.confidence)
+// Two thresholds, chosen per rule by which way that rule fails (D6).
+const gateHigh = (t: DemoTransaction) =>
+  t.confidence !== null && (GATE_HIGH as readonly string[]).includes(t.confidence)
+const gateMedium = (t: DemoTransaction) =>
+  t.confidence !== null && (GATE_MEDIUM as readonly string[]).includes(t.confidence)
 
 const isDepositoryOut = (t: DemoTransaction) => t.amount > 0 && accountType(t.accountKey) === 'depository'
 const isDepositoryIn = (t: DemoTransaction) => t.amount < 0 && accountType(t.accountKey) === 'depository'
@@ -88,8 +94,9 @@ function indexByAmount(rows: DemoTransaction[]): Map<number, DemoTransaction[]> 
 function r1Candidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[]>): DemoTransaction[] {
   if (hasVetoCp(t)) return []
   const same = byAmount.get(Math.abs(cents(t.amount))) ?? []
-  if (isDepositoryOut(t)) return same.filter((o) => isCreditIn(o) && !hasVetoCp(o) && gapDays(t, o) <= 7)
-  if (isCreditIn(t)) return same.filter((o) => isDepositoryOut(o) && !hasVetoCp(o) && gapDays(t, o) <= 7)
+  const ok = (o: DemoTransaction) => !hasVetoCp(o) && gapDays(t, o) <= R1_WINDOW_DAYS
+  if (isDepositoryOut(t)) return same.filter((o) => isCreditIn(o) && ok(o))
+  if (isCreditIn(t)) return same.filter((o) => isDepositoryOut(o) && ok(o))
   return []
 }
 
@@ -98,7 +105,7 @@ function r2Candidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[
   if (!hasTransferSignal(t)) return []
   const same = byAmount.get(Math.abs(cents(t.amount))) ?? []
   const ok = (o: DemoTransaction) =>
-    o.accountKey !== t.accountKey && hasTransferSignal(o) && gapDays(t, o) <= 3
+    o.accountKey !== t.accountKey && hasTransferSignal(o) && gapDays(t, o) <= R2_WINDOW_DAYS
   if (isDepositoryOut(t)) return same.filter((o) => isDepositoryIn(o) && ok(o))
   if (isDepositoryIn(t)) return same.filter((o) => isDepositoryOut(o) && ok(o))
   return []
@@ -190,8 +197,9 @@ describe('every expectation is consistent with the row it describes', () => {
     for (const t of ds.transactions) {
       if (t.expected.kind !== 'refund') continue
       expect(hasMerchantCp(t), t.plaidTransactionId).toBe(true)
+      // Netting removes spend from a named category, so it takes the high gate.
       expect(t.expected.netsAgainst, t.plaidTransactionId)
-        .toBe(gatePasses(t) ? mapPlaidCategory(t.primary) : null)
+        .toBe(gateHigh(t) ? mapPlaidCategory(t.primary) : null)
     }
   })
 
@@ -200,7 +208,10 @@ describe('every expectation is consistent with the row it describes', () => {
       if (t.expected.kind !== 'internal_transfer' || t.expected.rule === 2) continue
       expect((LINKED_BANK_ALLOWLIST as readonly string[]), t.plaidTransactionId).toContain(t.detailed)
       expect(hasLinkedBankCp(t), t.plaidTransactionId).toBe(true)
-      expect(gatePasses(t), t.plaidTransactionId).toBe(true)
+      // Outflow (rule 7): excluding it removes spend, so HIGH+.
+      // Inflow (rule 6): excluding it only removes income, so MEDIUM+ suffices.
+      const passes = t.expected.rule === 7 ? gateHigh(t) : gateMedium(t)
+      expect(passes, t.plaidTransactionId).toBe(true)
     }
   })
 
@@ -208,7 +219,7 @@ describe('every expectation is consistent with the row it describes', () => {
     for (const t of ds.transactions) {
       if (t.expected.kind !== 'savings_transfer') continue
       expect((SAVINGS_EXCLUSION_CODES as readonly string[]), t.plaidTransactionId).toContain(t.detailed)
-      expect(gatePasses(t), t.plaidTransactionId).toBe(true)
+      expect(gateHigh(t), t.plaidTransactionId).toBe(true)
       expect(hasLinkedBankCp(t), t.plaidTransactionId).toBe(false)
     }
   })
@@ -217,7 +228,7 @@ describe('every expectation is consistent with the row it describes', () => {
     for (const t of ds.transactions) {
       if (t.expected.kind !== 'card_payment' || t.expected.rule !== 5) continue
       expect(t.detailed).toBe('LOAN_PAYMENTS_CREDIT_CARD_PAYMENT')
-      expect(gatePasses(t), t.plaidTransactionId).toBe(true)
+      expect(gateHigh(t), t.plaidTransactionId).toBe(true)
       const matched = t.counterparties.some(
         (c) => c.type === 'financial_institution' && institutionsWithLinkedCard.has(norm(c.name)),
       )
@@ -284,6 +295,19 @@ describe('the payment-app cap is per period, with the surplus shown (D5)', () =>
   it('covers both sides: a period that nets inside the cap and one that overflows', () => {
     expect(ds.paymentApp.some((p) => p.surplus === 0 && p.netSpend > 0)).toBe(true)
     expect(ds.paymentApp.some((p) => p.surplus > 0 && p.netSpend === 0)).toBe(true)
+  })
+
+  it('the residue accumulates rather than cancelling: it equals the surplus', () => {
+    const sum = (f: (p: (typeof ds.paymentApp)[number]) => number) => ds.paymentApp.reduce((s, p) => s + f(p), 0)
+    const out = sum((p) => p.out)
+    const inflow = sum((p) => p.in)
+    const reported = sum((p) => p.netSpend) // what the app shows, period by period
+    const trueNet = Math.max(0, out - inflow) // what the same flows net to across all periods
+    // If the cap merely shifted spend between periods these would be equal. They
+    // are not: the floor at zero means a period's surplus is never applied to any
+    // period's spend, so every binding period leaves a permanent residue.
+    expect(reported).toBeGreaterThan(trueNet)
+    expect(reported - trueNet).toBeCloseTo(sum((p) => p.surplus), 2)
   })
 
   it('the boundary case: the payment and its repayment fall in different periods', () => {
@@ -354,9 +378,10 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(hasLinkedBankCp(t)).toBe(true)
     expect(t.expected).toEqual({ kind: 'card_payment', rule: 5 })
   },
-  'r5-gate-inside-medium': ([t]) => {
+  'r5-gate-outside-medium': ([t]) => {
     expect(t.confidence).toBe('MEDIUM')
-    expect(t.expected.kind).toBe('card_payment')
+    expect(hasLinkedBankCp(t)).toBe(true) // everything else says "exclude"…
+    expect(t.expected).toEqual({ kind: 'spend', rule: 5, bucket: 'Debt' }) // …but MEDIUM is not enough
   },
   'r5-linked-bank-without-credit': ([t]) => {
     expect(hasLinkedBankCp(t)).toBe(true)
@@ -395,9 +420,9 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(t.decisions).toContain('D7')
     expect(t.expected).toEqual({ kind: 'refund', rule: 3, netsAgainst: 'Shopping' })
   },
-  'refund-gate-inside-medium': ([t]) => {
+  'refund-gate-outside-medium': ([t]) => {
     expect(t.confidence).toBe('MEDIUM')
-    expect((t.expected as { netsAgainst: string | null }).netsAgainst).toBe('Shopping')
+    expect(t.expected).toMatchObject({ kind: 'refund', netsAgainst: null }) // unallocated, not Shopping
   },
   'refund-gate-missing-confidence': ([t]) => {
     expect(t.confidence).toBeNull()
@@ -429,9 +454,9 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(t.detailed).toBe('TRANSFER_OUT_SAVINGS')
     expect(t.expected).toEqual({ kind: 'savings_transfer', rule: 7 })
   },
-  'savings-gate-inside-medium': ([t]) => {
+  'savings-gate-outside-medium': ([t]) => {
     expect(t.confidence).toBe('MEDIUM')
-    expect(t.expected.kind).toBe('savings_transfer')
+    expect(t.expected).toMatchObject({ kind: 'spend' }) // counted, not trusted as savings
   },
   'savings-gate-outside-low': ([t]) => {
     expect(t.confidence).toBe('LOW')
@@ -445,10 +470,15 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(gapDays(out, inflow)).toBe(3)
     expect(out.expected).toEqual({ kind: 'internal_transfer', rule: 2 })
   },
-  'r2-window-outside-4-days': ([out, inflow]) => {
-    expect(gapDays(out, inflow)).toBe(4)
+  'r2-window-inside-4-days': ([out, inflow]) => {
+    expect(gapDays(out, inflow)).toBe(R2_WINDOW_DAYS)
+    expect(out.expected).toEqual({ kind: 'internal_transfer', rule: 2 })
+    expect(inflow.expected).toEqual({ kind: 'internal_transfer', rule: 2 }) // no longer income
+  },
+  'r2-window-outside-5-days': ([out, inflow]) => {
+    expect(gapDays(out, inflow)).toBe(R2_WINDOW_DAYS + 1)
     expect(out.expected.kind).toBe('savings_transfer')
-    expect(inflow.expected.kind).toBe('income') // open question 2
+    expect(inflow.expected.kind).toBe('income')
   },
   'r2-wrong-claim-tax-refund': ([out, inflow]) => {
     expect(cents(out.amount)).toBe(-cents(inflow.amount))
@@ -504,9 +534,27 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(inflow.expected).toEqual({ kind: 'internal_transfer', rule: 6 })
   },
   'rent-coincidence-outside-window': ([out, inflow]) => {
-    expect(gapDays(out, inflow)).toBe(4)
+    expect(gapDays(out, inflow)).toBe(R2_WINDOW_DAYS + 1)
     expect(out.expected).toMatchObject({ kind: 'spend' })
     expect(inflow.expected.kind).toBe('income')
+  },
+  'rent-coincidence-4-day-cost': ([out, inflow]) => {
+    // What D8 costs: at 3 days this was spend; at 4 the rent-coded leg pairs away.
+    expect(gapDays(out, inflow)).toBe(R2_WINDOW_DAYS)
+    expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')
+    expect(hasLinkedBankCp(out)).toBe(true) // the linked-bank counterparty is what makes it a signal
+    expect(out.expected).toEqual({ kind: 'internal_transfer', rule: 2 })
+    expect(out.decisions).toContain('D8')
+  },
+  'transfer-out-linked-gate-medium': ([t]) => {
+    expect(t.confidence).toBe('MEDIUM')
+    expect((LINKED_BANK_ALLOWLIST as readonly string[])).toContain(t.detailed)
+    expect(t.expected).toMatchObject({ kind: 'spend' }) // removing spend needs HIGH+
+  },
+  'transfer-in-linked-gate-medium': ([t]) => {
+    expect(t.confidence).toBe('MEDIUM')
+    expect((LINKED_BANK_ALLOWLIST as readonly string[])).toContain(t.detailed)
+    expect(t.expected).toEqual({ kind: 'internal_transfer', rule: 6 }) // MEDIUM+ is enough here
   },
 
   // the withdrawal / linked-bank trap

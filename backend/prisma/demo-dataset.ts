@@ -32,8 +32,18 @@ export const DEMO_PERIOD_START_DAY = 1
 /** The visible bucket payment-app outflows land in (docs/m7.3-classifier.md R4). */
 export const PAYMENTS_TO_PEOPLE = 'Payments to people'
 
-/** Confidence levels that pass the gate (G/D6). */
-export const GATE_PASSING_CONFIDENCE = ['VERY_HIGH', 'HIGH', 'MEDIUM'] as const
+/**
+ * The gate is per rule, and each rule's threshold follows its failure direction
+ * (D6). A rule that REMOVES spend when it fires needs HIGH+, because a wrong
+ * exclusion flatters the numbers. A rule whose misfire leaves the money counted
+ * — or keeps it out of income — can take MEDIUM+.
+ */
+export const GATE_HIGH = ['VERY_HIGH', 'HIGH'] as const
+export const GATE_MEDIUM = ['VERY_HIGH', 'HIGH', 'MEDIUM'] as const
+
+/** Pairing windows, in days: R1 card payments, R2 internal transfers (D8). */
+export const R1_WINDOW_DAYS = 7
+export const R2_WINDOW_DAYS = 4
 
 /** Codes a linked-bank counterparty may exclude (D4). Everything else is counted. */
 export const LINKED_BANK_ALLOWLIST = [
@@ -105,6 +115,7 @@ export type DecisionId =
   | 'D5' // payment-app cap is per period, no carry-back
   | 'D6' // the confidence gate, per rule, MEDIUM and up
   | 'D7' // depository refunds (merchant counterparty + spending category)
+  | 'D8' // R2's window is 4 days, for weekend ACH settlement
 
 export type Expected =
   | { kind: 'spend'; rule: 4 | 5 | 7; bucket: string }
@@ -818,10 +829,10 @@ export function buildDemoDataset(now: Date): DemoDataset {
         slug: 'refund-medium', day: 11, account: 'card', amount: -27.8,
         name: 'UNIQLO REFUND', detailed: 'GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES',
         cps: [CP.merchant('Uniqlo')], confidence: 'MEDIUM',
-        expected: refund('GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES', true), decisions: ['D6'],
+        expected: refund('GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES', false), decisions: ['D6'],
       })
-      addCase('refund-gate-inside-medium', 'refund', 'near-miss-inside',
-        'MEDIUM is the lowest level that still nets against a category', [g])
+      addCase('refund-gate-outside-medium', 'refund', 'near-miss-outside',
+        'netting removes spend from a named category, so it needs HIGH+: at MEDIUM the refund stays unallocated', [g])
 
       const h = add({
         slug: 'unclassified-inflow', day: 17, account: 'checking', amount: -40,
@@ -854,10 +865,10 @@ export function buildDemoDataset(now: Date): DemoDataset {
         slug: 'r5-medium', day: 9, account: 'checking', amount: 295,
         name: 'DEMO BANK CARD PAYMENT', detailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
         cps: [CP.demoBank], confidence: 'MEDIUM',
-        expected: { kind: 'card_payment', rule: 5 }, decisions: ['D6'],
+        expected: { kind: 'spend', rule: 5, bucket: 'Debt' }, decisions: ['D6'],
       })
-      addCase('r5-gate-inside-medium', 'card-payment-unpaired', 'near-miss-inside',
-        'MEDIUM passes the gate, so the exclusion still applies', [medium])
+      addCase('r5-gate-outside-medium', 'card-payment-unpaired', 'near-miss-outside',
+        'excluding a card payment removes spend, so it needs HIGH+: MEDIUM is counted', [medium])
 
       const noCard = add({
         slug: 'r5-no-linked-card', day: 11, account: 'nwChecking', amount: 190,
@@ -972,10 +983,10 @@ export function buildDemoDataset(now: Date): DemoDataset {
       const med = add({
         slug: 'savings-unpaired-medium', day: 24, account: 'checking', amount: 175,
         name: 'TRANSFER TO SAVINGS', detailed: 'TRANSFER_OUT_SAVINGS', cps: [],
-        confidence: 'MEDIUM', expected: { kind: 'savings_transfer', rule: 7 }, decisions: ['D6'],
+        confidence: 'MEDIUM', expected: spend('TRANSFER_OUT_SAVINGS'), decisions: ['D6'],
       })
-      addCase('savings-gate-inside-medium', 'savings-transfer', 'near-miss-inside',
-        'MEDIUM still excludes', [med])
+      addCase('savings-gate-outside-medium', 'savings-transfer', 'near-miss-outside',
+        'the savings exclusion removes spend, so it needs HIGH+: at MEDIUM the transfer is counted', [med])
 
       const a = add({
         slug: 'savings-3day-out', day: 8, account: 'checking', amount: 360,
@@ -1002,15 +1013,15 @@ export function buildDemoDataset(now: Date): DemoDataset {
       const a = add({
         slug: 'savings-4day-out', day: 8, account: 'checking', amount: 350,
         name: 'TRANSFER TO SAVINGS', detailed: 'TRANSFER_OUT_SAVINGS', cps: [],
-        expected: { kind: 'savings_transfer', rule: 7 },
+        expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D8'],
       })
       const b = add({
         slug: 'savings-4day-in', day: 12, account: 'savings', amount: -350,
         name: 'TRANSFER FROM CHECKING', detailed: 'TRANSFER_IN_SAVINGS', cps: [],
-        expected: income(),
+        expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D8'],
       })
-      addCase('r2-window-outside-4-days', 'savings-transfer', 'near-miss-outside',
-        'a Friday transfer landing Tuesday is 4 days: no pair, and the inflow becomes income under (c) — open question 2', [a, b])
+      addCase('r2-window-inside-4-days', 'savings-transfer', 'near-miss-inside',
+        'the reason for the 4-day window: a Friday transfer landing Tuesday. At 3 days the inflow was counted as income', [a, b])
 
       const c = add({
         slug: 'savings-vs-tax-refund-out', day: 5, account: 'checking', amount: 1000,
@@ -1086,15 +1097,63 @@ export function buildDemoDataset(now: Date): DemoDataset {
       const a = add({
         slug: 'rent-4day-out', day: 20, account: 'checking', amount: 1650,
         name: 'RENT TRANSFER', detailed: 'RENT_AND_UTILITIES_RENT', cps: [CP.northwind],
-        confidence: 'LOW', expected: spend('RENT_AND_UTILITIES_RENT'), decisions: ['D4'],
+        confidence: 'LOW', expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D1', 'D8'],
       })
       const b = add({
         slug: 'rent-4day-in', day: 24, account: 'nwChecking', amount: -1650,
         name: 'TRANSFER FROM DEMO BANK', detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', cps: [],
-        confidence: 'HIGH', expected: income(), decisions: ['D1'],
+        confidence: 'HIGH', expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D1', 'D8'],
+      })
+      addCase('rent-coincidence-4-day-cost', 'rent-coincidence', 'wrong-claim',
+        'the measured cost of D8: at 3 days this rent-coded outflow was spend; at 4 it pairs with an exact-amount inflow and disappears', [a, b])
+    }
+
+    // ── cases: the new outside boundaries, after D8 widened R2 ──
+    if (back === 5) {
+      const a = add({
+        slug: 'savings-5day-out', day: 8, account: 'checking', amount: 340,
+        name: 'TRANSFER TO SAVINGS', detailed: 'TRANSFER_OUT_SAVINGS', cps: [],
+        expected: { kind: 'savings_transfer', rule: 7 }, decisions: ['D8'],
+      })
+      const b = add({
+        slug: 'savings-5day-in', day: 13, account: 'savings', amount: -340,
+        name: 'TRANSFER FROM CHECKING', detailed: 'TRANSFER_IN_SAVINGS', cps: [],
+        expected: income(), decisions: ['D8'],
+      })
+      addCase('r2-window-outside-5-days', 'savings-transfer', 'near-miss-outside',
+        '5 days is outside even the widened window: the legs stay apart and the inflow becomes income under (c)', [a, b])
+
+      const c = add({
+        slug: 'rent-5day-out', day: 20, account: 'checking', amount: 1650,
+        name: 'RENT TRANSFER', detailed: 'RENT_AND_UTILITIES_RENT', cps: [CP.northwind],
+        confidence: 'LOW', expected: spend('RENT_AND_UTILITIES_RENT'), decisions: ['D4', 'D8'],
+      })
+      const d = add({
+        slug: 'rent-5day-in', day: 25, account: 'nwChecking', amount: -1650,
+        name: 'TRANSFER FROM DEMO BANK', detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', cps: [],
+        confidence: 'HIGH', expected: income(), decisions: ['D8'],
       })
       addCase('rent-coincidence-outside-window', 'rent-coincidence', 'near-miss-outside',
-        '4 days apart: no pair, and a RENT code is not on the D4 allowlist, so it stays spend', [a, b])
+        'the same rent coincidence 5 days apart: outside the window, so the rent is still spend', [c, d])
+
+      // D4's two directions fail differently, so they gate differently (D6).
+      const e = add({
+        slug: 'transfer-out-linked-medium', day: 22, account: 'checking', amount: 145,
+        name: 'TRANSFER TO NORTHWIND', detailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER',
+        cps: [CP.northwind], confidence: 'MEDIUM',
+        expected: spend('TRANSFER_OUT_ACCOUNT_TRANSFER'), decisions: ['D4', 'D6'],
+      })
+      addCase('transfer-out-linked-gate-medium', 'withdrawal-linked-bank', 'near-miss-outside',
+        'excluding an outflow removes spend, so the outflow direction needs HIGH+: MEDIUM is counted', [e])
+
+      const f = add({
+        slug: 'transfer-in-linked-medium', day: 24, account: 'checking', amount: -220,
+        name: 'TRANSFER FROM NORTHWIND', detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER',
+        cps: [CP.northwind], confidence: 'MEDIUM',
+        expected: { kind: 'internal_transfer', rule: 6 }, decisions: ['D4', 'D6'],
+      })
+      addCase('transfer-in-linked-gate-medium', 'withdrawal-linked-bank', 'near-miss-inside',
+        'excluding an inflow only removes income, which cannot flatter spend, so MEDIUM+ is enough', [f])
     }
 
     // ── cases: the withdrawal / linked-bank trap ────────────────
