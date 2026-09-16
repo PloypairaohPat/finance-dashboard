@@ -170,7 +170,9 @@ async function main() {
 
   // ── the real services: the authoritative BEFORE ─────────────────
   const [insights, cashflow, trends, budgets, breakdown] = await Promise.all([
-    fetchInsights(DEMO, startDay, now),
+    // Converted endpoints are called on their LEGACY path here, so BEFORE keeps
+    // meaning "what the app did before M7.3" as each one is wired up.
+    fetchInsights(DEMO, startDay, now, 'legacy'),
     fetchCashFlow(DEMO, 6, startDay, now),
     fetchMonthlyTotals(DEMO, 12, startDay, now),
     fetchBudgetsWithSpend(DEMO),
@@ -404,6 +406,25 @@ async function main() {
     (t) => (subMerchants.has(t.merchantKey) ? 'subscription-override-dropped' : null),
   )
 
+  // ── converted endpoints: does the LIVE service match the prediction? ──
+  // The reconciler says what each figure should become. Once an endpoint is
+  // wired to the classifier it must return exactly that, or the wiring is wrong.
+  const live = await fetchInsights(DEMO, startDay, now)
+  const wiredChecks: Array<{ endpoint: string; figure: string; predicted: number; actual: number }> = [
+    {
+      endpoint: '/insights',
+      figure: 'income',
+      predicted: metrics.find((x) => x.id === 'insights-income')!.afterTotals.get('income') ?? 0,
+      actual: c(live.summary.income),
+    },
+    {
+      endpoint: '/insights',
+      figure: 'expenses',
+      predicted: metrics.find((x) => x.id === 'insights-expenses')!.afterTotals.get('expenses') ?? 0,
+      actual: c(live.summary.expenses),
+    },
+  ]
+
   // ── report ──────────────────────────────────────────────────────
   const out: string[] = []
   const p = (s = '') => out.push(s)
@@ -527,10 +548,33 @@ async function main() {
   p('Both now come from the same rules, so they agree by construction rather than by luck.')
   p()
 
+  p('## Endpoints already wired to the classifier')
+  p()
+  p('Each converted endpoint is called live and compared against the AFTER figure')
+  p('predicted above. A mismatch means the wiring does not match the rules.')
+  p()
+  p('| Endpoint | Figure | Predicted | Live | |')
+  p('|---|---|---:|---:|---|')
+  let allWired = true
+  for (const check of wiredChecks) {
+    const ok = check.predicted === check.actual
+    if (!ok) allWired = false
+    p(
+      `| \`${check.endpoint}\` | ${check.figure} | ${fmt(check.predicted)} | ${fmt(check.actual)} | ${
+        ok ? 'match' : '**MISMATCH**'
+      } |`,
+    )
+  }
+  p()
+  p(`Savings rate: ${live.summary.savingsRate === null ? 'not shown' : `${live.summary.savingsRate}%`}` +
+    ` (floor ${fmt(c(live.summary.savingsRateFloor))}${live.summary.savingsRateSuppressed ? ', suppressed' : ''}).`)
+  p()
+
   p('## Checks')
   p()
   p(`- Every model reproduces its service exactly: **${allFaithful ? 'yes' : 'NO'}**`)
   p(`- Every change is fully attributed, to the cent: **${allReconciled ? 'yes' : 'NO'}**`)
+  p(`- Every wired endpoint returns its predicted figure: **${allWired ? 'yes' : 'NO'}**`)
   p()
 
   const report = out.join('\n')
@@ -541,8 +585,11 @@ async function main() {
     writeFileSync(target, `${report}\n`, 'utf8')
     console.error(`\n[reconcile] wrote ${target}`)
   }
-  if (!allFaithful || !allReconciled) {
-    console.error('\n[reconcile] FAILED: a model did not reproduce its service, or a change is unexplained.')
+  if (!allFaithful || !allReconciled || !allWired) {
+    console.error(
+      '\n[reconcile] FAILED: a model did not reproduce its service, a change is unexplained, ' +
+        'or a wired endpoint disagrees with its prediction.',
+    )
     process.exitCode = 1
   }
 

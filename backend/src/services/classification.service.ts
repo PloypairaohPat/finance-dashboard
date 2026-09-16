@@ -1,0 +1,224 @@
+// ─────────────────────────────────────────────────────────────────
+//  classification.service.ts — load a user's rows and classify them (M7.3).
+//
+//  The one place that turns database rows into classifier input, so the six
+//  endpoints being converted don't each grow their own copy of the Prisma
+//  select, the rawJson unpacking and the window padding.
+//
+//  Window padding matters and is easy to get wrong: R1 pairs a card payment
+//  with an inflow up to 7 days away and R2 pairs transfers up to 4 days away,
+//  either side. Classifying exactly the rows a period contains would break
+//  every pair that straddles a period boundary — the payment would be counted
+//  as spend and its partner as income, which is the very bug being fixed. So
+//  rows are loaded with a pad on both ends, classified together, and the
+//  caller filters by date afterwards.
+// ─────────────────────────────────────────────────────────────────
+
+import prisma from '../lib/prisma'
+import { classify, type ClassificationResult, type ClassifierTx, type Classified } from '../lib/classifier'
+import { periodKeyOf } from '../lib/period'
+
+/** Must be >= the widest pairing window in the classifier (R1's 7 days). */
+export const PAIRING_PAD_DAYS = 7
+const DAY_MS = 86_400_000
+
+export interface ClassifiedRow {
+  id: string
+  accountId: string
+  date: Date
+  amount: number
+  pending: boolean
+  categoryPrimary: string | null
+  categoryDetailed: string | null
+  merchantLabel: string
+  verdict: Classified
+}
+
+export interface ClassifiedWindow {
+  /** Rows inside the requested window, verdicts attached. */
+  rows: ClassifiedRow[]
+  /** The full classification, including padding rows and the per-period cap. */
+  result: ClassificationResult
+  /** Payment-app spend after the cap, by period key. */
+  paymentAppByPeriod: Map<string, number>
+}
+
+export async function classifyWindow(
+  userId: string,
+  window: { since: Date; until: Date; startDay: number },
+): Promise<ClassifiedWindow> {
+  const paddedSince = new Date(window.since.getTime() - PAIRING_PAD_DAYS * DAY_MS)
+  const paddedUntil = new Date(window.until.getTime() + PAIRING_PAD_DAYS * DAY_MS)
+
+  const [accounts, items, rows] = await Promise.all([
+    prisma.account.findMany({ where: { userId }, select: { id: true, type: true, plaidItem: { select: { institutionName: true } } } }),
+    prisma.plaidItem.findMany({ where: { userId }, select: { institutionName: true } }),
+    prisma.transaction.findMany({
+      where: { userId, deletedAt: null, date: { gte: paddedSince, lt: paddedUntil } },
+      select: {
+        id: true, accountId: true, date: true, amount: true, pending: true,
+        categoryPrimary: true, categoryDetailed: true, cleanName: true, name: true, rawJson: true,
+      },
+      orderBy: { date: 'asc' },
+    }),
+  ])
+
+  const accountType = new Map(accounts.map((a) => [a.id, a.type]))
+  const institutionsWithCreditAccount = accounts
+    .filter((a) => a.type === 'credit')
+    .map((a) => a.plaidItem?.institutionName)
+    .filter(Boolean) as string[]
+
+  const prepared = rows.map((r) => {
+    const raw = (r.rawJson ?? {}) as Record<string, unknown>
+    const pfc = (raw.personal_finance_category ?? {}) as Record<string, string>
+    return {
+      row: r,
+      input: {
+        id: r.id,
+        accountId: r.accountId,
+        accountType: accountType.get(r.accountId) ?? 'depository',
+        date: r.date,
+        amount: r.amount.toNumber(),
+        categoryPrimary: r.categoryPrimary,
+        categoryDetailed: r.categoryDetailed,
+        confidence: pfc.confidence_level ?? null,
+        counterparties: (Array.isArray(raw.counterparties) ? raw.counterparties : []) as Array<{
+          name?: string | null
+          type?: string | null
+        }>,
+        pending: r.pending,
+      } satisfies ClassifierTx,
+    }
+  })
+
+  const result = classify(
+    prepared.map((p) => p.input),
+    {
+      linkedInstitutions: items.map((i) => i.institutionName).filter(Boolean) as string[],
+      institutionsWithCreditAccount,
+      periodKeyOf: (d: Date) => periodKeyOf(d, window.startDay),
+    },
+  )
+
+  const inWindow = prepared.filter((p) => p.row.date >= window.since && p.row.date < window.until)
+
+  return {
+    rows: inWindow.map((p) => ({
+      id: p.row.id,
+      accountId: p.row.accountId,
+      date: p.row.date,
+      amount: p.input.amount,
+      pending: p.row.pending,
+      categoryPrimary: p.row.categoryPrimary,
+      categoryDetailed: p.row.categoryDetailed,
+      merchantLabel: p.row.cleanName ?? p.row.name ?? 'Unknown',
+      verdict: result.byId.get(p.row.id)!,
+    })),
+    result,
+    paymentAppByPeriod: new Map(result.paymentApp.map((p) => [p.key, p.spend])),
+  }
+}
+
+// ── the figures every converted endpoint needs ────────────────────
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * Spend for one period: ordinary spend, refunds netted off, and payment-app
+ * payments at their capped total rather than row by row (D5).
+ */
+export function spendForPeriod(
+  rows: readonly ClassifiedRow[],
+  periodKey: string,
+  startDay: number,
+  paymentAppByPeriod: Map<string, number>,
+): number {
+  let total = 0
+  for (const r of rows) {
+    if (periodKeyOf(r.date, startDay) !== periodKey) continue
+    if (r.verdict.rule === 4) continue // capped below
+    if (r.verdict.kind === 'spend' || r.verdict.kind === 'refund') total += r.amount
+  }
+  return round2(total + (paymentAppByPeriod.get(periodKey) ?? 0))
+}
+
+/** Income for one period: definition (c), after every exclusion. */
+export function incomeForPeriod(
+  rows: readonly ClassifiedRow[],
+  periodKey: string,
+  startDay: number,
+): number {
+  let total = 0
+  for (const r of rows) {
+    if (periodKeyOf(r.date, startDay) !== periodKey) continue
+    if (r.verdict.kind === 'income') total += -r.amount
+  }
+  return round2(total)
+}
+
+/** Spend by display bucket for one period, refunds netted against their category. */
+export function spendByBucket(
+  rows: readonly ClassifiedRow[],
+  periodKey: string,
+  startDay: number,
+  paymentAppByPeriod: Map<string, number>,
+  paymentsToPeopleLabel: string,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const r of rows) {
+    if (periodKeyOf(r.date, startDay) !== periodKey) continue
+    if (r.verdict.rule === 4) continue
+    if (r.verdict.kind === 'spend') {
+      const bucket = r.verdict.bucket ?? 'Other'
+      out[bucket] = round2((out[bucket] ?? 0) + r.amount)
+    } else if (r.verdict.kind === 'refund') {
+      const bucket = r.verdict.netsAgainst ?? 'Unallocated refunds'
+      out[bucket] = round2((out[bucket] ?? 0) + r.amount)
+    }
+  }
+  const ptp = paymentAppByPeriod.get(periodKey) ?? 0
+  if (ptp > 0) out[paymentsToPeopleLabel] = round2((out[paymentsToPeopleLabel] ?? 0) + ptp)
+  return out
+}
+
+// ── the savings-rate floor ────────────────────────────────────────
+
+/** When the median can't be computed, the floor money income must clear. */
+export const SAVINGS_RATE_FALLBACK_FLOOR = 100
+const FLOOR_FRACTION = 0.25
+const FLOOR_LOOKBACK_PERIODS = 3
+
+export interface SavingsRate {
+  /** Percent, unclamped — or null when income is under the floor. */
+  rate: number | null
+  floor: number
+  /** True when a rate exists arithmetically but is too unreliable to show. */
+  suppressed: boolean
+}
+
+/**
+ * Savings rate, with the floor that stops a period with almost no income
+ * producing a headline like -8431.6%.
+ *
+ * The floor is 25% of the median income of the last three COMPLETED periods
+ * that had any income, falling back to $100 when there are none. The rate
+ * itself is never clamped: a real -40% period must still read -40%.
+ */
+export function savingsRateFor(
+  income: number,
+  netSaved: number,
+  completedPeriodIncomes: readonly number[],
+): SavingsRate {
+  const withIncome = completedPeriodIncomes.filter((v) => v > 0).slice(-FLOOR_LOOKBACK_PERIODS)
+  let floor = SAVINGS_RATE_FALLBACK_FLOOR
+  if (withIncome.length > 0) {
+    const sorted = [...withIncome].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    const median =
+      sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    floor = round2(median * FLOOR_FRACTION)
+  }
+  if (income < floor) return { rate: null, floor, suppressed: income > 0 }
+  return { rate: Number(((netSaved / income) * 100).toFixed(1)), floor, suppressed: false }
+}
