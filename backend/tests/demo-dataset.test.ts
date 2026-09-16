@@ -551,6 +551,17 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect((LINKED_BANK_ALLOWLIST as readonly string[])).toContain(t.detailed)
     expect(t.expected).toMatchObject({ kind: 'spend' }) // removing spend needs HIGH+
   },
+  'other-transfer-out-not-allowlisted': ([t]) => {
+    expect(t.detailed).toBe('TRANSFER_OUT_OTHER_TRANSFER_OUT')
+    expect(hasLinkedBankCp(t)).toBe(true) // a linked-bank name match…
+    expect((LINKED_BANK_ALLOWLIST as readonly string[])).not.toContain(t.detailed)
+    expect(t.expected).toMatchObject({ kind: 'spend' }) // …is not enough for the catch-all code
+  },
+  'other-transfer-in-not-allowlisted': ([t]) => {
+    expect(t.detailed).toBe('TRANSFER_IN_OTHER_TRANSFER_IN')
+    expect(hasLinkedBankCp(t)).toBe(true)
+    expect(t.expected.kind).toBe('income')
+  },
   'transfer-in-linked-gate-medium': ([t]) => {
     expect(t.confidence).toBe('MEDIUM')
     expect((LINKED_BANK_ALLOWLIST as readonly string[])).toContain(t.detailed)

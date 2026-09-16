@@ -53,8 +53,10 @@ export const LINKED_BANK_ALLOWLIST = [
   'TRANSFER_IN_SAVINGS',
   'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
   'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS',
-  'TRANSFER_OUT_OTHER_TRANSFER_OUT',
-  'TRANSFER_IN_OTHER_TRANSFER_IN',
+  // TRANSFER_*_OTHER_TRANSFER_* are deliberately NOT here: they are Plaid's
+  // catch-all for transfers, which is exactly where a miscoded payment or a
+  // bank-branded P2P lands. They can still be excluded by pairing (R2), which
+  // needs a real second leg; they cannot be excluded on a name match alone.
 ] as const
 
 /** Codes the savings exclusion covers (R7, gated). */
@@ -1135,6 +1137,24 @@ export function buildDemoDataset(now: Date): DemoDataset {
       })
       addCase('rent-coincidence-outside-window', 'rent-coincidence', 'near-miss-outside',
         'the same rent coincidence 5 days apart: outside the window, so the rent is still spend', [c, d])
+
+      // The catch-all transfer codes are off the allowlist: a linked-bank name
+      // match alone must not remove them, in either direction.
+      const g = add({
+        slug: 'other-transfer-out-linked', day: 6, account: 'checking', amount: 95,
+        name: 'TRANSFER', detailed: 'TRANSFER_OUT_OTHER_TRANSFER_OUT', cps: [CP.demoBank],
+        confidence: 'HIGH', expected: spend('TRANSFER_OUT_OTHER_TRANSFER_OUT'), decisions: ['D4'],
+      })
+      addCase('other-transfer-out-not-allowlisted', 'withdrawal-linked-bank', 'wrong-claim',
+        'the catch-all outgoing transfer code with a linked-bank counterparty: counted, because only a real second leg may remove it', [g])
+
+      const h = add({
+        slug: 'other-transfer-in-linked', day: 9, account: 'checking', amount: -115,
+        name: 'TRANSFER', detailed: 'TRANSFER_IN_OTHER_TRANSFER_IN', cps: [CP.demoBank],
+        confidence: 'HIGH', expected: income(), decisions: ['D4'],
+      })
+      addCase('other-transfer-in-not-allowlisted', 'withdrawal-linked-bank', 'wrong-claim',
+        'the incoming mirror: income under (c), not an internal leg', [h])
 
       // D4's two directions fail differently, so they gate differently (D6).
       const e = add({
