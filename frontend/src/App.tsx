@@ -115,7 +115,7 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     transition: "all 0.2s",
   },
   loadingBtn: {
-    background: "#1a2e20",
+    background: "#1a2e20-",
     color: `${colors.green}80`,
     border: `1px solid ${colors.green}20`,
     padding: "16px 36px",
