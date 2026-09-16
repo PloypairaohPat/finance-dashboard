@@ -24,46 +24,24 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { mapPlaidCategory } from '../src/lib/categoryMap'
+import { PAYMENTS_TO_PEOPLE } from '../src/lib/classifier'
 
 export const DEMO_USER_ID = 'demo-user'
 export const MONTHS_OF_HISTORY = 6
 export const DEMO_PERIOD_START_DAY = 1
 
-/** The visible bucket payment-app outflows land in (docs/m7.3-classifier.md R4). */
-export const PAYMENTS_TO_PEOPLE = 'Payments to people'
-
-/**
- * The gate is per rule, and each rule's threshold follows its failure direction
- * (D6). A rule that REMOVES spend when it fires needs HIGH+, because a wrong
- * exclusion flatters the numbers. A rule whose misfire leaves the money counted
- * — or keeps it out of income — can take MEDIUM+.
- */
-export const GATE_HIGH = ['VERY_HIGH', 'HIGH'] as const
-export const GATE_MEDIUM = ['VERY_HIGH', 'HIGH', 'MEDIUM'] as const
-
-/** Pairing windows, in days: R1 card payments, R2 internal transfers (D8). */
-export const R1_WINDOW_DAYS = 7
-export const R2_WINDOW_DAYS = 4
-
-/** Codes a linked-bank counterparty may exclude (D4). Everything else is counted. */
-export const LINKED_BANK_ALLOWLIST = [
-  'TRANSFER_OUT_ACCOUNT_TRANSFER',
-  'TRANSFER_IN_ACCOUNT_TRANSFER',
-  'TRANSFER_OUT_SAVINGS',
-  'TRANSFER_IN_SAVINGS',
-  'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
-  'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS',
-  // TRANSFER_*_OTHER_TRANSFER_* are deliberately NOT here: they are Plaid's
-  // catch-all for transfers, which is exactly where a miscoded payment or a
-  // bank-branded P2P lands. They can still be excluded by pairing (R2), which
-  // needs a real second leg; they cannot be excluded on a name match alone.
-] as const
-
-/** Codes the savings exclusion covers (R7, gated). */
-export const SAVINGS_EXCLUSION_CODES = [
-  'TRANSFER_OUT_SAVINGS',
-  'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
-] as const
+// The rules' constants belong to the classifier. The fixture imports and
+// re-exports them so a changed window or threshold cannot drift between the
+// thing being tested and the thing testing it.
+export {
+  PAYMENTS_TO_PEOPLE,
+  GATE_HIGH,
+  GATE_MEDIUM,
+  LINKED_BANK_ALLOWLIST,
+  SAVINGS_EXCLUSION_CODES,
+  R1_WINDOW_DAYS,
+  R2_WINDOW_DAYS,
+} from '../src/lib/classifier'
 
 // ── types ─────────────────────────────────────────────────────────
 
