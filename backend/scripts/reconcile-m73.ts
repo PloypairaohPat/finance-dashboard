@@ -177,7 +177,7 @@ async function main() {
     fetchInsights(DEMO, startDay, now, 'legacy'),
     fetchCashFlow(DEMO, 6, startDay, now, 'legacy'),
     fetchMonthlyTotals(DEMO, 12, startDay, now, 'legacy'),
-    fetchBudgetsWithSpend(DEMO),
+    fetchBudgetsWithSpend(DEMO, undefined, 'legacy', startDay),
     fetchCategorySpend(
       DEMO,
       { start: period.fromDateKey(thisPeriod.start), end: period.fromDateKey(thisPeriod.end) },
@@ -466,12 +466,13 @@ async function main() {
   // The reconciler says what each figure should become. Once an endpoint is
   // wired to the classifier it must return exactly that, or the wiring is wrong.
   const { fetchCurrentPeriodCategorySpend } = await import('../src/services/transactions.service')
-  const [live, liveCashflow, liveComparison, liveBreakdown, liveTrends] = await Promise.all([
+  const [live, liveCashflow, liveComparison, liveBreakdown, liveTrends, liveBudgets] = await Promise.all([
     fetchInsights(DEMO, startDay, now),
     fetchCashFlow(DEMO, 6, startDay, now),
     fetchCategoryComparison(DEMO, 3, startDay, now),
     fetchCurrentPeriodCategorySpend(DEMO, startDay, now),
     fetchMonthlyTotals(DEMO, 12, startDay, now),
+    fetchBudgetsWithSpend(DEMO, undefined, 'classifier', startDay),
   ])
   const wiredChecks: Array<{ endpoint: string; figure: string; predicted: number; actual: number }> = [
     {
@@ -522,6 +523,14 @@ async function main() {
         actual: liveMap.get(key) ?? 0,
       })
     }
+  }
+  for (const b of liveBudgets) {
+    wiredChecks.push({
+      endpoint: '/budgets',
+      figure: b.category,
+      predicted: metrics.find((x) => x.id === 'budgets')!.afterTotals.get(b.category) ?? 0,
+      actual: c(b.currentSpend),
+    })
   }
   for (const t of liveTrends) {
     wiredChecks.push({
@@ -667,6 +676,26 @@ async function main() {
   }
   p()
   p('Both now come from the same rules, so they agree by construction rather than by luck.')
+  p()
+
+  p('## Two changes that are meant to look different')
+  p()
+  p('Both are deliberate, and both will be visible on screen, so they are written down')
+  p('here rather than left to be discovered:')
+  p()
+  p('**A category can now show a negative number.** If refunds in a category outweigh')
+  p('spending in it, the category is negative — that is what happened. Previously the')
+  p('figure was clipped at zero, which quietly hid money coming back. In this report,')
+  p('July shows `Unallocated refunds` below zero: a refund whose category Plaid was not')
+  p('confident about, so it reduces total spending without being credited to a category')
+  p('it might not belong to.')
+  p()
+  p('**A period can now show an empty bar where it used to show a tall one.** Monthly')
+  p('Spending counts spending. A month whose activity was moving money between your own')
+  p('accounts, or paying off a card, now reads as close to zero, because none of that is')
+  p('money leaving. The old chart counted all of it, which is why the totals below fall')
+  p('so far — not because spending changed, but because transfers stopped being called')
+  p('spending.')
   p()
 
   p('## Endpoints already wired to the classifier')

@@ -6,6 +6,7 @@ import {
   deleteBudget,
 } from "../services/budgets.service"
 import { getUserId } from "../middleware/auth"
+import { getPeriodStartDay } from "../services/user.service"
 import { DISPLAY_CATEGORIES, CATEGORY_COLORS } from "../lib/categoryMap"
 
 export async function createOrUpdateBudget(
@@ -38,8 +39,10 @@ export async function getBudgets(
   try {
     const userId = getUserId(req)
     const month = req.query.month as string | undefined
-    const budgets = await fetchBudgetsWithSpend(userId, month)
-    res.json({ budgets })
+    // M7.3: budgets run on the user's money period, so the start day matters.
+    const startDay = await getPeriodStartDay(userId)
+    const budgets = await fetchBudgetsWithSpend(userId, month, "classifier", startDay)
+    res.json({ budgets, periodStartDay: startDay })
   } catch (err: any) {
     console.error("getBudgets:", err.message)
     res.status(500).json({ error: "Failed to fetch budgets" })
@@ -53,7 +56,8 @@ export async function getBudgetStatus(
   try {
     const userId = getUserId(req)
     const month = req.query.month as string | undefined
-    const status = await fetchBudgetStatus(userId, month)
+    const startDay = await getPeriodStartDay(userId)
+    const status = await fetchBudgetStatus(userId, month, "classifier", startDay)
     res.json(status)
   } catch (err: any) {
     console.error("getBudgetStatus:", err.message)

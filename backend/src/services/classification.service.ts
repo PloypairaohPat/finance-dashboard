@@ -178,17 +178,10 @@ export function incomeForPeriod(
   return round2(total)
 }
 
-/** Spend by display bucket for one period, refunds netted against their category. */
-export function spendByBucket(
-  rows: readonly ClassifiedRow[],
-  periodKey: string,
-  startDay: number,
-  paymentAppByPeriod: Map<string, number>,
-  paymentsToPeopleLabel: string,
-): Record<string, number> {
+/** Everything except payment apps, whose total is capped rather than summed. */
+function bucketsExcludingPaymentApps(rows: readonly ClassifiedRow[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const r of rows) {
-    if (periodKeyOf(r.date, startDay) !== periodKey) continue
     if (r.verdict.rule === 4) continue
     if (r.verdict.kind === 'spend') {
       const bucket = r.verdict.bucket ?? 'Other'
@@ -198,7 +191,51 @@ export function spendByBucket(
       out[bucket] = round2((out[bucket] ?? 0) + r.amount)
     }
   }
+  return out
+}
+
+/** Spend by display bucket for one period, refunds netted against their category. */
+export function spendByBucket(
+  rows: readonly ClassifiedRow[],
+  periodKey: string,
+  startDay: number,
+  paymentAppByPeriod: Map<string, number>,
+  paymentsToPeopleLabel: string,
+): Record<string, number> {
+  const out = bucketsExcludingPaymentApps(
+    rows.filter((r) => periodKeyOf(r.date, startDay) === periodKey),
+  )
   const ptp = paymentAppByPeriod.get(periodKey) ?? 0
+  if (ptp > 0) out[paymentsToPeopleLabel] = round2((out[paymentsToPeopleLabel] ?? 0) + ptp)
+  return out
+}
+
+/**
+ * The payment-app cap over exactly the rows given.
+ *
+ * PERIOD-SCOPED: only correct when those rows are a whole money period. See the
+ * warning on classifyWindow — a cap computed over part of a period, or over a
+ * window that straddles two, is not a smaller version of the right answer, it
+ * is a wrong one.
+ */
+export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
+  let out = 0
+  let inflow = 0
+  for (const r of rows) {
+    if (r.verdict.rule !== 4) continue
+    if (r.amount > 0) out += r.amount
+    else inflow += -r.amount
+  }
+  return round2(Math.max(0, out - Math.min(out, inflow)))
+}
+
+/** Spend by bucket over exactly the rows given. Same period-scope warning as above. */
+export function spendByBucketForRows(
+  rows: readonly ClassifiedRow[],
+  paymentsToPeopleLabel: string,
+): Record<string, number> {
+  const out = bucketsExcludingPaymentApps(rows)
+  const ptp = paymentAppCapForRows(rows)
   if (ptp > 0) out[paymentsToPeopleLabel] = round2((out[paymentsToPeopleLabel] ?? 0) + ptp)
   return out
 }
