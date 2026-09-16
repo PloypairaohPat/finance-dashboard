@@ -17,7 +17,15 @@ import {
   buildDemoDataset,
   type DemoTransaction,
 } from '../prisma/demo-dataset'
-import { classify, type ClassifierTx, type Mechanism } from '../src/lib/classifier'
+import {
+  MAX_RULE_LOOKBACK_DAYS,
+  R1_WINDOW_DAYS,
+  R2_WINDOW_DAYS,
+  classify,
+  type ClassifierTx,
+  type Mechanism,
+} from '../src/lib/classifier'
+import { PAIRING_PAD_DAYS } from '../src/services/classification.service'
 import { periodKeyOf } from '../src/lib/period'
 
 const NOW = new Date('2026-09-15T12:00:00.000Z')
@@ -126,6 +134,52 @@ describe('the payment-app cap comes out where the manifest says', () => {
       expect(got!.spend).toBeCloseTo(expected.netSpend, 2)
       expect(got!.surplus).toBeCloseTo(expected.surplus, 2)
     }
+  })
+})
+
+describe('classifying a slice of history needs padding at the edges', () => {
+  const makeRow = (over: Partial<ClassifierTx> & { id: string }): ClassifierTx => ({
+    accountId: 'checking',
+    accountType: 'depository',
+    date: '2026-06-01',
+    amount: 100,
+    categoryPrimary: 'LOAN_PAYMENTS',
+    categoryDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
+    confidence: 'HIGH',
+    counterparties: [],
+    pending: false,
+    ...over,
+  })
+
+  // A card payment on the last day of June, settling on the card in July.
+  const payment = makeRow({ id: 'pay', date: '2026-06-30', amount: 480 })
+  const settles = makeRow({
+    id: 'settle', date: '2026-07-02', amount: -480, accountId: 'card', accountType: 'credit',
+  })
+  const opts = {
+    linkedInstitutions: ['Demo Bank'],
+    institutionsWithCreditAccount: ['Demo Bank'],
+    periodKeyOf: (d: Date) => periodKeyOf(d, 1),
+  }
+
+  it('finds the pair when both sides are loaded', () => {
+    const both = classify([payment, settles], opts)
+    expect(both.byId.get('pay')!.kind).toBe('card_payment')
+    expect(both.byId.get('settle')!.kind).toBe('card_payment')
+  })
+
+  it('and gets both legs wrong when the slice stops at the period boundary', () => {
+    // This is the failure the padding prevents: June sees a payment it calls
+    // spend, July sees an inflow it cannot pair.
+    const juneOnly = classify([payment], opts)
+    expect(juneOnly.byId.get('pay')!.kind).toBe('spend')
+    const julyOnly = classify([settles], opts)
+    expect(julyOnly.byId.get('settle')!.kind).not.toBe('card_payment')
+  })
+
+  it('pads by at least the furthest any rule looks, derived from the rules', () => {
+    expect(MAX_RULE_LOOKBACK_DAYS).toBe(Math.max(R1_WINDOW_DAYS, R2_WINDOW_DAYS))
+    expect(PAIRING_PAD_DAYS).toBeGreaterThanOrEqual(MAX_RULE_LOOKBACK_DAYS)
   })
 })
 

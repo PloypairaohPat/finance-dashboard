@@ -173,7 +173,7 @@ async function main() {
     // Converted endpoints are called on their LEGACY path here, so BEFORE keeps
     // meaning "what the app did before M7.3" as each one is wired up.
     fetchInsights(DEMO, startDay, now, 'legacy'),
-    fetchCashFlow(DEMO, 6, startDay, now),
+    fetchCashFlow(DEMO, 6, startDay, now, 'legacy'),
     fetchMonthlyTotals(DEMO, 12, startDay, now),
     fetchBudgetsWithSpend(DEMO),
     fetchCategorySpend(DEMO, {
@@ -409,7 +409,10 @@ async function main() {
   // ── converted endpoints: does the LIVE service match the prediction? ──
   // The reconciler says what each figure should become. Once an endpoint is
   // wired to the classifier it must return exactly that, or the wiring is wrong.
-  const live = await fetchInsights(DEMO, startDay, now)
+  const [live, liveCashflow] = await Promise.all([
+    fetchInsights(DEMO, startDay, now),
+    fetchCashFlow(DEMO, 6, startDay, now),
+  ])
   const wiredChecks: Array<{ endpoint: string; figure: string; predicted: number; actual: number }> = [
     {
       endpoint: '/insights',
@@ -424,6 +427,20 @@ async function main() {
       actual: c(live.summary.expenses),
     },
   ]
+  for (const p of liveCashflow.cashflow) {
+    wiredChecks.push({
+      endpoint: '/cashflow',
+      figure: `income ${p.key}`,
+      predicted: metrics.find((x) => x.id === 'cashflow-income')!.afterTotals.get(p.key) ?? 0,
+      actual: c(p.income),
+    })
+    wiredChecks.push({
+      endpoint: '/cashflow',
+      figure: `expenses ${p.key}`,
+      predicted: metrics.find((x) => x.id === 'cashflow-expenses')!.afterTotals.get(p.key) ?? 0,
+      actual: c(p.expenses),
+    })
+  }
 
   // ── report ──────────────────────────────────────────────────────
   const out: string[] = []

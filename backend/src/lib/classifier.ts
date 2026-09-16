@@ -55,6 +55,20 @@ export const SAVINGS_EXCLUSION_CODES = [
 export const R1_WINDOW_DAYS = 7
 export const R2_WINDOW_DAYS = 4
 
+/**
+ * The furthest any rule looks from a transaction to decide it. Callers that
+ * classify a slice of history must load this many days either side, or pairs
+ * straddling the edge break silently.
+ *
+ * Only R1 and R2 look at other rows at all: R3's refund netting works on the
+ * refund's own category, and R5-R7 are decided per row. R4's cap spans a whole
+ * period, which is handled separately — see classifyWindow, which refuses to
+ * report a cap for a period it did not load in full.
+ *
+ * Derived, not written down, so widening a window cannot leave the padding behind.
+ */
+export const MAX_RULE_LOOKBACK_DAYS = Math.max(R1_WINDOW_DAYS, R2_WINDOW_DAYS)
+
 // ── input and output ──────────────────────────────────────────────
 
 export interface Counterparty {

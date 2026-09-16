@@ -15,11 +15,21 @@
 // ─────────────────────────────────────────────────────────────────
 
 import prisma from '../lib/prisma'
-import { classify, type ClassificationResult, type ClassifierTx, type Classified } from '../lib/classifier'
-import { periodKeyOf } from '../lib/period'
+import {
+  MAX_RULE_LOOKBACK_DAYS,
+  classify,
+  type ClassificationResult,
+  type ClassifierTx,
+  type Classified,
+} from '../lib/classifier'
+import { periodContaining, periodKeyOf } from '../lib/period'
 
-/** Must be >= the widest pairing window in the classifier (R1's 7 days). */
-export const PAIRING_PAD_DAYS = 7
+/**
+ * Taken from the rules themselves, so widening a pairing window widens the
+ * padding with it. Hardcoding this is how pairing breaks at period boundaries
+ * months after someone changes an unrelated constant.
+ */
+export const PAIRING_PAD_DAYS = MAX_RULE_LOOKBACK_DAYS
 const DAY_MS = 86_400_000
 
 export interface ClassifiedRow {
@@ -103,6 +113,15 @@ export async function classifyWindow(
 
   const inWindow = prepared.filter((p) => p.row.date >= window.since && p.row.date < window.until)
 
+  // R4's cap is a whole-period figure, so it is only meaningful for periods the
+  // query covered end to end. The padding rows pull in a few days of the
+  // neighbouring periods; reporting a cap for those would hand the caller a
+  // partial total that looks complete. Drop them instead.
+  const fullyCovered = (periodKey: string) => {
+    const { start, end } = periodContaining(new Date(`${periodKey}T00:00:00.000Z`), window.startDay)
+    return start >= window.since && end <= window.until
+  }
+
   return {
     rows: inWindow.map((p) => ({
       id: p.row.id,
@@ -116,7 +135,9 @@ export async function classifyWindow(
       verdict: result.byId.get(p.row.id)!,
     })),
     result,
-    paymentAppByPeriod: new Map(result.paymentApp.map((p) => [p.key, p.spend])),
+    paymentAppByPeriod: new Map(
+      result.paymentApp.filter((p) => fullyCovered(p.key)).map((p) => [p.key, p.spend]),
+    ),
   }
 }
 
@@ -202,8 +223,15 @@ export interface SavingsRate {
  * producing a headline like -8431.6%.
  *
  * The floor is 25% of the median income of the last three COMPLETED periods
- * that had any income, falling back to $100 when there are none. The rate
- * itself is never clamped: a real -40% period must still read -40%.
+ * that had any income. The rate itself is never clamped: a real -40% period
+ * must still read -40%.
+ *
+ * The $100 is a BOOTSTRAP for users with no income history yet — it is not a
+ * minimum applied on top of the relative rule, and the floor is deliberately
+ * NOT max(25% of median, $100). Someone earning a $300 median who has a period
+ * at 27% of normal is having an ordinary month by their own standard and must
+ * see their number; a $100 minimum would hide it. The relative rule is the
+ * rule, and the constant only stands in when there is nothing to be relative to.
  */
 export function savingsRateFor(
   income: number,

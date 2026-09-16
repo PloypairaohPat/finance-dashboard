@@ -51,7 +51,8 @@ async function main() {
   out.seed = {
     transactions: all.length,
     firstDate: all[0]?.date.toISOString().slice(0, 10),
-    lastDate: all.at(-1)?.date.toISOString().slice(0, 10),
+    // Array.prototype.at needs lib es2022; this file is compiled against ES2020.
+    lastDate: all[all.length - 1]?.date.toISOString().slice(0, 10),
     pending: all.filter((t) => t.pending).length,
     transfers: all.filter((t) => /^TRANSFER/i.test(t.categoryPrimary ?? '')).length,
     loanOrCardPayments: all.filter((t) => /^LOAN_PAYMENTS/i.test(t.categoryPrimary ?? '')).length,

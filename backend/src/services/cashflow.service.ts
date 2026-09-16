@@ -8,6 +8,7 @@ import {
   type Period,
 } from "../lib/period"
 import { fetchFirstTransactionDate } from "./activity.service"
+import { classifyWindow, incomeForPeriod, spendForPeriod } from "./classification.service"
 
 const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
 
@@ -18,15 +19,24 @@ export interface CashFlowPeriod extends Period {
   income: number
   expenses: number
   net: number
-  /** 0 means no settled transactions in this period — shown as a zero bar, not skipped. */
+  /** 0 means no transactions in this period — shown as a zero bar, not skipped. */
   txCount: number
 }
+
+/**
+ * M7.3: "classifier" is the live path; "legacy" keeps the pre-M7.3 code
+ * reachable for scripts/reconcile-m73.ts until every endpoint is converted.
+ */
+export type CashFlowEngine = "classifier" | "legacy"
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 export async function fetchCashFlow(
   userId: string = DEFAULT_USER_ID,
   periodCount: number = 6,
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),
+  engine: CashFlowEngine = "classifier",
 ): Promise<{ cashflow: CashFlowPeriod[]; periodStartDay: number }> {
   const count = Math.min(Math.max(Math.trunc(periodCount) || 6, 1), 24)
   // Periods from before the user's first transaction are dropped (a period they
@@ -37,6 +47,50 @@ export async function fetchCashFlow(
   )
   if (periods.length === 0) return { cashflow: [], periodStartDay: startDay }
 
+  return engine === "legacy"
+    ? fetchCashFlowLegacy(userId, periods, startDay)
+    : fetchCashFlowClassified(userId, periods, startDay)
+}
+
+// ── M7.3: the classifier path ─────────────────────────────────────
+
+async function fetchCashFlowClassified(
+  userId: string,
+  periods: Period[],
+  startDay: number,
+): Promise<{ cashflow: CashFlowPeriod[]; periodStartDay: number }> {
+  const { rows, paymentAppByPeriod } = await classifyWindow(userId, {
+    since: fromDateKey(periods[0].start),
+    until: fromDateKey(periods[periods.length - 1].end),
+    startDay,
+  })
+
+  const cashflow: CashFlowPeriod[] = periods.map((p) => {
+    const income = incomeForPeriod(rows, p.key, startDay)
+    const expenses = spendForPeriod(rows, p.key, startDay, paymentAppByPeriod)
+    // Pending rows now count everywhere, so they count here too: a period's bar
+    // should not jump when yesterday's card swipe settles.
+    const txCount = rows.filter((r) => periodKeyOf(r.date, startDay) === p.key).length
+    return {
+      ...p,
+      month: p.key,
+      income,
+      expenses,
+      net: round2(income - expenses),
+      txCount,
+    }
+  })
+
+  return { cashflow, periodStartDay: startDay }
+}
+
+// ── pre-M7.3, kept reachable until every endpoint is converted ────
+
+async function fetchCashFlowLegacy(
+  userId: string,
+  periods: Period[],
+  startDay: number,
+): Promise<{ cashflow: CashFlowPeriod[]; periodStartDay: number }> {
   const since = fromDateKey(periods[0].start)
   const until = fromDateKey(periods[periods.length - 1].end)
 
