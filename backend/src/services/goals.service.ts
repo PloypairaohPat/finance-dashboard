@@ -1,5 +1,10 @@
 import prisma from "../lib/prisma"
-import { isSpending } from "../lib/categoryMap"
+import { fromDateKey, recentPeriods } from "../lib/period"
+import { classifyWindow, spendForPeriod } from "./classification.service"
+import { getPeriodStartDay } from "./user.service"
+
+// How many money periods of spending the emergency-fund target averages over.
+const EXPENSE_PERIODS = 3
 
 export type GoalType = "savings" | "emergency_fund" | "vacation" | "debt_payoff"
 
@@ -34,15 +39,22 @@ export interface EnrichedGoal {
 // — — — Progress computation per type — — —
 
 async function computeEmergencyProgress(userId: string) {
-  const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
-  const [accounts, txs] = await Promise.all([
+  // The target is "N periods of expenses", so the average has to be expenses.
+  // It used to be every positive amount that passed isSpending, with no transfer
+  // filter — so moving money to savings, or paying off a card, raised the target
+  // you were saving towards and pushed the goal further away.
+  const startDay = await getPeriodStartDay(userId)
+  const periods = recentPeriods(new Date(), startDay, EXPENSE_PERIODS + 1)
+
+  const [accounts, classification] = await Promise.all([
     prisma.account.findMany({
       where: { userId, type: "depository" },
       select: { availableBalance: true, currentBalance: true },
     }),
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, amount: { gt: 0 }, date: { gte: ninetyAgo } },
-      select: { amount: true, categoryPrimary: true, date: true },
+    classifyWindow(userId, {
+      since: fromDateKey(periods[0].start),
+      until: fromDateKey(periods[periods.length - 1].end),
+      startDay,
     }),
   ])
 
@@ -52,13 +64,16 @@ async function computeEmergencyProgress(userId: string) {
     0,
   )
 
-  const expenseTotal = txs
-    .filter(t => isSpending(t.categoryPrimary))
-    .reduce((s, t) => s + Number(t.amount), 0)
-  const monthsOfData = new Set(txs.map(t =>
-    `${t.date.getFullYear()}-${t.date.getMonth() + 1}`
-  )).size
-  const avgMonthlyExpenses = monthsOfData > 0 ? expenseTotal / monthsOfData : 0
+  const withData = periods.filter((p) =>
+    classification.rows.some(
+      (r) => r.date >= fromDateKey(p.start) && r.date < fromDateKey(p.end),
+    ),
+  )
+  const expenseTotal = withData.reduce(
+    (s, p) => s + spendForPeriod(classification.rows, p.key, startDay, classification.paymentAppByPeriod),
+    0,
+  )
+  const avgMonthlyExpenses = withData.length > 0 ? expenseTotal / withData.length : 0
 
   return { current, avgMonthlyExpenses }
 }

@@ -1,6 +1,44 @@
 import prisma from "../lib/prisma"
-import { isSpending, mapPlaidCategory } from "../lib/categoryMap"
-import { filterInternalTransfers } from "../utils/transferFilter"
+import { PAYMENTS_TO_PEOPLE } from "../lib/classifier"
+import { fromDateKey, recentPeriods, type Period } from "../lib/period"
+import {
+  classifyWindow,
+  incomeForPeriod,
+  spendByBucket,
+  spendForPeriod,
+  type ClassifiedRow,
+} from "./classification.service"
+import { getPeriodStartDay } from "./user.service"
+
+// The score used to run on its own definitions: every negative amount was
+// income, spending was isSpending, and internal transfers were removed by the
+// old two-tier heuristic — which calibration showed misses most transfer pairs.
+// It is a single authoritative number out of 100, which makes it the worst place
+// in the app to be wrong, so it now reads the same figures the screens show.
+const SCORE_PERIODS = 4   // the current period plus three completed ones
+
+interface ScoreWindow {
+  startDay: number
+  periods: Period[]
+  rows: ClassifiedRow[]
+  paymentAppByPeriod: Map<string, number>
+  /** Periods that actually contain rows, oldest first. */
+  withData: Period[]
+}
+
+async function loadScoreWindow(userId: string): Promise<ScoreWindow> {
+  const startDay = await getPeriodStartDay(userId)
+  const periods = recentPeriods(new Date(), startDay, SCORE_PERIODS)
+  const { rows, paymentAppByPeriod } = await classifyWindow(userId, {
+    since: fromDateKey(periods[0].start),
+    until: fromDateKey(periods[periods.length - 1].end),
+    startDay,
+  })
+  const withData = periods.filter((p) =>
+    rows.some((r) => r.date >= fromDateKey(p.start) && r.date < fromDateKey(p.end)),
+  )
+  return { startDay, periods, rows, paymentAppByPeriod, withData }
+}
 
 const WEIGHTS = {
   savingsRate:     0.30,
@@ -35,38 +73,15 @@ const gradeFor = (total: number): FinancialScore["grade"] =>
 
 // — — — Component scorers — — —
 
-async function scoreSavingsRate(userId: string): Promise<ScoreComponent> {
+function scoreSavingsRate(w: ScoreWindow): ScoreComponent {
   const weight = WEIGHTS.savingsRate
-  const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
-
-  const [rawTxs, accounts] = await Promise.all([
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, date: { gte: ninetyAgo } },
-      select: { id: true, amount: true, categoryPrimary: true, date: true, accountId: true },
-    }),
-    prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    }),
-  ])
-
-  const userAccountIds = new Set(accounts.map(a => a.id))
-  const txNums = rawTxs.map(t => ({ ...t, amount: Number(t.amount) }))
-  const { internalIds, soloCount, pairedCount } = await filterInternalTransfers(userId, txNums, userAccountIds)
-  const txs = txNums.filter(t => !internalIds.has(t.id))
-
-  if (soloCount > 0 || pairedCount > 0) {
-    console.log(`🔁 [score/savingsRate] filtered ${soloCount} solo (counterparty), ${pairedCount} paired`)
-  }
 
   let income = 0, expenses = 0
-  for (const tx of txs) {
-    if (tx.amount < 0) income += Math.abs(tx.amount)
-    else if (isSpending(tx.categoryPrimary)) expenses += tx.amount
+  for (const p of w.withData) {
+    income += incomeForPeriod(w.rows, p.key, w.startDay)
+    expenses += spendForPeriod(w.rows, p.key, w.startDay, w.paymentAppByPeriod)
   }
-  const monthsCovered = new Set(txs.map(t =>
-    `${t.date.getFullYear()}-${t.date.getMonth() + 1}`
-  )).size
+  const monthsCovered = w.withData.length
 
   if (monthsCovered < 1 || income < 100) {
     return { value: null, weight, hint: "Need more income history to score.", dataLimited: true }
@@ -81,25 +96,9 @@ async function scoreSavingsRate(userId: string): Promise<ScoreComponent> {
   return { value: Number(value.toFixed(0)), weight, hint, dataLimited: monthsCovered < 3 }
 }
 
-async function scoreSpendingControl(userId: string): Promise<ScoreComponent> {
+async function scoreSpendingControl(userId: string, w: ScoreWindow): Promise<ScoreComponent> {
   const weight = WEIGHTS.spendingControl
-  const now = new Date()
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-
-  const [budgets, txs] = await Promise.all([
-    prisma.budget.findMany({ where: { userId } }),
-    prisma.transaction.findMany({
-      where: {
-        userId, deletedAt: null,
-        amount: { gt: 0 },
-        date: {
-          gte: new Date(`${ym}-01T00:00:00Z`),
-          lt: new Date(new Date(`${ym}-01T00:00:00Z`).setUTCMonth(now.getUTCMonth() + 1)),
-        },
-      },
-      select: { amount: true, categoryPrimary: true },
-    }),
-  ])
+  const budgets = await prisma.budget.findMany({ where: { userId } })
 
   if (budgets.length === 0) {
     return {
@@ -109,13 +108,10 @@ async function scoreSpendingControl(userId: string): Promise<ScoreComponent> {
     }
   }
 
-  // Sum spending per display category (same math as budget detectors)
-  const spendByCat: Record<string, number> = {}
-  for (const tx of txs) {
-    if (!isSpending(tx.categoryPrimary)) continue
-    const cat = mapPlaidCategory(tx.categoryPrimary)
-    spendByCat[cat] = (spendByCat[cat] ?? 0) + Number(tx.amount)
-  }
+  // The same figure the budget cards and the budget alerts use: current money
+  // period, classifier buckets, payment-app total capped.
+  const current = w.periods[w.periods.length - 1]
+  const spendByCat = spendByBucket(w.rows, current.key, w.startDay, w.paymentAppByPeriod, PAYMENTS_TO_PEOPLE)
   let onTrack = 0
   for (const b of budgets) {
     const spent = spendByCat[b.category] ?? 0
@@ -129,26 +125,22 @@ async function scoreSpendingControl(userId: string): Promise<ScoreComponent> {
   return { value, weight, hint, dataLimited: false }
 }
 
-async function scoreDebtLoad(userId: string): Promise<ScoreComponent> {
+async function scoreDebtLoad(userId: string, w: ScoreWindow): Promise<ScoreComponent> {
   const weight = WEIGHTS.debtLoad
-  const ninetyAgo = new Date(); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
-
-  const [accounts, incomeTxs] = await Promise.all([
-    prisma.account.findMany({ where: { userId } }),
-    prisma.transaction.findMany({
-      where: { userId, deletedAt: null, amount: { lt: 0 }, date: { gte: ninetyAgo } },
-      select: { amount: true, date: true },
-    }),
-  ])
+  const accounts = await prisma.account.findMany({ where: { userId } })
 
   const totalDebt = accounts
     .filter(a => a.type === "credit" || a.type === "loan")
     .reduce((s, a) => s + Math.abs(Number(a.currentBalance ?? 0)), 0)
 
-  const totalIncome = incomeTxs.reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
-  const monthsCovered = new Set(incomeTxs.map(t =>
-    `${t.date.getFullYear()}-${t.date.getMonth() + 1}`
-  )).size
+  // Income, not "every negative amount". This component divides debt by it, so
+  // counting repayments from friends and money moved in from savings as income
+  // made the debt load look lighter than it is.
+  const periodsWithIncome = w.withData.filter((p) => incomeForPeriod(w.rows, p.key, w.startDay) > 0)
+  const totalIncome = periodsWithIncome.reduce(
+    (s, p) => s + incomeForPeriod(w.rows, p.key, w.startDay), 0,
+  )
+  const monthsCovered = periodsWithIncome.length
 
   if (monthsCovered < 1 || totalIncome < 100) {
     return { value: null, weight, hint: "Need income history to compute debt ratio.", dataLimited: true }
@@ -215,12 +207,15 @@ async function scoreGrowthTrend(userId: string): Promise<ScoreComponent> {
 // — — — Entry point — — —
 
 export async function fetchFinancialScore(userId: string): Promise<FinancialScore> {
-  const [savingsRate, spendingControl, debtLoad, growthTrend] = await Promise.all([
-    scoreSavingsRate(userId),
-    scoreSpendingControl(userId),
-    scoreDebtLoad(userId),
+  // One classification for the three components that read transactions; the
+  // fourth reads balance snapshots and is unaffected by any of this.
+  const window = await loadScoreWindow(userId)
+  const [spendingControl, debtLoad, growthTrend] = await Promise.all([
+    scoreSpendingControl(userId, window),
+    scoreDebtLoad(userId, window),
     scoreGrowthTrend(userId),
   ])
+  const savingsRate = scoreSavingsRate(window)
   const components = { savingsRate, spendingControl, debtLoad, growthTrend }
 
   // Weighted average of non-null components, rescaled by total weight used
