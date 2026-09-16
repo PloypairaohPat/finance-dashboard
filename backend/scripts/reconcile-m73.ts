@@ -76,7 +76,9 @@ async function main() {
   const period = await import('../src/lib/period')
   const { fetchInsights } = await import('../src/services/insights.service')
   const { fetchCashFlow } = await import('../src/services/cashflow.service')
-  const { fetchMonthlyTotals, fetchCategorySpend } = await import('../src/services/transactions.service')
+  const { fetchMonthlyTotals, fetchCategorySpend, fetchCategoryComparison } = await import(
+    '../src/services/transactions.service'
+  )
   const { fetchBudgetsWithSpend } = await import('../src/services/budgets.service')
   const { fetchFirstTransactionDate } = await import('../src/services/activity.service')
 
@@ -174,12 +176,14 @@ async function main() {
     // meaning "what the app did before M7.3" as each one is wired up.
     fetchInsights(DEMO, startDay, now, 'legacy'),
     fetchCashFlow(DEMO, 6, startDay, now, 'legacy'),
-    fetchMonthlyTotals(DEMO, 12, startDay, now),
+    fetchMonthlyTotals(DEMO, 12, startDay, now, 'legacy'),
     fetchBudgetsWithSpend(DEMO),
-    fetchCategorySpend(DEMO, {
-      start: period.fromDateKey(thisPeriod.start),
-      end: period.fromDateKey(thisPeriod.end),
-    }),
+    fetchCategorySpend(
+      DEMO,
+      { start: period.fromDateKey(thisPeriod.start), end: period.fromDateKey(thisPeriod.end) },
+      'legacy',
+      startDay,
+    ),
   ])
 
   // Budgets still use the calendar month, not the money period.
@@ -406,12 +410,68 @@ async function main() {
     (t) => (subMerchants.has(t.merchantKey) ? 'subscription-override-dropped' : null),
   )
 
+  // ── 7. Month over month ─────────────────────────────────────────
+  const comparisonPeriods = period.periodsFromFirstActivity(
+    period.recentPeriods(now, startDay, 3),
+    firstTx,
+  )
+  const comparisonService = await fetchCategoryComparison(DEMO, 3, startDay, now, 'legacy')
+  // Legacy runs the transfer filter once per period window, so the model must too.
+  const internalByPeriod = new Map<string, Set<string>>()
+  for (const p of comparisonPeriods) {
+    const windowTxs = forFilter.filter((t) => inWindow(t.date, p.start, p.end))
+    const { internalIds } = await filterInternalTransfers(DEMO, windowTxs, userAccountIds, linkedNames)
+    internalByPeriod.set(p.key, internalIds)
+  }
+  const comparisonKey = (periodKey: string, bucket: string) => `${periodKey} | ${bucket}`
+
+  buildMetric(
+    'comparison',
+    'Month over month — category by period',
+    'Today: the breakdown rule run once per period — transfer-filtered per period, pending included, subscription override applied.',
+    new Map<string, number>(
+      comparisonService.flatMap((p) =>
+        Object.entries(p.categories).map(
+          ([cat, amount]) => [comparisonKey(p.key, cat), c(amount)] as [string, number],
+        ),
+      ),
+    ),
+    (t) => comparisonPeriods.some((p) => inWindow(t.date, p.start, p.end)),
+    (t) => {
+      const key = periodOf(t.date)
+      const internal = internalByPeriod.get(key) ?? new Set<string>()
+      if (!(t.amount > 0) || internal.has(t.id) || !isSpending(t.categoryPrimary)) return []
+      const bucket = subMerchants.has(t.merchantKey) ? 'Subscriptions' : mapPlaidCategory(t.categoryPrimary)
+      return [{ key: comparisonKey(key, bucket), cents: c(t.amount) }]
+    },
+    (t) => {
+      const contribution = afterSpendContribution(t)
+      if (contribution === null) return []
+      return contribution === 0
+        ? []
+        : [{ key: comparisonKey(periodOf(t.date), afterSpendBucket(t)), cents: contribution }]
+    },
+    false,
+    comparisonPeriods
+      .filter((p) => (cappedPtP.get(p.key) ?? 0) > 0)
+      .map((p) => ({
+        key: comparisonKey(p.key, PAYMENTS_TO_PEOPLE),
+        cents: cappedPtP.get(p.key)!,
+        mechanism: 'payment-app-capped',
+      })),
+    (t) => (subMerchants.has(t.merchantKey) ? 'subscription-override-dropped' : null),
+  )
+
   // ── converted endpoints: does the LIVE service match the prediction? ──
   // The reconciler says what each figure should become. Once an endpoint is
   // wired to the classifier it must return exactly that, or the wiring is wrong.
-  const [live, liveCashflow] = await Promise.all([
+  const { fetchCurrentPeriodCategorySpend } = await import('../src/services/transactions.service')
+  const [live, liveCashflow, liveComparison, liveBreakdown, liveTrends] = await Promise.all([
     fetchInsights(DEMO, startDay, now),
     fetchCashFlow(DEMO, 6, startDay, now),
+    fetchCategoryComparison(DEMO, 3, startDay, now),
+    fetchCurrentPeriodCategorySpend(DEMO, startDay, now),
+    fetchMonthlyTotals(DEMO, 12, startDay, now),
   ])
   const wiredChecks: Array<{ endpoint: string; figure: string; predicted: number; actual: number }> = [
     {
@@ -427,6 +487,50 @@ async function main() {
       actual: c(live.summary.expenses),
     },
   ]
+  {
+    const after = metrics.find((x) => x.id === 'breakdown')!.afterTotals
+    const liveMap = new Map(liveBreakdown.categories.map((c2) => [c2.category, c(c2.amount)]))
+    const allKeys = new Set([
+      ...[...after.entries()].filter(([, v]) => v !== 0).map(([k]) => k),
+      ...liveMap.keys(),
+    ])
+    for (const key of [...allKeys].sort()) {
+      wiredChecks.push({
+        endpoint: '/categories',
+        figure: key,
+        predicted: after.get(key) ?? 0,
+        actual: liveMap.get(key) ?? 0,
+      })
+    }
+  }
+  // Both directions: a line the endpoint invents, or drops, is a mismatch too.
+  {
+    const after = metrics.find((x) => x.id === 'comparison')!.afterTotals
+    const liveMap = new Map<string, number>()
+    for (const p of liveComparison) {
+      for (const [cat, amount] of Object.entries(p.categories)) liveMap.set(comparisonKey(p.key, cat), c(amount))
+    }
+    const allKeys = new Set([
+      ...[...after.entries()].filter(([, v]) => v !== 0).map(([k]) => k),
+      ...liveMap.keys(),
+    ])
+    for (const key of [...allKeys].sort()) {
+      wiredChecks.push({
+        endpoint: '/categories/comparison',
+        figure: key,
+        predicted: after.get(key) ?? 0,
+        actual: liveMap.get(key) ?? 0,
+      })
+    }
+  }
+  for (const t of liveTrends) {
+    wiredChecks.push({
+      endpoint: '/transactions/trends',
+      figure: t.key,
+      predicted: metrics.find((x) => x.id === 'trends')!.afterTotals.get(t.key) ?? 0,
+      actual: c(t.total),
+    })
+  }
   for (const p of liveCashflow.cashflow) {
     wiredChecks.push({
       endpoint: '/cashflow',
