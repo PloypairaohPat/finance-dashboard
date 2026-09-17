@@ -51,7 +51,8 @@ async function main() {
   out.seed = {
     transactions: all.length,
     firstDate: all[0]?.date.toISOString().slice(0, 10),
-    lastDate: all.at(-1)?.date.toISOString().slice(0, 10),
+    // Array.prototype.at needs lib es2022; this file is compiled against ES2020.
+    lastDate: all[all.length - 1]?.date.toISOString().slice(0, 10),
     pending: all.filter((t) => t.pending).length,
     transfers: all.filter((t) => /^TRANSFER/i.test(t.categoryPrimary ?? '')).length,
     loanOrCardPayments: all.filter((t) => /^LOAN_PAYMENTS/i.test(t.categoryPrimary ?? '')).length,
@@ -72,15 +73,10 @@ async function main() {
   const comparison = await fetchCategoryComparison(DEMO, 3, 1, now)
   const breakdown = await fetchCategorySpend(DEMO)
   const budgets = await fetchBudgetsWithSpend(DEMO)
-  const since = new Date(now); since.setDate(since.getDate() - 120)
-  const ctxTransactions = await prisma.transaction.findMany({ where: { userId: DEMO, deletedAt: null, date: { gte: since } }, orderBy: { date: 'desc' } })
-  const ctx = {
-    userId: DEMO, now,
-    accounts: await prisma.account.findMany({ where: { userId: DEMO } }),
-    transactions: ctxTransactions,
-    budgets: await prisma.budget.findMany({ where: { userId: DEMO } }),
-    subscriptionAnalysis: null,
-  } as any
+  // M7.3: detectors run on classified rows, so build the context the same way
+  // the dispatcher does rather than hand-rolling one that no longer matches.
+  const { loadContext } = await import('../src/services/alerts/dispatcher')
+  const ctx = await loadContext(DEMO)
   const detected = [
     ...(await detectOverspending(ctx)),
     ...(await detectBudgetExceeded(ctx)),
@@ -125,3 +121,7 @@ main().catch((err) => {
   console.error('[verify-s7-demo] failed:', err)
   process.exit(1)
 })
+
+// Module scope: these scripts declare top-level names (LOCAL_HOSTS, main) and
+// would otherwise collide with each other in a shared global scope.
+export {}

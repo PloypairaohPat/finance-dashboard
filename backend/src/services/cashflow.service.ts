@@ -1,4 +1,3 @@
-import prisma from "../lib/prisma"
 import {
   DEFAULT_PERIOD_START_DAY,
   fromDateKey,
@@ -8,6 +7,7 @@ import {
   type Period,
 } from "../lib/period"
 import { fetchFirstTransactionDate } from "./activity.service"
+import { classifyWindow, incomeForPeriod, spendForPeriod } from "./classification.service"
 
 const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
 
@@ -18,9 +18,11 @@ export interface CashFlowPeriod extends Period {
   income: number
   expenses: number
   net: number
-  /** 0 means no settled transactions in this period — shown as a zero bar, not skipped. */
+  /** 0 means no transactions in this period — shown as a zero bar, not skipped. */
   txCount: number
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 export async function fetchCashFlow(
   userId: string = DEFAULT_USER_ID,
@@ -37,40 +39,24 @@ export async function fetchCashFlow(
   )
   if (periods.length === 0) return { cashflow: [], periodStartDay: startDay }
 
-  const since = fromDateKey(periods[0].start)
-  const until = fromDateKey(periods[periods.length - 1].end)
-
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      userId,
-      deletedAt: null,
-      pending: false,
-      date: { gte: since, lt: until },
-    },
-    select: { amount: true, date: true },
-    orderBy: { date: "asc" },
+  const { rows, paymentAppByPeriod } = await classifyWindow(userId, {
+    since: fromDateKey(periods[0].start),
+    until: fromDateKey(periods[periods.length - 1].end),
+    startDay,
   })
 
-  const byPeriod: Record<string, { income: number; expenses: number; txCount: number }> = {}
-  for (const tx of transactions) {
-    const key = periodKeyOf(tx.date, startDay)
-    const bucket = (byPeriod[key] ??= { income: 0, expenses: 0, txCount: 0 })
-    const amount = tx.amount.toNumber()
-    if (amount < 0) bucket.income += Math.abs(amount)
-    else bucket.expenses += amount
-    bucket.txCount += 1
-  }
-
-  // Every remaining period is returned, including empty ones: skipping a
-  // period with no transactions hides the gap.
   const cashflow: CashFlowPeriod[] = periods.map((p) => {
-    const { income, expenses, txCount } = byPeriod[p.key] ?? { income: 0, expenses: 0, txCount: 0 }
+    const income = incomeForPeriod(rows, p.key, startDay)
+    const expenses = spendForPeriod(rows, p.key, startDay, paymentAppByPeriod)
+    // Pending rows now count everywhere, so they count here too: a period's bar
+    // should not jump when yesterday's card swipe settles.
+    const txCount = rows.filter((r) => periodKeyOf(r.date, startDay) === p.key).length
     return {
       ...p,
       month: p.key,
-      income: Math.round(income * 100) / 100,
-      expenses: Math.round(expenses * 100) / 100,
-      net: Math.round((income - expenses) * 100) / 100,
+      income,
+      expenses,
+      net: round2(income - expenses),
       txCount,
     }
   })

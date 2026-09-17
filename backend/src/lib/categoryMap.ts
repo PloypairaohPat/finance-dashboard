@@ -83,3 +83,37 @@ export function labelForPrimary(raw: string | null | undefined): string {
   if (!raw) return "Other"
   return PRIMARY_LABEL_MAP[raw.toUpperCase()] ?? "Other"
 }
+
+// ── Assigning a category to a transaction ─────────────────────────
+// A transaction stores Plaid codes (categoryPrimary / categoryDetailed), and every
+// total reads its display bucket back through mapPlaidCategory. So choosing a
+// display category has to WRITE codes that map back to it. Writing the display
+// name itself ("Shopping") was the M5.7 bug: no Plaid prefix matches it, so the
+// row silently moved to Other in every total.
+//
+// Each detailed code is Plaid's generic "other" code for that primary, so it names
+// no transfer, card-payment or savings signal the classifier acts on. "Other" is
+// the absence of a code, which is what Plaid sends for an uncategorised row.
+// Subscriptions is not assignable: no Plaid code maps to it.
+export const ASSIGNABLE_CATEGORY_CODES = {
+  "Housing":           { primary: "HOME_IMPROVEMENT",    detailed: "HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT" },
+  "Food & Dining":     { primary: "FOOD_AND_DRINK",      detailed: "FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK" },
+  "Shopping":          { primary: "GENERAL_MERCHANDISE", detailed: "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE" },
+  "Transportation":    { primary: "TRANSPORTATION",      detailed: "TRANSPORTATION_OTHER_TRANSPORTATION" },
+  "Bills & Utilities": { primary: "RENT_AND_UTILITIES",  detailed: "RENT_AND_UTILITIES_OTHER_UTILITIES" },
+  "Entertainment":     { primary: "ENTERTAINMENT",       detailed: "ENTERTAINMENT_OTHER_ENTERTAINMENT" },
+  "Travel":            { primary: "TRAVEL",              detailed: "TRAVEL_OTHER_TRAVEL" },
+  "Debt":              { primary: "LOAN_PAYMENTS",       detailed: "LOAN_PAYMENTS_OTHER_PAYMENT" },
+  "Other":             { primary: null,                  detailed: null },
+} as const satisfies Partial<Record<DisplayCategory, { primary: string | null; detailed: string | null }>>
+
+export type AssignableCategory = keyof typeof ASSIGNABLE_CATEGORY_CODES
+
+// In DISPLAY_CATEGORIES order, so dropdowns keep the order the charts use.
+export const ASSIGNABLE_CATEGORIES = DISPLAY_CATEGORIES.filter(
+  (c): c is AssignableCategory => c in ASSIGNABLE_CATEGORY_CODES,
+)
+
+export function isAssignableCategory(value: unknown): value is AssignableCategory {
+  return typeof value === "string" && (ASSIGNABLE_CATEGORIES as readonly string[]).includes(value)
+}

@@ -6,6 +6,7 @@ import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useUrlParams } from "./lib/useUrlParams"
 import type { EnrichedTransaction, SearchResult, CategoryOption } from "./types"
+import { treatmentFor } from "./rowTreatment"
 import MerchantAvatar from "./MerchantAvatar"
 
 interface Props { onRowClick: (tx: EnrichedTransaction) => void }
@@ -94,7 +95,9 @@ export default function TransactionList({ onRowClick }: Props) {
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     ;(async () => {
-      const res = await apiFetch(`${API_URL}/budgets/categories`)
+      // Every bucket a row can be in — which excludes Subscriptions, a filter
+      // that could only ever return nothing.
+      const res = await apiFetch(`${API_URL}/transactions/category-options`)
       if (res.ok) setCategories(await res.json())
     })()
   }, [demoMode, isSignedIn, apiFetch])
@@ -267,7 +270,9 @@ export default function TransactionList({ onRowClick }: Props) {
         <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>No transactions match these filters.</div>
       ) : (
         <>
-          {rows.map(tx => (
+          {rows.map(tx => {
+            const look = treatmentFor(tx.amount, tx.meaning, fmt)
+            return (
             <div key={tx.id} onClick={() => onRowClick(tx)} style={{
               display: "grid",
               gridTemplateColumns: "36px 1fr auto",
@@ -283,15 +288,32 @@ export default function TransactionList({ onRowClick }: Props) {
                 }}>{tx.displayName}</div>
                 <div style={{
                   display: "flex", gap: 8, alignItems: "center",
+                  // Wrap rather than clip: on a narrow screen the chip moves to
+                  // the next line instead of being cut off. It carries the row's
+                  // meaning now that colour carries less of it.
+                  flexWrap: "wrap", rowGap: 4,
                   fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
                   color: "#5a7a5a", marginTop: 3,
                 }}>
                   <span>{fmtDate(tx.date)}</span>
-                  <span style={{
-                    padding: "1px 6px", borderRadius: 3,
-                    background: "#0d1510", border: "1px solid #253325",
-                    textTransform: "uppercase", letterSpacing: ".06em",
-                  }}>{tx.category}</span>
+                  {look.chip ? (
+                    // What the row IS. Replaces Plaid's category here, which for
+                    // these rows ("TRANSFER OUT", "LOAN PAYMENT") would contradict it.
+                    <span data-testid="meaning-chip" style={{
+                      padding: "1px 6px", borderRadius: 3,
+                      background: look.chip.background, border: `1px solid ${look.chip.border}`,
+                      color: look.chip.color,
+                      textTransform: "uppercase", letterSpacing: ".06em",
+                      whiteSpace: "nowrap", flexShrink: 0,
+                    }}>{look.chip.label}</span>
+                  ) : (
+                    <span style={{
+                      padding: "1px 6px", borderRadius: 3,
+                      background: "#0d1510", border: "1px solid #253325",
+                      textTransform: "uppercase", letterSpacing: ".06em",
+                      whiteSpace: "nowrap", flexShrink: 0,
+                    }}>{tx.category}</span>
+                  )}
                   {tx.tags.slice(0, 2).map(t => (
                     <span key={t} style={{
                       padding: "1px 6px", borderRadius: 3,
@@ -303,10 +325,12 @@ export default function TransactionList({ onRowClick }: Props) {
                 </div>
               </div>
               <div style={{
-                fontFamily: "Fraunces, Georgia, serif", fontSize: 15, color: "#e8f4e8",
-              }}>{tx.amount < 0 ? `+${fmt(Math.abs(tx.amount))}` : fmt(tx.amount)}</div>
+                fontFamily: "Fraunces, Georgia, serif", fontSize: 15, color: look.amountColor,
+                whiteSpace: "nowrap",
+              }}>{look.amountText}</div>
             </div>
-          ))}
+            )
+          })}
 
           <div style={{ textAlign: "center", padding: "16px 0" }}>
             {nextCursor ? (

@@ -2,8 +2,12 @@ import type { Detector } from "../types"
 
 const GRACE_DAYS = 3
 
+// M7.3: "did a deposit arrive?" now means a row the classifier calls income.
+// Before, any negative amount counted — so a friend repaying you through Venmo,
+// or money moved in from your own savings, could satisfy a missing paycheck and
+// suppress the alert.
 export const detectMissedPaycheck: Detector = (ctx) => {
-  const { subscriptionAnalysis, transactions, now } = ctx
+  const { subscriptionAnalysis, classified, now } = ctx
   if (!subscriptionAnalysis) return []
 
   // Plaid recurring API: inflow_streams are income streams
@@ -23,15 +27,16 @@ export const detectMissedPaycheck: Detector = (ctx) => {
     const windowEnd   = new Date(predicted); windowEnd.setDate(predicted.getDate() + GRACE_DAYS)
     const merchantKey = (stream.merchantName ?? stream.merchant_name ?? "").toLowerCase()
 
-    const received = transactions.some(tx =>
-      Number(tx.amount) < 0 &&
-      tx.date >= windowStart &&
-      tx.date <= windowEnd &&
-      (merchantKey === "" || (tx.cleanName ?? tx.name ?? "").toLowerCase().includes(merchantKey))
+    const received = classified.some(row =>
+      row.verdict.kind === "income" &&
+      row.date >= windowStart &&
+      row.date <= windowEnd &&
+      (merchantKey === "" || row.merchantLabel.toLowerCase().includes(merchantKey))
     )
     if (received) continue
 
-    const ym = `${predicted.getFullYear()}-${String(predicted.getMonth() + 1).padStart(2, "0")}`
+    // UTC, like every other date key in the app.
+    const ym = predicted.toISOString().slice(0, 7)
     const displayName = stream.merchantName ?? stream.merchant_name ?? "Paycheck"
 
     out.push({
