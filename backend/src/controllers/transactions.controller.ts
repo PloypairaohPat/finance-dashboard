@@ -99,8 +99,8 @@ export async function patchTransaction(req: Request, res: Response): Promise<voi
   try {
     const userId = getUserId(req)
     const id = req.params.id as string
-    const { tags, notes, category } = req.body
-    const updated = await updateTransaction(userId, id, { tags, notes, category })
+    const { tags, notes, category, verdictOverride } = req.body
+    const updated = await updateTransaction(userId, id, { tags, notes, category, verdictOverride })
     res.json({ ok: true, transaction: updated })
   } catch (err: any) {
     if (err instanceof TransactionUpdateError) {

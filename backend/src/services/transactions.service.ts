@@ -17,8 +17,9 @@ import {
 } from "../lib/period"
 import { fetchFirstTransactionDate } from "./activity.service"
 import {
-  PAYMENTS_TO_PEOPLE, canRecategorise, describeVerdict,
-  type Classified, type RowMeaning,
+  PAYMENTS_TO_PEOPLE, VERDICT_OVERRIDES,
+  canOverrideVerdict, canRecategorise, describeVerdict, isVerdictOverride,
+  type Classified, type RowMeaning, type VerdictOverride,
 } from "../lib/classifier"
 import { getPeriodStartDay } from "./user.service"
 import { classifyWindow, spendByBucket, spendForPeriod } from "./classification.service"
@@ -206,6 +207,15 @@ export interface EnrichedTransaction {
   displayCategory:  DisplayCategory
   /** Whether PATCH will accept a category change for this row (see canRecategorise). */
   categoryEditable: boolean
+  /**
+   * M7.3: the user's own answer about what this row is, for the one verdict the
+   * rules cannot settle from the data — money in through a payment app.
+   */
+  verdictOverride: VerdictOverride | null
+  /** Whether PATCH will accept one for this row (see canOverrideVerdict). */
+  verdictOverridable: boolean
+  /** What the rules said, when the user has overridden it. */
+  verdictBeforeOverride: RowMeaning | null
 }
 
 export interface SearchResult {
@@ -309,6 +319,13 @@ async function enrichRows(userId: string, pageRows: RowForEnrichment[]): Promise
       meaning:     verdict ? describeVerdict(verdict) : { kind: "unclassified_inflow", label: "Unclassified" },
       displayCategory:  bucket,
       categoryEditable: verdict ? canRecategorise(verdict, r.categoryDetailed) : false,
+      verdictOverride:  isVerdictOverride(r.verdictOverride) ? r.verdictOverride : null,
+      // Asked of the verdict BEFORE any override, so a row stays overridable
+      // after it has been overridden — otherwise it could never be changed back.
+      verdictOverridable: verdict
+        ? canOverrideVerdict(verdict.overriddenFrom ?? verdict, r.pending)
+        : false,
+      verdictBeforeOverride: verdict?.overriddenFrom ? describeVerdict(verdict.overriddenFrom) : null,
     }
   })
 }
@@ -323,7 +340,7 @@ export class TransactionUpdateError extends Error {
 export async function updateTransaction(
   userId: string,
   transactionId: string,
-  data: { tags?: string[]; notes?: string | null; category?: unknown }
+  data: { tags?: string[]; notes?: string | null; category?: unknown; verdictOverride?: unknown }
 ): Promise<EnrichedTransaction> {
   const existing = await prisma.transaction.findFirst({
     where: { id: transactionId, userId },
@@ -355,12 +372,40 @@ export async function updateTransaction(
     }
   }
 
+  // The user's own answer about what the row is. null clears it, putting the
+  // row back under the rules.
+  let override: { verdictOverride: VerdictOverride | null; verdictOverrideAt: Date | null } | null = null
+  if (data.verdictOverride !== undefined) {
+    if (data.verdictOverride !== null && !isVerdictOverride(data.verdictOverride)) {
+      throw new TransactionUpdateError(
+        400,
+        `Unknown verdictOverride ${JSON.stringify(data.verdictOverride)}. Expected ${VERDICT_OVERRIDES.join(", ")} or null.`,
+      )
+    }
+    const [current] = await enrichRows(userId, [existing])
+    if (data.verdictOverride !== current.verdictOverride) {
+      if (!current.verdictOverridable) {
+        throw new TransactionUpdateError(
+          409,
+          existing.pending
+            ? "This transaction is still pending, and a pending row gets a new id when it posts, so an override would be lost."
+            : `Only money in through a payment app can be overridden. This row is counted as "${current.meaning.label}", which the rules decide from its own structure.`,
+        )
+      }
+      override = {
+        verdictOverride: data.verdictOverride,
+        verdictOverrideAt: data.verdictOverride === null ? null : new Date(),
+      }
+    }
+  }
+
   const updated = await prisma.transaction.update({
     where: { id: transactionId },
     data: {
       ...(data.tags     !== undefined && { tags:  data.tags }),
       ...(data.notes    !== undefined && { notes: data.notes }),
       ...(codes ?? {}),
+      ...(override ?? {}),
     },
     include: { account: { select: { name: true } } },
   })

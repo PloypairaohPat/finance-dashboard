@@ -96,6 +96,13 @@ model Transaction {
   tags      String[]  @default([])
   notes     String?
 
+  // M7.3 — the user's own answer about what this row IS, when the rules get it
+  // wrong. Scoped to payment-app money in: "income" or "repayment", null for
+  // "whatever the rules say". Plaid sync never writes this column, so an
+  // override survives a later sync of the same transaction.
+  verdictOverride   String?
+  verdictOverrideAt DateTime?
+
   @@index([userId, date])
   @@index([userId, categoryPrimary])
   @@index([accountId])

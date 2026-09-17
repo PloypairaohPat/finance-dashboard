@@ -234,6 +234,12 @@ export interface EnrichedTransaction {
   displayCategory: string
   /** False where a rule, not the category, decides how the row counts. */
   categoryEditable: boolean
+  /** "income" | "repayment" — the user's own answer, when they gave one. */
+  verdictOverride: "income" | "repayment" | null
+  /** Whether this row may be overridden at all (payment-app money in only). */
+  verdictOverridable: boolean
+  /** What the rules said, when the user has overridden it. */
+  verdictBeforeOverride: RowMeaning | null
 }
 
 export interface SearchResult {
