@@ -350,14 +350,14 @@ cd finance-dashboard
 
 # 2. Backend
 cd backend
-cp .env.example .env          # PLAID_*, CLERK_*, ENCRYPTION_KEY
+cp .env.example .env          # no database URLs — see "Production credentials" below
 cp .env.dev.example .env.dev  # local dev database — see "Local databases" below
 npm install
 npx prisma generate
 npm run db:dev:up             # start local Postgres (Docker)
 npm run db:dev:migrate        # apply migrations to the LOCAL db
 npm run db:dev:seed           # realistic demo data, no Plaid calls
-npm run dev                   # http://localhost:4000
+npm run dev                   # guarded, uses .env.dev — http://localhost:3001
 
 # 3. Frontend (new terminal)
 cd ../frontend
@@ -420,7 +420,11 @@ Because the guard is wired as a `pre` script, it cannot be skipped by forgetting
 
 A tempting alternative is to guard `migrate deploy` but allow it when `RAILWAY_ENVIRONMENT` (or a similar variable) is set. **That was considered and rejected:** `RAILWAY_ENVIRONMENT` is user-settable — anyone can export it on a laptop — so it would be a guard that appears enforced and isn't. An honest, documented exception is safer than a check that only looks like one.
 
-**The Prisma CLI does not read `backend/.env`.** Because `backend/prisma.config.ts` exists, Prisma skips `.env` loading entirely (it prints "Prisma config detected, skipping environment variable loading"). So if a Prisma command fails with `Environment variable not found: DATABASE_URL` — for example `npx prisma studio` "can't connect" — that's why, not a broken database. Run it through the local env file instead: `npm run db:dev:studio`, or `npx dotenv -e .env.dev -- prisma <command>`. The app itself (`npm run dev`) still loads `.env` as before; only the Prisma CLI is affected.
+**Production credentials never live on a laptop.** `backend/.env` used to hold the production database connection, and everything that loaded it reached production by default — `prisma migrate dev`, the demo seed, and `npm run dev`, which also starts the Plaid sync scheduler. Each got its own guard; the file was the cause. Its `DATABASE_URL` and `DIRECT_URL` are now placeholders on a `.invalid` host, which can never resolve, so anything that falls back to that file fails loudly instead of connecting somewhere real. Production credentials exist only in Railway's environment, and the deployed app reads no `.env` file. `npm run dev` itself runs the local-db guard first (`predev`) and loads `backend/.env.dev`.
+
+**Demo mode never calls Clerk, so local work needs no Clerk account.** Clerk's middleware checks the publishable key's *format* on every request, so a placeholder such as `pk_test_your-key` makes every request return 500 before any route runs. `backend/.env.dev.example` ships a format-valid key for a domain that does not exist; with it, `http://localhost:3000/?demo=1` works end to end. Swap in real Clerk development keys only if you need to sign in locally.
+
+**The Prisma CLI does not read `backend/.env`.** Because `backend/prisma.config.ts` exists, Prisma skips `.env` loading entirely (it prints "Prisma config detected, skipping environment variable loading"). So if a Prisma command fails with `Environment variable not found: DATABASE_URL` — for example `npx prisma studio` "can't connect" — that's why, not a broken database. Run it through the local env file instead: `npm run db:dev:studio`, or `npx dotenv -e .env.dev -- prisma <command>`. The app itself (`npm run dev`) loads `backend/.env.dev` too, after the local-db guard.
 
 Deployments apply migrations with `prisma migrate deploy`, which never creates or drops a database. That is also what CI runs.
 
