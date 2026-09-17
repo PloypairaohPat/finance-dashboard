@@ -8,14 +8,15 @@
 //  setting is not touched and no row is written. Same discipline as the M7.3
 //  reconciler — a difference that can't be named is reported as unexplained.
 //
-//  SAFE TO POINT AT PRODUCTION. It opens the database with
-//  default_transaction_read_only=on, proves that took effect by attempting a
-//  write that must fail, and refuses to go on if either check doesn't hold.
+//  SAFE TO POINT AT PRODUCTION. It asks for a read-only session two ways (a
+//  startup option on the URL, and SET SESSION after connecting, because a
+//  pooler can ignore the first), then proves it by attempting a write that must
+//  fail. If the write is accepted, the run refuses. --diagnose prints what the
+//  server actually reports, without printing any credential.
 //
-//  It reads DIRECT_URL by default, falling back to DATABASE_URL, because
-//  DATABASE_URL is usually the pooled connection and a pooler in transaction
-//  mode drops the read-only option. --url-env NAME picks another variable, and
-//  --allow-remote names the host of the URL actually being read.
+//  It reads DIRECT_URL by default, falling back to DATABASE_URL. --url-env NAME
+//  picks another variable, and --allow-remote names the host of the URL that is
+//  actually being read.
 //
 //  Local (demo data):
 //    npm run db:guard && npx dotenv -e .env.dev -- tsx scripts/payment-app-income-report.ts --user demo-user
@@ -41,10 +42,10 @@ function refuse(message: string): never {
 /**
  * Which environment variable holds the connection to read.
  *
- * DIRECT_URL first, because DATABASE_URL is usually a pooled connection and a
- * pooler in transaction mode drops the startup option this script relies on —
- * which used to leave the run refusing with advice ("use the direct
- * connection") that no flag could act on. `--url-env NAME` overrides.
+ * DIRECT_URL first, then DATABASE_URL, and `--url-env NAME` overrides. Every
+ * refusal names the variable it read: this script once insisted on "the direct
+ * connection" while requiring --allow-remote to match DATABASE_URL, which no
+ * flag value could satisfy.
  */
 function pickUrlEnv(): { name: string; raw: string } {
   const asked = flag('url-env')
@@ -66,9 +67,9 @@ function readOnlyUrl(raw: string, envName: string): { url: string; host: string 
   } catch {
     refuse(`${envName} is not a valid URL.`)
   }
-  // Postgres accepts startup options on the connection string. A connection
-  // pooler in transaction mode may ignore them, which is why this is verified
-  // rather than trusted. One connection, so what is verified is what is used.
+  // A startup option, which a pooler may not forward — see the second attempt
+  // (SET SESSION) after connecting. Neither is trusted; the write test decides.
+  // connection_limit=1 keeps every query on the connection that was tested.
   parsed.searchParams.set('options', '-c default_transaction_read_only=on')
   parsed.searchParams.set('connection_limit', '1')
   return { url: parsed.toString(), host: parsed.hostname.toLowerCase() }
@@ -96,40 +97,101 @@ async function main() {
 
   // Imported only after the URL is replaced: the shared client reads it once.
   const { default: prisma } = await import('../src/lib/prisma')
-  let read_only: string
+
+  const ask = async (sql: string) => {
+    const [row] = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(sql)
+    return Object.values(row)[0]
+  }
+
+  // ── Make the session read-only, then prove it ───────────────────
+  //
+  // Read-only is asked for TWICE, because either way can be unavailable:
+  //
+  //   1. `options=-c default_transaction_read_only=on` on the URL. A startup
+  //      parameter, and a connection pooler need not forward it — Supabase's
+  //      Supavisor doesn't, in session mode or transaction mode. That isn't a
+  //      6543-vs-5432 thing, which an earlier version of this script wrongly
+  //      claimed.
+  //   2. `SET SESSION` after connecting. An ordinary statement, so a pooler
+  //      passes it through. It sticks for a session-mode connection, which is
+  //      pinned to one server connection; in transaction mode it is discarded
+  //      when the statement ends, and the check below then sees it missing.
+  //
+  // connection_limit=1 is what ties the two together: the connection this is
+  // verified on is the connection every later query uses.
+  let setSessionError: string | null = null
   try {
-    ;[{ read_only }] = await prisma.$queryRawUnsafe<Array<{ read_only: string }>>(
-      "SELECT current_setting('default_transaction_read_only') AS read_only",
-    )
+    await prisma.$executeRawUnsafe('SET SESSION default_transaction_read_only = on')
+  } catch (e: any) {
+    setSessionError = e.code ?? e.message
+  }
+
+  let readOnly: string
+  try {
+    readOnly = await ask("SELECT current_setting('default_transaction_read_only')")
   } catch (e: any) {
     // A direct Supabase host is IPv6-only unless the IPv4 add-on is enabled, so
     // it can be unreachable from a place where the pooled host works fine.
     refuse(
       `could not connect using ${chosen.name} (${host}): ${e.code ?? e.message}
-  If that host is unreachable from here, use a SESSION-mode pooler connection (port 5432
-  on the pooler host, not 6543): session mode keeps the read-only option that transaction
-  mode drops. Put it in an env var, then pass --url-env NAME --allow-remote <that host>.`,
+  If that host is unreachable from here, use the pooled connection instead:
+  --url-env DATABASE_URL --allow-remote <that host>.`,
     )
   }
-  if (read_only !== 'on') {
-    const others = ['DIRECT_URL', 'DATABASE_URL'].filter((n) => n !== chosen.name && process.env[n])
-    refuse(
-      `${chosen.name} (${host}) dropped the read-only option, which a connection pooler in\n` +
-      '  transaction mode does. This needs a direct (session) connection.\n' +
-      (others.length > 0
-        ? `  Try: --url-env ${others[0]}  — and pass --allow-remote for THAT host, not this one.`
-        : '  Set DIRECT_URL to the direct connection (Supabase: Project Settings → Database →\n' +
-          '  Connection string → Direct connection), then re-run.'),
-    )
-  }
-  // Belt and braces: a statement that writes nothing but must still be refused.
+
+  // What actually matters is not the setting's value but whether a write is
+  // refused, so that is the test that decides. The setting is reported for
+  // diagnosis only.
+  //
+  // The outcome is a boolean, deliberately. Reading it off the message text
+  // said "write accepted" on a connection that had refused the write: Prisma
+  // formats errors with a leading blank line, so the first line is "", which is
+  // falsy. That would have blocked a perfectly good read-only connection.
   let writesRefused = false
+  let writeError: string | null = null
   try {
     await prisma.$executeRawUnsafe('UPDATE "User" SET "periodStartDay" = "periodStartDay" WHERE false')
-  } catch {
+  } catch (e: any) {
     writesRefused = true
+    // Prefer Postgres's own words ("cannot execute UPDATE in a read-only
+    // transaction") over Prisma's wrapper line.
+    const lines = String(e?.message ?? e).split('\n').map((l: string) => l.trim()).filter(Boolean)
+    writeError = lines.find((l: string) => /read-only|cannot execute/i.test(l)) ?? lines[0] ?? 'refused'
   }
-  if (!writesRefused) refuse('a write was accepted on a connection that claims to be read-only.')
+
+  if (flag('diagnose') !== undefined || process.argv.includes('--diagnose')) {
+    const parsed = new URL(chosen.raw)
+    console.log('\npayment-app-income-report --diagnose')
+    console.log(`  variable read          ${chosen.name}`)
+    console.log(`  host                   ${host}`)
+    console.log(`  port                   ${parsed.port || '5432 (default)'}`)
+    console.log(`  database               ${parsed.pathname.replace(/^\//, '') || '(none)'}`)
+    console.log(`  user in the URL        ${parsed.username ? 'set' : 'not set'} (value not shown)`)
+    console.log(`  params already on it   ${[...new URL(chosen.raw).searchParams.keys()].join(', ') || '(none)'}`)
+    console.log(`  server version         ${await ask('SELECT version()')}`)
+    console.log(`  SET SESSION            ${setSessionError ? `FAILED: ${setSessionError}` : 'accepted'}`)
+    console.log(`  read-only now reads    ${readOnly}`)
+    console.log(`  a write is             ${writesRefused ? `REFUSED: ${writeError}` : 'ACCEPTED — not read-only'}`)
+    console.log(
+      writesRefused
+        ? '\n  Read-only holds. Re-run without --diagnose for the report.\n'
+        : '\n  This connection would accept writes, so the report refuses to run on it.\n',
+    )
+    await prisma.$disconnect()
+    return
+  }
+
+  if (!writesRefused) {
+    refuse(
+      `writes are still accepted on ${chosen.name} (${host}), so this is not a read-only session.
+  SET SESSION was ${setSessionError ? `refused (${setSessionError})` : 'accepted'}, and
+  default_transaction_read_only reads "${readOnly}".
+  A pooler in TRANSACTION mode discards SET SESSION, which does this. Use a session
+  connection (Supabase: the Session pooler, or the direct host), put it in its own
+  variable, and pass --url-env NAME --allow-remote <that host>.
+  Run with --diagnose to see what the server reports.`,
+    )
+  }
 
   const { recentPeriods, fromDateKey, periodKeyOf } = await import('../src/lib/period')
   const { classifyWindow, withClassifierSettings, incomeForPeriod, spendForPeriod, savingsRateFor } =
