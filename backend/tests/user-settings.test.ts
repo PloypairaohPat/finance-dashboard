@@ -123,7 +123,7 @@ describe('GET/PUT /user/settings', () => {
   it('a signed-in user with no User row gets the default, calendar months', async () => {
     const res = await request(app).get('/user/settings').set('X-Test-User', NO_ROW)
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ periodStartDay: 1 })
+    expect(res.body).toEqual({ periodStartDay: 1, paymentAppInflowsAreIncome: false })
   })
 
   it.each([[0], [29], [1.5], ['10'], [null], [undefined]])(
@@ -139,9 +139,9 @@ describe('GET/PUT /user/settings', () => {
   it('saves a valid day and returns it', async () => {
     const res = await put(USER, { periodStartDay: 10 })
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ periodStartDay: 10 })
+    expect(res.body).toEqual({ periodStartDay: 10, paymentAppInflowsAreIncome: false })
     const read = await request(app).get('/user/settings').set('X-Test-User', USER)
-    expect(read.body).toEqual({ periodStartDay: 10 })
+    expect(read.body).toEqual({ periodStartDay: 10, paymentAppInflowsAreIncome: false })
   })
 
   it('creates the User row for a first-time user (ensureUser)', async () => {
@@ -154,7 +154,7 @@ describe('GET/PUT /user/settings', () => {
   it("one user's setting never reads or writes another's", async () => {
     await put(USER, { periodStartDay: 10 })
     const otherRead = await request(app).get('/user/settings').set('X-Test-User', OTHER)
-    expect(otherRead.body).toEqual({ periodStartDay: 1 })
+    expect(otherRead.body).toEqual({ periodStartDay: 1, paymentAppInflowsAreIncome: false })
     await put(OTHER, { periodStartDay: 20 })
     const userRow = await prisma.user.findUniqueOrThrow({ where: { id: USER } })
     expect(userRow.periodStartDay).toBe(10)

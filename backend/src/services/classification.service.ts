@@ -14,6 +14,7 @@
 //  caller filters by date afterwards.
 // ─────────────────────────────────────────────────────────────────
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import prisma from '../lib/prisma'
 import {
   MAX_RULE_LOOKBACK_DAYS,
@@ -21,6 +22,8 @@ import {
   type ClassificationResult,
   type ClassifierTx,
   type Classified,
+  isCappedPaymentApp,
+  isPaymentAppOutflow,
 } from '../lib/classifier'
 import { periodContaining, periodKeyOf } from '../lib/period'
 
@@ -31,6 +34,32 @@ import { periodContaining, periodKeyOf } from '../lib/period'
  */
 export const PAIRING_PAD_DAYS = MAX_RULE_LOOKBACK_DAYS
 const DAY_MS = 86_400_000
+
+/** The user settings the classifier itself reads. */
+export interface ClassifierSettings {
+  paymentAppInflowsAreIncome: boolean
+}
+
+// Answering "what would this user's figures be with the setting the other way?"
+// without touching their stored setting. Every figure in the app is computed
+// through classifyWindow, most of it several services deep, so the alternative
+// is threading an option through every signature. Scoped to one async call:
+// nothing outside withClassifierSettings sees it.
+const settingsOverride = new AsyncLocalStorage<ClassifierSettings>()
+
+export function withClassifierSettings<T>(settings: ClassifierSettings, fn: () => Promise<T>): Promise<T> {
+  return settingsOverride.run(settings, fn)
+}
+
+export async function getClassifierSettings(userId: string): Promise<ClassifierSettings> {
+  const override = settingsOverride.getStore()
+  if (override) return override
+  const row = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { paymentAppInflowsAreIncome: true },
+  })
+  return { paymentAppInflowsAreIncome: row?.paymentAppInflowsAreIncome ?? false }
+}
 
 export interface ClassifiedRow {
   id: string
@@ -51,6 +80,8 @@ export interface ClassifiedWindow {
   result: ClassificationResult
   /** Payment-app spend after the cap, by period key. */
   paymentAppByPeriod: Map<string, number>
+  /** The settings these verdicts were produced under. */
+  settings: ClassifierSettings
 }
 
 export async function classifyWindow(
@@ -60,7 +91,8 @@ export async function classifyWindow(
   const paddedSince = new Date(window.since.getTime() - PAIRING_PAD_DAYS * DAY_MS)
   const paddedUntil = new Date(window.until.getTime() + PAIRING_PAD_DAYS * DAY_MS)
 
-  const [accounts, items, rows] = await Promise.all([
+  const [settings, accounts, items, rows] = await Promise.all([
+    getClassifierSettings(userId),
     prisma.account.findMany({ where: { userId }, select: { id: true, type: true, plaidItem: { select: { institutionName: true } } } }),
     prisma.plaidItem.findMany({ where: { userId }, select: { institutionName: true } }),
     prisma.transaction.findMany({
@@ -108,6 +140,7 @@ export async function classifyWindow(
       linkedInstitutions: items.map((i) => i.institutionName).filter(Boolean) as string[],
       institutionsWithCreditAccount,
       periodKeyOf: (d: Date) => periodKeyOf(d, window.startDay),
+      paymentAppInflowsAreIncome: settings.paymentAppInflowsAreIncome,
     },
   )
 
@@ -135,6 +168,7 @@ export async function classifyWindow(
       verdict: result.byId.get(p.row.id)!,
     })),
     result,
+    settings,
     paymentAppByPeriod: new Map(
       result.paymentApp.filter((p) => fullyCovered(p.key)).map((p) => [p.key, p.spend]),
     ),
@@ -158,7 +192,7 @@ export function spendForPeriod(
   let total = 0
   for (const r of rows) {
     if (periodKeyOf(r.date, startDay) !== periodKey) continue
-    if (r.verdict.rule === 4) continue // capped below
+    if (isCappedPaymentApp(r.verdict)) continue // capped below
     if (r.verdict.kind === 'spend' || r.verdict.kind === 'refund') total += r.amount
   }
   return round2(total + (paymentAppByPeriod.get(periodKey) ?? 0))
@@ -182,7 +216,7 @@ export function incomeForPeriod(
 function bucketsExcludingPaymentApps(rows: readonly ClassifiedRow[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const r of rows) {
-    if (r.verdict.rule === 4) continue
+    if (isCappedPaymentApp(r.verdict)) continue
     if (r.verdict.kind === 'spend') {
       const bucket = r.verdict.bucket ?? 'Other'
       out[bucket] = round2((out[bucket] ?? 0) + r.amount)
@@ -223,8 +257,8 @@ export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
   let out = 0
   let inflow = 0
   for (const r of rows) {
-    if (r.verdict.rule !== 4) continue
-    if (r.amount > 0) out += r.amount
+    if (!isCappedPaymentApp(r.verdict)) continue
+    if (isPaymentAppOutflow(r.verdict)) out += r.amount
     else inflow += -r.amount
   }
   return round2(Math.max(0, out - Math.min(out, inflow)))
@@ -257,8 +291,8 @@ export function paymentAppFlowsForRows(rows: readonly ClassifiedRow[]): { out: n
   let out = 0
   let inflow = 0
   for (const r of rows) {
-    if (r.verdict.rule !== 4) continue
-    if (r.amount > 0) out += r.amount
+    if (!isCappedPaymentApp(r.verdict)) continue
+    if (isPaymentAppOutflow(r.verdict)) out += r.amount
     else inflow += -r.amount
   }
   return { out: round2(out), in: round2(inflow) }

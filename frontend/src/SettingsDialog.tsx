@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react"
-import { usePeriod } from "./PeriodProvider"
+import { useSettings } from "./SettingsProvider"
 import { colors, fonts } from "./tokens"
 
 // ─────────────────────────────────────────────────────────────────
 //  SettingsDialog — opened from "Settings" in the account menu (M7.2).
 //
-//  Holds exactly one control today: the day money periods start on. It is not
-//  a settings page; it lives behind the account menu because the setting
-//  reaches the hero, Insights and five charts, not one chart's header.
+//  Two controls: the day money periods start on (M7.2), and whether money in
+//  through a payment app counts as income (M7.3). It is not a settings page;
+//  it lives behind the account menu because both settings reach the hero,
+//  Insights and five charts, not one chart's header.
 //
 //  Signed-in users only: demo mode is fixed at day 1 and never shows it.
 // ─────────────────────────────────────────────────────────────────
@@ -21,16 +22,18 @@ const ordinal = (n: number) => {
 const DAYS = Array.from({ length: 28 }, (_, i) => i + 1)
 
 export default function SettingsDialog({ onClose }: { onClose: () => void }) {
-  const { startDay, loaded, save } = usePeriod()
+  const { startDay, paymentAppInflowsAreIncome, loaded, save } = useSettings()
   const [choice, setChoice] = useState(startDay)
+  const [asIncome, setAsIncome] = useState(paymentAppInflowsAreIncome)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
   const titleId = useId()
   const selectId = useId()
 
-  // Adopt the stored value if it finishes loading after the dialog opened.
+  // Adopt the stored values if they finish loading after the dialog opened.
   useEffect(() => { setChoice(startDay) }, [startDay])
+  useEffect(() => { setAsIncome(paymentAppInflowsAreIncome) }, [paymentAppInflowsAreIncome])
 
   useEffect(() => {
     selectRef.current?.focus()
@@ -42,13 +45,13 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   const onSave = async () => {
     setSaving(true)
     setError(null)
-    const message = await save(choice)
+    const message = await save({ startDay: choice, paymentAppInflowsAreIncome: asIncome })
     setSaving(false)
     if (message) setError(message)
     else onClose()
   }
 
-  const unchanged = choice === startDay
+  const unchanged = choice === startDay && asIncome === paymentAppInflowsAreIncome
 
   return (
     <>
@@ -104,6 +107,37 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
         <p style={{ fontSize: 12, lineHeight: 1.6, color: colors.muted, margin: "8px 0 0" }}>
           Budgets, the financial score, goals and alerts still use calendar months.
         </p>
+
+        <div style={{ borderTop: `1px solid ${colors.border2}`, margin: "20px 0 0", paddingTop: 18 }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={asIncome}
+              disabled={!loaded || saving}
+              onChange={(e) => setAsIncome(e.target.checked)}
+              style={{ marginTop: 3, accentColor: colors.green, width: 15, height: 15 }}
+            />
+            <span>
+              <span style={{
+                display: "block", fontFamily: fonts.mono, fontSize: 11,
+                letterSpacing: ".06em", textTransform: "uppercase", color: colors.muted, marginBottom: 6,
+              }}>
+                Count money from payment apps as income
+              </span>
+              <span style={{ fontSize: 13, lineHeight: 1.6, color: colors.muted2 }}>
+                Money in through Venmo, Zelle or Cash App is normally treated as someone paying
+                you back, so it reduces what you paid out rather than counting as income. Turn
+                this on if people usually send you money that is really yours to keep &mdash; a
+                roommate&rsquo;s share of the rent, or work paid this way.
+              </span>
+            </span>
+          </label>
+          <p style={{ fontSize: 12, lineHeight: 1.6, color: colors.muted, margin: "10px 0 0 25px" }}>
+            This changes what every period has always meant, not just from now on, so your income,
+            savings rate and score move for past months too. Payments you send stay under
+            &ldquo;Payments to people&rdquo;, at their full amount.
+          </p>
+        </div>
 
         {error && (
           <div role="alert" style={{ marginTop: 14, fontFamily: fonts.mono, fontSize: 12, color: colors.red }}>

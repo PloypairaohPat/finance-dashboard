@@ -14,7 +14,7 @@ import {
 import { useApiFetch } from "./lib/useApiFetch"
 import { API_URL } from "./config"
 import { useSyncVersion } from "./SyncProvider"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import type { PeriodInfo } from "./types"
 
 // One bar group per money period (M7.2), oldest first. Every period in the
@@ -78,7 +78,7 @@ export default function CashFlowChart() {
   const [loading, setLoading] = useState(true)
   const apiFetch = useApiFetch()
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync and every period-setting change; the current chart
   // stays on screen meanwhile, and a superseded run's response is ignored.
@@ -96,7 +96,7 @@ export default function CashFlowChart() {
       }
     })()
     return () => { cancelled = true }
-  }, [apiFetch, syncVersion, periodVersion])
+  }, [apiFetch, syncVersion, settingsVersion])
 
   if (loading) {
     return (

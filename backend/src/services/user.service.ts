@@ -27,6 +27,51 @@ export async function getPeriodStartDay(userId: string): Promise<number> {
   return row?.periodStartDay ?? DEFAULT_PERIOD_START_DAY
 }
 
+// ── M7.3 — payment-app inflows as income ────────────────────────────
+// Read by the classifier, not by a caller: see classification.service's
+// getClassifierSettings. This is the settings API's view of the same column.
+export interface UserSettings {
+  periodStartDay: number
+  paymentAppInflowsAreIncome: boolean
+}
+
+export async function getUserSettings(userId: string): Promise<UserSettings> {
+  const row = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { periodStartDay: true, paymentAppInflowsAreIncome: true },
+  })
+  return {
+    periodStartDay: row?.periodStartDay ?? DEFAULT_PERIOD_START_DAY,
+    paymentAppInflowsAreIncome: row?.paymentAppInflowsAreIncome ?? false,
+  }
+}
+
+/**
+ * Save whichever settings were sent. The demo user is refused here too, as a
+ * second line behind the demoReadOnly middleware.
+ *
+ * Nothing is recomputed or stored: verdicts are derived on read, so a change
+ * takes effect for every period at once, past ones included.
+ */
+export async function updateUserSettings(
+  userId: string,
+  patch: Partial<UserSettings>,
+): Promise<UserSettings> {
+  if (userId === DEMO_USER_ID) throw new Error('Demo settings are read-only')
+  await ensureUser(userId)
+  const row = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(patch.periodStartDay !== undefined && { periodStartDay: patch.periodStartDay }),
+      ...(patch.paymentAppInflowsAreIncome !== undefined && {
+        paymentAppInflowsAreIncome: patch.paymentAppInflowsAreIncome,
+      }),
+    },
+    select: { periodStartDay: true, paymentAppInflowsAreIncome: true },
+  })
+  return row
+}
+
 // Callers validate the value (isValidPeriodStartDay) first. The demo user is
 // refused here too, as a second line behind the demoReadOnly middleware.
 export async function setPeriodStartDay(userId: string, periodStartDay: number): Promise<number> {

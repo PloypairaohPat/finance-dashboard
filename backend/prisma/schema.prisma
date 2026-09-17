@@ -17,6 +17,10 @@ model User {
   // M7.2 — day of the month (1–28) each money period starts on. 1 = calendar
   // months. Validated at the API (PUT /user/settings); see src/lib/period.ts.
   periodStartDay Int         @default(1)
+  // Whether money in through a payment app (Venmo, Zelle, Cash App) counts as
+  // income instead of netting against payments to people (R4). Off by default:
+  // turning it on re-derives every past period. See docs/m7.3-classifier.md.
+  paymentAppInflowsAreIncome Boolean @default(false)
   plaidItems   PlaidItem[]
   accounts     Account[]
   transactions Transaction[]

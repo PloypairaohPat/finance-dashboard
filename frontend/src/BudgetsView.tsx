@@ -8,6 +8,7 @@ import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
 import type { Budget } from "./types"
+import { useSettings } from "./SettingsProvider"
 
 // ─────────────────────────────────────────────────────────────────
 //  BudgetsView — the Budgets tab.
@@ -37,6 +38,8 @@ export default function BudgetsView() {
   const apiFetch = useApiFetch()
   const { demoMode } = useDemo()
   const syncVersion = useSyncVersion()
+  // The payment-app income setting moves these figures too (M7.3).
+  const { version: settingsVersion } = useSettings()
 
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,7 +73,7 @@ export default function BudgetsView() {
     }
     reload()
     // syncVersion is a trigger only: a new value means bank data just changed.
-  }, [demoMode, isSignedIn, reload, syncVersion])
+  }, [demoMode, isSignedIn, reload, syncVersion, settingsVersion])
 
   return (
     <TabPage title="Budgets" count="this month">

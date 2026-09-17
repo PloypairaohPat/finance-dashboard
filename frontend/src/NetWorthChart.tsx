@@ -15,7 +15,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import { usePeriod } from "./PeriodProvider"
+import { useSettings } from "./SettingsProvider"
 import type { Range, NetWorthResponse } from "./types"
 import { colors, fonts } from "./tokens"
 import { SkeletonChart } from "./Skeleton"
@@ -44,7 +44,7 @@ export default function NetWorthChart() {
   const [data, setData] = useState<NetWorthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // What the chart on screen was fetched for. A new range (or a demo/auth
   // switch) shows the skeleton as before; a sync or period-setting re-fetch of
@@ -74,7 +74,7 @@ export default function NetWorthChart() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, range, fetchKey, syncVersion, periodVersion])
+  }, [demoMode, isSignedIn, apiFetch, range, fetchKey, syncVersion, settingsVersion])
 
   if (loading || !data) {
     return <SkeletonChart height={240} />

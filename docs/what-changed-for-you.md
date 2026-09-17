@@ -72,6 +72,30 @@ the extra shows as money in that we couldn't identify, rather than being counted
 income. It's shown rather than hidden, so you can see it and tell us if we've got it
 wrong.
 
+## If people send you money that's really yours: a setting
+
+By default, money arriving through Venmo, Zelle or Cash App is treated as someone paying
+you back, as above. For some people that's wrong most of the time — if your roommates send
+you their share of the rent every month, or you're paid for work that way, that money is
+yours to keep.
+
+**Settings has a switch for it: "Count money from payment apps as income."** With it on,
+money in through those apps counts as income, and money you send still shows in full under
+"Payments to people". It's off unless you turn it on, and it only affects your own
+account.
+
+Two things worth knowing before you use it:
+
+- **It changes the past as well as the future.** Your income, savings rate and score for
+  previous months all move at once, because the switch changes what those months have
+  always meant, not just what happens from now on. Nothing about your actual money
+  changes.
+- **Cashing out your own balance will look like income.** If you top up Venmo from your
+  bank and later move that money back out, the app can't tell that from a friend sending
+  you money, so with the switch on that cash-out counts as income even though it's money
+  you already had. If you do that often, the switch will overstate what you earn. Tell us
+  and we'll fix the rows.
+
 ## The weekly digest
 
 The weekly summary follows the same rules, so moving money to savings no longer shows

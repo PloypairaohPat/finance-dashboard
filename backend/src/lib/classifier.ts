@@ -116,6 +116,8 @@ export type Mechanism =
   | 'credit-inflow-not-income'
   | 'payment-app-out'
   | 'payment-app-in'
+  /** Payment-app money in, counted as income by the user's setting (not netted). */
+  | 'payment-app-in-income'
   | 'income-definition-c'
   | 'unclassified-inflow'
   | 'ordinary-spend'
@@ -135,6 +137,25 @@ export interface Classified {
   reason: string
 }
 
+// ── payment-app rows, by what they are ────────────────────────────
+//
+// Code that needs "the payment-app rows" asks these, never `rule === 4`. The
+// rule number says which rule caught a row, not what the row is, and the two
+// come apart as soon as a payment-app inflow can be something other than a
+// repayment (a user setting that counts it as income, or a user override).
+// Keyed on rule number, such a row would still be netted by the cap AND
+// counted as income: the same money twice.
+
+/** Money out to a person through a payment app: "Payments to people". */
+export const isPaymentAppOutflow = (v: Pick<Classified, 'mechanism'>) => v.mechanism === 'payment-app-out'
+
+/** Money in through a payment app that nets against payment-app outflows (D5's cap). */
+export const isPaymentAppRepayment = (v: Pick<Classified, 'mechanism'>) => v.mechanism === 'payment-app-in'
+
+/** Either side of the cap: summed as a per-period total, never row by row. */
+export const isCappedPaymentApp = (v: Pick<Classified, 'mechanism'>) =>
+  isPaymentAppOutflow(v) || isPaymentAppRepayment(v)
+
 /**
  * What a single row means, in words a transaction list can show.
  *
@@ -147,10 +168,10 @@ export interface RowMeaning {
   label: string
 }
 
-export function describeVerdict(verdict: Pick<Classified, 'kind' | 'rule'>): RowMeaning {
+export function describeVerdict(verdict: Pick<Classified, 'kind' | 'mechanism'>): RowMeaning {
   switch (verdict.kind) {
     case 'spend':
-      return { kind: 'spend', label: verdict.rule === 4 ? 'Payment to a person' : 'Spending' }
+      return { kind: 'spend', label: isPaymentAppOutflow(verdict) ? 'Payment to a person' : 'Spending' }
     case 'income':
       return { kind: 'income', label: 'Income' }
     case 'card_payment':
@@ -198,6 +219,20 @@ export interface ClassifyOptions {
   institutionsWithCreditAccount: string[]
   /** Which money period a date belongs to — R4's cap is per period. */
   periodKeyOf: (date: Date) => string
+  /**
+   * The user's setting: money in through a payment app is income, rather than
+   * someone paying them back (R4).
+   *
+   * Off (the default) is the rule as calibrated: an inflow nets against that
+   * period's payment-app outflows, capped at zero (D5 option a). On, the inflow
+   * is income and nets against nothing, so the cap has no inflow left to work
+   * with and "Payments to people" reports the period's gross outflows.
+   *
+   * It exists because the rule cannot tell a roommate's share of the rent from
+   * a friend paying back half a dinner: both are money in from a person. Which
+   * one someone mostly receives is a fact about them, not about the row.
+   */
+  paymentAppInflowsAreIncome?: boolean
 }
 
 export interface ClassificationResult {
@@ -359,6 +394,11 @@ export function classify(
           id: t.id, kind: 'spend', rule: 4, mechanism: 'payment-app-out', bucket: PAYMENTS_TO_PEOPLE,
           reason: 'paid a person through a payment app',
         })
+      } else if (options.paymentAppInflowsAreIncome) {
+        claim({
+          id: t.id, kind: 'income', rule: 4, mechanism: 'payment-app-in-income',
+          reason: 'money in through a payment app, counted as income by the user\'s setting',
+        })
       } else {
         claim({
           id: t.id, kind: 'payment_app_in', rule: 4, mechanism: 'payment-app-in',
@@ -448,10 +488,10 @@ export function classify(
   const flows = new Map<string, PeriodFlow>()
   for (const t of rows) {
     const verdict = byId.get(t.id)
-    if (!verdict || verdict.rule !== 4) continue
+    if (!verdict || !isCappedPaymentApp(verdict)) continue
     const key = options.periodKeyOf(asDate(t.date))
     const flow = flows.get(key) ?? { key, out: 0, in: 0 }
-    if (isOut(t)) flow.out = Math.round((flow.out + t.amount) * 100) / 100
+    if (isPaymentAppOutflow(verdict)) flow.out = Math.round((flow.out + t.amount) * 100) / 100
     else flow.in = Math.round((flow.in - t.amount) * 100) / 100
     flows.set(key, flow)
   }

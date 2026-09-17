@@ -7,7 +7,8 @@ import { useDemo } from "./lib/DemoContext"
 import { useUrlParams } from "./lib/useUrlParams"
 import type { EnrichedTransaction, SearchResult, CategoryOption } from "./types"
 import { treatmentFor } from "./rowTreatment"
-import MerchantAvatar from "./MerchantAvatar"
+import MerchantAvatar from "./MerchantAvatar"
+import { useSettings } from "./SettingsProvider"
 
 interface Props { onRowClick: (tx: EnrichedTransaction) => void }
 
@@ -67,6 +68,8 @@ export default function TransactionList({ onRowClick }: Props) {
 
   const [searchInput, setSearchInput] = useState(q)
   const [showDrawer, setShowDrawer] = useState(false)
+  // Row chips come from the classifier, which the income setting changes (M7.3).
+  const { version: settingsVersion } = useSettings()
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [rows, setRows] = useState<EnrichedTransaction[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -113,7 +116,7 @@ export default function TransactionList({ onRowClick }: Props) {
     qs.set("limit", "50")
     const res = await apiFetch(`${API_URL}/transactions/search?${qs}`)
     return res.ok ? (await res.json() as SearchResult) : null
-  }, [apiFetch, filters])
+  }, [apiFetch, filters, settingsVersion])
 
   const syncVersion = useSyncVersion()
 

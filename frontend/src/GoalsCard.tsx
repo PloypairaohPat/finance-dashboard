@@ -5,7 +5,8 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { readWriteResult } from "./lib/writeResult"
 import { useDemo } from "./lib/DemoContext"
-import type { EnrichedGoal, GoalType, GoalStatus, Account } from "./types"
+import type { EnrichedGoal, GoalType, GoalStatus, Account } from "./types"
+import { useSettings } from "./SettingsProvider"
 
 const TYPE_META: Record<GoalType, { icon: string; color: string; label: string }> = {
   emergency_fund: { icon: "🛡", color: "#00e87a", label: "Emergency fund" },
@@ -40,6 +41,8 @@ export default function GoalsCard() {
   const [listError, setListError] = useState<string | null>(null)
 
   const syncVersion = useSyncVersion()
+  // The payment-app income setting moves these figures too (M7.3).
+  const { version: settingsVersion } = useSettings()
   // reload runs on mount, after every sync, and after a goal is saved; only the
   // most recently started one may write state.
   const requestSeq = useRef(0)
@@ -56,7 +59,7 @@ export default function GoalsCard() {
   }
 
   // Re-runs after every sync: goal progress follows balances.
-  useEffect(() => { if (demoMode || isSignedIn) reload() }, [demoMode, isSignedIn, syncVersion])  // eslint-disable-line
+  useEffect(() => { if (demoMode || isSignedIn) reload() }, [demoMode, isSignedIn, syncVersion, settingsVersion])  // eslint-disable-line
 
   const resetForm = () => {
     setAdding(false); setError(null)

@@ -4,7 +4,8 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import type { WeeklyDigest } from "./types"
+import type { WeeklyDigest } from "./types"
+import { useSettings } from "./SettingsProvider"
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
@@ -22,6 +23,8 @@ export default function WeeklyDigestCard() {
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
+  // The payment-app income setting moves these figures too (M7.3).
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync; the current digest stays on screen meanwhile, and
   // a superseded run's response is ignored.
@@ -38,7 +41,7 @@ export default function WeeklyDigestCard() {
       } finally { if (!cancelled) setLoading(false) }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, settingsVersion])
 
   if (loading || !digest) return null       // silent if not ready — fine at top of page
 
