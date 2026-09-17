@@ -40,6 +40,25 @@ Some months will now show a very small spending bar where they used to show a ta
 That usually means the month's activity was mostly transfers or a card payment — money
 moving around rather than money leaving.
 
+## Your transaction list now says what each row is
+
+The list used to decide colour and the "+" sign purely by which way the money moved. So
+when you paid off your credit card, the card's side of the payment showed as "+$812.34"
+— looking exactly like money you'd earned.
+
+Now each row is labelled with what it actually is:
+
+- **Card payments and transfers between your own accounts** are shown in grey, with no
+  "+" or "−" and a small arrow for direction, plus a label such as *Card payment* or
+  *Transfer*. They're neither spending nor income, so they no longer look like either.
+- **Refunds** are green with a *Refund* label, and **money friends send you back** is blue
+  with a *Repayment* label. Both keep their "+", because they do put money back in your
+  pocket — they just aren't income.
+- **Income** keeps its "+" and is now green. **Ordinary spending looks the same as before.**
+
+The label is always visible, including on a phone — it's what tells these rows apart now
+that colour does less of the work.
+
 ## Cash withdrawals still count as spending
 
 Taking $200 out of a cash machine looks, to the bank, a lot like a transfer — your bank
@@ -52,6 +71,22 @@ you sent and what came back. If people send you back more than you paid out in a
 the extra shows as money in that we couldn't identify, rather than being counted as
 income. It's shown rather than hidden, so you can see it and tell us if we've got it
 wrong.
+
+## The weekly digest
+
+The weekly summary follows the same rules, so moving money to savings no longer shows
+up as a week's spending *and* a week's income. Payments to people appear there as two
+amounts — what you sent and what came back — rather than one combined figure, because a
+friend often repays you in a different week from the one you paid in, and netting the two
+inside a single week would give a misleading number.
+
+## Your Financial Score may move
+
+The score is now built from the same numbers as everything else. Its savings part used to
+count every penny that arrived as income — repayments from friends, refunds, money moved
+in from your own savings — which made income look bigger than it was. Its debt part
+divided your debt by that same inflated income, which made debt look lighter. Your score
+may go up or down as a result; either way, it now agrees with the rest of the app.
 
 ## Your savings rate may sometimes show a dash
 
@@ -95,6 +130,17 @@ happens *again*, the alert comes back even though you dismissed the earlier one.
 you fixed and then went over a second time is news, and staying quiet about it would be
 hiding something rather than respecting your dismissal.
 
+**Fewer false alarms, too.** Paying off your credit card or moving money into savings no
+longer sets off a "large purchase" alert — nothing was bought. And a budget alert now
+quotes exactly the same figure as the budget card it's about, instead of a slightly
+different one worked out separately.
+
+## Your card payment is no longer listed as a bill
+
+The Subscriptions & Bills page could list your monthly credit-card payment as a recurring
+bill. It isn't one — it pays for purchases that are already on the page individually. It
+no longer appears there, and neither does a regular transfer into savings.
+
 ## A category can now show a negative number
 
 If you got more back in refunds in a category than you spent in it, that category shows
@@ -125,3 +171,8 @@ wrong for you:
   as spending.
 
 Connecting those accounts makes both cases exact rather than inferred.
+
+**One thing to avoid for now:** changing a transaction's category from its detail panel.
+There's a known problem where picking a new category there can file the transaction under
+*Other* in your totals instead of the category you chose. It isn't new, and a fix is on the
+list — until then, leaving categories as they are keeps your totals right.
