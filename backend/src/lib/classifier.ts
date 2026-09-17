@@ -116,6 +116,8 @@ export type Mechanism =
   | 'credit-inflow-not-income'
   | 'payment-app-out'
   | 'payment-app-in'
+  /** Payment-app money in, counted as income by the user's setting (not netted). */
+  | 'payment-app-in-income'
   | 'income-definition-c'
   | 'unclassified-inflow'
   | 'ordinary-spend'
@@ -217,6 +219,20 @@ export interface ClassifyOptions {
   institutionsWithCreditAccount: string[]
   /** Which money period a date belongs to — R4's cap is per period. */
   periodKeyOf: (date: Date) => string
+  /**
+   * The user's setting: money in through a payment app is income, rather than
+   * someone paying them back (R4).
+   *
+   * Off (the default) is the rule as calibrated: an inflow nets against that
+   * period's payment-app outflows, capped at zero (D5 option a). On, the inflow
+   * is income and nets against nothing, so the cap has no inflow left to work
+   * with and "Payments to people" reports the period's gross outflows.
+   *
+   * It exists because the rule cannot tell a roommate's share of the rent from
+   * a friend paying back half a dinner: both are money in from a person. Which
+   * one someone mostly receives is a fact about them, not about the row.
+   */
+  paymentAppInflowsAreIncome?: boolean
 }
 
 export interface ClassificationResult {
@@ -377,6 +393,11 @@ export function classify(
         claim({
           id: t.id, kind: 'spend', rule: 4, mechanism: 'payment-app-out', bucket: PAYMENTS_TO_PEOPLE,
           reason: 'paid a person through a payment app',
+        })
+      } else if (options.paymentAppInflowsAreIncome) {
+        claim({
+          id: t.id, kind: 'income', rule: 4, mechanism: 'payment-app-in-income',
+          reason: 'money in through a payment app, counted as income by the user\'s setting',
         })
       } else {
         claim({

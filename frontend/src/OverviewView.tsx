@@ -11,7 +11,7 @@ import NetWorthChart from "./NetWorthChart"
 import CashFlowChart from "./CashFlowChart"
 import SavingsTrend from "./SavingsTrend"
 import useMediaQuery from "./useMediaQuery"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import type { CategorySpend, PeriodInfo } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export default function OverviewView({
   categoriesPeriod,
 }: OverviewViewProps) {
   const isMobile = useMediaQuery("(max-width: 640px)")
-  const { startDay } = usePeriod()
+  const { startDay } = useSettings()
   const breakdownProgress = periodProgress(categoriesPeriod)
 
   return (

@@ -7,7 +7,7 @@ import { useApiFetch } from './lib/useApiFetch'
 import { MonthlyTotal } from './types'
 import { API_URL } from "./config"
 import { useSyncVersion } from "./SyncProvider"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import { colors } from "./tokens"
 
 // Spending per money period (M7.2), oldest first, including empty periods as
@@ -52,7 +52,7 @@ export default function TrendChart() {
   const [loading, setLoading] = useState(true)
   const apiFetch = useApiFetch()
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync and every period-setting change; the current chart
   // stays on screen meanwhile, and a superseded run's response is ignored.
@@ -70,7 +70,7 @@ export default function TrendChart() {
       }
     })()
     return () => { cancelled = true }
-  }, [apiFetch, syncVersion, periodVersion])
+  }, [apiFetch, syncVersion, settingsVersion])
 
   const noun = data.length > 0 && data[data.length - 1].startDay !== 1 ? 'period' : 'month'
   const current = data[data.length - 1]

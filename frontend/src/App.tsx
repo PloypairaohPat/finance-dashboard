@@ -16,7 +16,7 @@ import OverviewView from "./OverviewView"
 import AppHeader from "./AppHeader"
 import AlertsProvider from "./AlertsProvider"
 import SyncProvider from "./SyncProvider"
-import PeriodProvider, { periodProgress } from "./PeriodProvider"
+import SettingsProvider, { periodProgress } from "./SettingsProvider"
 import SettingsDialog from "./SettingsDialog"
 import type { PeriodInfo } from "./types"
 import { readWriteResult } from "./lib/writeResult"
@@ -836,15 +836,15 @@ export default function App() {
             route, fetching only in demo mode or once signed in, so the splash
             and sign-in screens cost nothing. */}
         <SyncProvider version={syncVersion}>
-          {/* PeriodProvider (M7.2): the money-period start day. Views that
+          {/* SettingsProvider (M7.2): the money-period start day. Views that
               group by period re-fetch when it changes; App re-fetches what it
               holds itself — the hero's saved figure and the Spending breakdown —
               through onChange (held in a ref, so an inline function is fine). */}
-          <PeriodProvider onChange={() => { fetchData(); fetchInsightsSummary(); }}>
+          <SettingsProvider onChange={() => { fetchData(); fetchInsightsSummary(); }}>
             <AlertsProvider>
               {content}
             </AlertsProvider>
-          </PeriodProvider>
+          </SettingsProvider>
         </SyncProvider>
       </BrowserRouter>
     </DemoContext.Provider>

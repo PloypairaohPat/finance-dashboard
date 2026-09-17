@@ -4,7 +4,8 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import type { FinancialScore, ScoreComponentKey, ScoreGrade } from "./types"
+import type { FinancialScore, ScoreComponentKey, ScoreGrade } from "./types"
+import { useSettings } from "./SettingsProvider"
 
 const GRADE_COLOR: Record<ScoreGrade, string> = {
   excellent: "#00e87a", good: "#00a856", fair: "#f0a030",
@@ -35,6 +36,8 @@ export default function FinancialScoreCard() {
   const [score, setScore] = useState<FinancialScore | null>(null)
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
+  // The payment-app income setting moves these figures too (M7.3).
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync; the current score stays on screen meanwhile, and
   // a superseded run's response is ignored.
@@ -51,7 +54,7 @@ export default function FinancialScoreCard() {
       } finally { if (!cancelled) setLoading(false) }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, settingsVersion])
 
   if (loading || !score) return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading score…</div>
 

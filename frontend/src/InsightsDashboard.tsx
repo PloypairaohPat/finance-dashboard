@@ -4,7 +4,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import type { InsightsResponse, Sentiment } from "./types"
 import TopMerchants from "./TopMerchants"
 import LargestPurchases from "./LargestPurchases"
@@ -117,7 +117,7 @@ export default function InsightsDashboard() {
   const [loading, setLoading] = useState(true)
   const isMobile = useMediaQuery("(max-width: 640px)")
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync and every period-setting change; the current cards
   // stay on screen meanwhile, and a superseded run's response is ignored.
@@ -142,7 +142,7 @@ export default function InsightsDashboard() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, settingsVersion])
 
   if (loading || !data) {
     return <InsightsSkeleton isMobile={isMobile} />

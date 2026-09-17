@@ -4,7 +4,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import type { PeriodInfo } from "./types"
 
 // Net saved per money period (M7.2), from the same /cashflow data as the Cash
@@ -28,7 +28,7 @@ export default function SavingsTrend() {
   const [rows, setRows] = useState<CashFlowRow[]>([])
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync and every period-setting change; the current rows
   // stay on screen meanwhile, and a superseded run's response is ignored.
@@ -48,7 +48,7 @@ export default function SavingsTrend() {
       } finally { if (!cancelled) setLoading(false) }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, settingsVersion])
 
   if (loading) return <div style={{ color: "#5a7a5a", fontSize: 13 }}>Loading…</div>
   if (rows.length === 0 || rows.every(r => r.txCount === 0)) {

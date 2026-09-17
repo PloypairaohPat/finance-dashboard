@@ -79,8 +79,13 @@ export async function buildWeeklyDigest(userId: string): Promise<WeeklyDigest> {
     )
   }
   if (paymentsToPeople.out > 0 || paymentsToPeople.in > 0) {
+    // Gross both ways, never netted (the R4 trap). With the income setting on
+    // there is no "in" side left here at all: those rows are in `income` above,
+    // so the line would always read "$0 in" and invite the wrong reading.
     parts.push(
-      `Payments to people: $${paymentsToPeople.out.toFixed(0)} out, $${paymentsToPeople.in.toFixed(0)} in.`,
+      classification.settings.paymentAppInflowsAreIncome
+        ? `Payments to people: $${paymentsToPeople.out.toFixed(0)} out.`
+        : `Payments to people: $${paymentsToPeople.out.toFixed(0)} out, $${paymentsToPeople.in.toFixed(0)} in.`,
     )
   }
 

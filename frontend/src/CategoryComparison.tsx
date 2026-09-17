@@ -4,7 +4,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import { periodProgress, usePeriod } from "./PeriodProvider"
+import { periodProgress, useSettings } from "./SettingsProvider"
 import { SkeletonList } from "./Skeleton"
 import type { PeriodInfo } from "./types"
 
@@ -27,7 +27,7 @@ export default function CategoryComparison() {
   const [data, setData] = useState<PeriodCategories[]>([])
   const [loading, setLoading] = useState(true)
   const syncVersion = useSyncVersion()
-  const { version: periodVersion } = usePeriod()
+  const { version: settingsVersion } = useSettings()
 
   // Re-runs after every sync and every period-setting change; the current data
   // stays on screen meanwhile, and a superseded run's response is ignored.
@@ -46,7 +46,7 @@ export default function CategoryComparison() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion, periodVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, settingsVersion])
 
   if (loading) return <SkeletonList rows={4} />
 
