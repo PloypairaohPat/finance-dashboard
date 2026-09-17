@@ -96,6 +96,21 @@ Two things worth knowing before you use it:
   you already had. If you do that often, the switch will overstate what you earn. Tell us
   and we'll fix the rows.
 
+### If one of those payments was really your own money
+
+Open any payment-app row that came in and you'll see **"What was this money?"** with two
+choices: *Mine to keep*, or *Money coming back*. Use it when a particular payment isn't
+what the app assumed — most often when you moved money out of your own Venmo or Cash App
+balance, which looks exactly like someone paying you.
+
+It only appears on money in through a payment app, because that's the one case we
+genuinely can't tell from the transaction itself. Everything else — card payments,
+transfers between your own accounts, refunds — is worked out from how the transactions
+fit together, so if one of those looks wrong, tell us and we'll fix the rule rather than
+have you correct rows one at a time.
+
+Tapping the same choice again clears it and puts the row back to whatever we'd have said.
+
 ## The weekly digest
 
 The weekly summary follows the same rules, so moving money to savings no longer shows

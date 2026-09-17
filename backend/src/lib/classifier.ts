@@ -88,6 +88,8 @@ export interface ClassifierTx {
   confidence: string | null
   counterparties: Counterparty[]
   pending: boolean
+  /** The user's answer for this row, if they gave one. */
+  verdictOverride?: VerdictOverride | null
 }
 
 export type ClassKind =
@@ -122,6 +124,26 @@ export type Mechanism =
   | 'unclassified-inflow'
   | 'ordinary-spend'
 
+/**
+ * The user's own answer about a row, for the one case the rules cannot decide
+ * from the data: money in through a payment app.
+ *
+ * "income"    — this was mine to keep (a roommate's rent, work paid this way).
+ * "repayment" — this was my own money coming back, or someone paying me back,
+ *               so it reduces what I paid out rather than counting as earnings.
+ *
+ * Deliberately NOT a general "make this row anything" switch. It stores the
+ * target, not a flip, so turning the paymentAppInflowsAreIncome setting on or
+ * off later cannot invert what the user said.
+ */
+export type VerdictOverride = 'income' | 'repayment'
+
+export const VERDICT_OVERRIDES: readonly VerdictOverride[] = ['income', 'repayment']
+
+export function isVerdictOverride(value: unknown): value is VerdictOverride {
+  return typeof value === 'string' && (VERDICT_OVERRIDES as readonly string[]).includes(value)
+}
+
 export interface Classified {
   id: string
   kind: ClassKind
@@ -135,6 +157,8 @@ export interface Classified {
   partnerId?: string
   /** One line of plain English, for the reconciliation report. */
   reason: string
+  /** What the rules said before the user overrode it, when they did. */
+  overriddenFrom?: { kind: ClassKind; mechanism: Mechanism }
 }
 
 // ── payment-app rows, by what they are ────────────────────────────
@@ -189,6 +213,26 @@ export function describeVerdict(verdict: Pick<Classified, 'kind' | 'mechanism'>)
     case 'unclassified_inflow':
       return { kind: 'unclassified_inflow', label: 'Unidentified' }
   }
+}
+
+/**
+ * Whether the user may answer for this row themselves.
+ *
+ * Only payment-app money in. That is the one verdict the rules cannot settle
+ * from the data — a roommate's rent and a friend's half of dinner are the same
+ * row to them — and on the real account it is 4 rows in 125. Every other
+ * verdict is decided by structure (a matched pair, a card payment, a category)
+ * and is better fixed at the rule than overridden row by row.
+ *
+ * Pending rows are excluded: Plaid issues a new transaction id when a pending
+ * row posts, so an override on one would be silently lost.
+ */
+export function canOverrideVerdict(
+  verdict: Pick<Classified, 'kind' | 'mechanism'>,
+  pending: boolean,
+): boolean {
+  if (pending) return false
+  return isPaymentAppRepayment(verdict) || verdict.mechanism === 'payment-app-in-income'
 }
 
 /**
@@ -482,6 +526,33 @@ export function classify(
       id: t.id, kind: 'spend', rule: 7, mechanism: 'ordinary-spend', bucket,
       reason: `ordinary spending in ${bucket}`,
     })
+  }
+
+  // ── The user's own answers, applied after every rule ────────────
+  //
+  // A post-pass, on purpose. Applied before the rules, an override would pull a
+  // row out of pairing and could change what OTHER rows mean — someone
+  // correcting one Venmo row would silently re-decide a card payment. Applied
+  // here, it changes exactly the row it is about.
+  //
+  // It runs before the cap below, so an overridden row is counted the way the
+  // user said: "repayment" nets against payments to people, "income" does not.
+  for (const t of transactions) {
+    if (!t.verdictOverride) continue
+    const verdict = byId.get(t.id)
+    if (!verdict || !canOverrideVerdict(verdict, t.pending)) continue
+    const overriddenFrom = { kind: verdict.kind, mechanism: verdict.mechanism }
+    if (t.verdictOverride === 'income') {
+      byId.set(t.id, {
+        ...verdict, kind: 'income', mechanism: 'payment-app-in-income', overriddenFrom,
+        reason: 'money in through a payment app, counted as income because the user said so',
+      })
+    } else {
+      byId.set(t.id, {
+        ...verdict, kind: 'payment_app_in', mechanism: 'payment-app-in', overriddenFrom,
+        reason: 'money in through a payment app, reducing payments to people because the user said so',
+      })
+    }
   }
 
   // ── R4's cap, per period (D5 option a) ──────────────────────────

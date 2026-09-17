@@ -24,6 +24,7 @@ import {
   type Classified,
   isCappedPaymentApp,
   isPaymentAppOutflow,
+  isVerdictOverride,
 } from '../lib/classifier'
 import { periodContaining, periodKeyOf } from '../lib/period'
 
@@ -100,6 +101,7 @@ export async function classifyWindow(
       select: {
         id: true, accountId: true, date: true, amount: true, pending: true,
         categoryPrimary: true, categoryDetailed: true, cleanName: true, name: true, rawJson: true,
+        verdictOverride: true,
       },
       orderBy: { date: 'asc' },
     }),
@@ -125,6 +127,7 @@ export async function classifyWindow(
         categoryPrimary: r.categoryPrimary,
         categoryDetailed: r.categoryDetailed,
         confidence: pfc.confidence_level ?? null,
+        verdictOverride: isVerdictOverride(r.verdictOverride) ? r.verdictOverride : null,
         counterparties: (Array.isArray(raw.counterparties) ? raw.counterparties : []) as Array<{
           name?: string | null
           type?: string | null

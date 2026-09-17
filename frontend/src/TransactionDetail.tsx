@@ -31,6 +31,29 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([])
   // Why the latest auto-save didn't happen. Null while saves are succeeding.
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [savingOverride, setSavingOverride] = useState(false)
+
+  // Saved on click rather than by the debounced autosave below: it is one tap,
+  // and the answer comes back as a re-classified row, verdict included.
+  const saveOverride = async (value: "income" | "repayment" | null) => {
+    setSavingOverride(true)
+    try {
+      const res = await apiFetch(`${API_URL}/transactions/${transaction.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verdictOverride: value }),
+      })
+      const result = await readWriteResult(res)
+      if (!result.ok) { setSaveError(result.message); return }
+      setSaveError(null)
+      const saved = (result.data as { transaction?: EnrichedTransaction } | null)?.transaction
+      if (saved) onUpdate(saved)
+    } catch (e: any) {
+      setSaveError(e.message)
+    } finally {
+      setSavingOverride(false)
+    }
+  }
 
   // Fetch suggested tags + category list once on open
   useEffect(() => {
@@ -151,6 +174,54 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
             {look.amountText}
           </div>
         </div>
+
+        {/* What this money was. Only offered where the rules genuinely cannot
+            tell: money in through a payment app, which is a roommate's rent or
+            your own balance coming back, and the row looks the same either way. */}
+        {transaction.verdictOverridable && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{
+              fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
+              color: "#5a7a5a", textTransform: "uppercase", letterSpacing: ".08em",
+              marginBottom: 6,
+            }}>
+              What was this money?
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {([
+                ["income", "Mine to keep"],
+                ["repayment", "Money coming back"],
+              ] as const).map(([value, label]) => {
+                const active = transaction.verdictOverride === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => saveOverride(active ? null : value)}
+                    disabled={savingOverride}
+                    style={{
+                      flex: "1 1 140px",
+                      background: active ? "rgba(0,232,122,.10)" : "#0d1510",
+                      border: `1px solid ${active ? "#00e87a55" : "#253325"}`,
+                      color: active ? "#00e87a" : "#8ab88a",
+                      padding: "8px 10px", borderRadius: 6,
+                      fontFamily: "inherit", fontSize: 12.5,
+                      cursor: savingOverride ? "wait" : "pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 6, lineHeight: 1.45 }}>
+              {transaction.verdictOverride
+                ? `You set this. Without it, we'd count it as ${(transaction.verdictBeforeOverride?.label ?? "").toLowerCase()} — tap again to go back to that.`
+                : `Counted as ${transaction.meaning.label.toLowerCase()}. Money you keep counts as income; money coming back reduces what you paid out.`}
+            </div>
+          </div>
+        )}
 
         {/* Category */}
         <div style={{ marginBottom: 20 }}>
