@@ -12,10 +12,15 @@
 //  default_transaction_read_only=on, proves that took effect by attempting a
 //  write that must fail, and refuses to go on if either check doesn't hold.
 //
+//  It reads DIRECT_URL by default, falling back to DATABASE_URL, because
+//  DATABASE_URL is usually the pooled connection and a pooler in transaction
+//  mode drops the read-only option. --url-env NAME picks another variable, and
+//  --allow-remote names the host of the URL actually being read.
+//
 //  Local (demo data):
 //    npm run db:guard && npx dotenv -e .env.dev -- tsx scripts/payment-app-income-report.ts --user demo-user
 //  Production, read-only (Railway injects the connection):
-//    railway run npx tsx scripts/payment-app-income-report.ts --user <id> --allow-remote <db host>
+//    railway run npx tsx scripts/payment-app-income-report.ts --user <id> --allow-remote <direct db host>
 // ─────────────────────────────────────────────────────────────────
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
@@ -33,18 +38,39 @@ function refuse(message: string): never {
   process.exit(1)
 }
 
+/**
+ * Which environment variable holds the connection to read.
+ *
+ * DIRECT_URL first, because DATABASE_URL is usually a pooled connection and a
+ * pooler in transaction mode drops the startup option this script relies on —
+ * which used to leave the run refusing with advice ("use the direct
+ * connection") that no flag could act on. `--url-env NAME` overrides.
+ */
+function pickUrlEnv(): { name: string; raw: string } {
+  const asked = flag('url-env')
+  if (asked) {
+    const raw = process.env[asked]
+    if (!raw) refuse(`--url-env ${asked} was given, but ${asked} is not set in this environment.`)
+    return { name: asked, raw }
+  }
+  if (process.env.DIRECT_URL) return { name: 'DIRECT_URL', raw: process.env.DIRECT_URL }
+  if (process.env.DATABASE_URL) return { name: 'DATABASE_URL', raw: process.env.DATABASE_URL }
+  refuse('neither DIRECT_URL nor DATABASE_URL is set. Supply the environment explicitly, or pass --url-env NAME.')
+}
+
 /** The same URL, asking Postgres to make every transaction read-only. */
-function readOnlyUrl(raw: string): { url: string; host: string } {
+function readOnlyUrl(raw: string, envName: string): { url: string; host: string } {
   let parsed: URL
   try {
     parsed = new URL(raw)
   } catch {
-    refuse('DATABASE_URL is not a valid URL.')
+    refuse(`${envName} is not a valid URL.`)
   }
   // Postgres accepts startup options on the connection string. A connection
   // pooler in transaction mode may ignore them, which is why this is verified
-  // rather than trusted.
+  // rather than trusted. One connection, so what is verified is what is used.
   parsed.searchParams.set('options', '-c default_transaction_read_only=on')
+  parsed.searchParams.set('connection_limit', '1')
   return { url: parsed.toString(), host: parsed.hostname.toLowerCase() }
 }
 
@@ -56,22 +82,44 @@ async function main() {
   const user = flag('user')
   if (!user || user.startsWith('--')) refuse('--user <id> is required.')
 
-  const { url, host } = readOnlyUrl(process.env.DATABASE_URL ?? refuse('DATABASE_URL is not set.'))
+  const chosen = pickUrlEnv()
+  const { url, host } = readOnlyUrl(chosen.raw, chosen.name)
   const allowRemote = flag('allow-remote')?.toLowerCase()
   if (!LOCAL_HOSTNAMES.has(host) && allowRemote !== host) {
-    refuse(`DATABASE_URL points at "${host}", which is not local. To read from there, pass --allow-remote ${host}.`)
+    refuse(
+      `${chosen.name} points at "${host}", which is not local. To read from there, pass --allow-remote ${host}.` +
+      (chosen.name === 'DIRECT_URL' ? '\n  (Reading DIRECT_URL, not DATABASE_URL — the host to name is this one.)' : ''),
+    )
   }
+  // The shared Prisma client reads DATABASE_URL, whichever variable the URL came from.
   process.env.DATABASE_URL = url
 
   // Imported only after the URL is replaced: the shared client reads it once.
   const { default: prisma } = await import('../src/lib/prisma')
-  const [{ read_only }] = await prisma.$queryRawUnsafe<Array<{ read_only: string }>>(
-    "SELECT current_setting('default_transaction_read_only') AS read_only",
-  )
-  if (read_only !== 'on') {
+  let read_only: string
+  try {
+    ;[{ read_only }] = await prisma.$queryRawUnsafe<Array<{ read_only: string }>>(
+      "SELECT current_setting('default_transaction_read_only') AS read_only",
+    )
+  } catch (e: any) {
+    // A direct Supabase host is IPv6-only unless the IPv4 add-on is enabled, so
+    // it can be unreachable from a place where the pooled host works fine.
     refuse(
-      'the connection is not read-only (a pooler may have dropped the option). ' +
-      'Use the direct connection, not the pooled one, and try again.',
+      `could not connect using ${chosen.name} (${host}): ${e.code ?? e.message}
+  If that host is unreachable from here, use a SESSION-mode pooler connection (port 5432
+  on the pooler host, not 6543): session mode keeps the read-only option that transaction
+  mode drops. Put it in an env var, then pass --url-env NAME --allow-remote <that host>.`,
+    )
+  }
+  if (read_only !== 'on') {
+    const others = ['DIRECT_URL', 'DATABASE_URL'].filter((n) => n !== chosen.name && process.env[n])
+    refuse(
+      `${chosen.name} (${host}) dropped the read-only option, which a connection pooler in\n` +
+      '  transaction mode does. This needs a direct (session) connection.\n' +
+      (others.length > 0
+        ? `  Try: --url-env ${others[0]}  — and pass --allow-remote for THAT host, not this one.`
+        : '  Set DIRECT_URL to the direct connection (Supabase: Project Settings → Database →\n' +
+          '  Connection string → Direct connection), then re-run.'),
     )
   }
   // Belt and braces: a statement that writes nothing but must still be refused.
@@ -130,7 +178,7 @@ async function main() {
   const off = await measure(false)
   const on = await measure(true)
 
-  console.log(`\npayment-app income setting — ${user} on ${host}`)
+  console.log(`\npayment-app income setting — ${user} on ${host} (${chosen.name}, read-only)`)
   console.log(`stored setting: ${stored.paymentAppInflowsAreIncome ? 'ON' : 'off'} (unchanged by this report)`)
   console.log(`money periods start on day ${startDay}; last ${PERIODS} periods\n`)
 
