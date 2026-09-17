@@ -230,6 +230,10 @@ export interface EnrichedTransaction {
   notes: string | null
   account: string
   meaning: RowMeaning
+  /** The bucket every total counts this row under; what the category editor edits. */
+  displayCategory: string
+  /** False where a rule, not the category, decides how the row counts. */
+  categoryEditable: boolean
 }
 
 export interface SearchResult {

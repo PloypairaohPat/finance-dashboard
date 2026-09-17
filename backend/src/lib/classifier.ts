@@ -170,6 +170,27 @@ export function describeVerdict(verdict: Pick<Classified, 'kind' | 'rule'>): Row
   }
 }
 
+/**
+ * Whether a user may change this row's category.
+ *
+ * Only where the category is what decides the bucket: ordinary spend (R7) and a
+ * refund netted against a category (R3). Everywhere else a rule sets the bucket
+ * (R4 → payments to people, R5 → Debt) or the row isn't spending at all, so an
+ * edit could change nothing the user sees except to overwrite the Plaid code a
+ * rule matched on — turning a transfer or a card payment into spending. That
+ * would be a user overriding a verdict, which needs its own design.
+ *
+ * A row still carrying a transfer code is excluded even when it is spend today:
+ * the code is what R2 needs to pair it once its other leg syncs.
+ */
+export function canRecategorise(
+  verdict: Pick<Classified, 'rule' | 'mechanism'>,
+  categoryDetailed: string | null,
+): boolean {
+  if (/^TRANSFER_/i.test(categoryDetailed ?? '')) return false
+  return (verdict.rule === 7 && verdict.mechanism === 'ordinary-spend') || verdict.mechanism === 'refund'
+}
+
 export interface ClassifyOptions {
   /** Institution names the user has linked. */
   linkedInstitutions: string[]

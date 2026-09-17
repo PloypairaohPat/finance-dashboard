@@ -7,7 +7,9 @@ import {
   searchTransactions,
   updateTransaction,
   fetchUserTags,
+  TransactionUpdateError,
 } from '../services/transactions.service'
+import { ASSIGNABLE_CATEGORIES, CATEGORY_COLORS } from '../lib/categoryMap'
 import { getUserId } from '../middleware/auth'
 import { getPeriodStartDay } from '../services/user.service'
 
@@ -101,10 +103,20 @@ export async function patchTransaction(req: Request, res: Response): Promise<voi
     const updated = await updateTransaction(userId, id, { tags, notes, category })
     res.json({ ok: true, transaction: updated })
   } catch (err: any) {
+    if (err instanceof TransactionUpdateError) {
+      res.status(err.status).json({ error: err.message })
+      return
+    }
     console.error("patchTransaction:", err.message)
-    res.status(err.message === "Transaction not found" ? 404 : 500)
-       .json({ error: err.message === "Transaction not found" ? err.message : "Update failed" })
+    res.status(500).json({ error: "Update failed" })
   }
+}
+
+// The categories a transaction can be moved to — also every bucket a row can land
+// in, so the list's filter uses it too. Not /budgets/categories: that includes
+// Subscriptions, which no Plaid code maps to, so no row can ever be in it.
+export function getAssignableCategories(_req: Request, res: Response): void {
+  res.json(ASSIGNABLE_CATEGORIES.map(category => ({ category, color: CATEGORY_COLORS[category] })))
 }
 
 // M5.7 Step 4: Suggested tags for TransactionDetail

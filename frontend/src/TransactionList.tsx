@@ -95,7 +95,9 @@ export default function TransactionList({ onRowClick }: Props) {
   useEffect(() => {
     if (!demoMode && !isSignedIn) return
     ;(async () => {
-      const res = await apiFetch(`${API_URL}/budgets/categories`)
+      // Every bucket a row can be in — which excludes Subscriptions, a filter
+      // that could only ever return nothing.
+      const res = await apiFetch(`${API_URL}/transactions/category-options`)
       if (res.ok) setCategories(await res.json())
     })()
   }, [demoMode, isSignedIn, apiFetch])

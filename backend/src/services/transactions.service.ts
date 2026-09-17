@@ -1,7 +1,9 @@
+import type { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import {
   mapPlaidCategory, labelForPrimary,
   CATEGORY_COLORS,
+  ASSIGNABLE_CATEGORIES, ASSIGNABLE_CATEGORY_CODES, isAssignableCategory,
   type DisplayCategory,
 } from "../lib/categoryMap"
 import { logoUrlFor } from "../lib/merchantLogos"
@@ -14,7 +16,10 @@ import {
   type Period,
 } from "../lib/period"
 import { fetchFirstTransactionDate } from "./activity.service"
-import { PAYMENTS_TO_PEOPLE, describeVerdict, type RowMeaning } from "../lib/classifier"
+import {
+  PAYMENTS_TO_PEOPLE, canRecategorise, describeVerdict,
+  type Classified, type RowMeaning,
+} from "../lib/classifier"
 import { getPeriodStartDay } from "./user.service"
 import { classifyWindow, spendByBucket, spendForPeriod } from "./classification.service"
 
@@ -193,6 +198,14 @@ export interface EnrichedTransaction {
    * payment stops showing as red spending while every total says it isn't.
    */
   meaning:     RowMeaning
+  /**
+   * The bucket every total counts this row under. `category` is Plaid's finer
+   * badge label ("Loan Payment", "Personal Care"), which is not a display
+   * category, so an editor must start from this field rather than that one.
+   */
+  displayCategory:  DisplayCategory
+  /** Whether PATCH will accept a category change for this row (see canRecategorise). */
+  categoryEditable: boolean
 }
 
 export interface SearchResult {
@@ -250,9 +263,18 @@ export async function searchTransactions(
     ? pageRows[pageRows.length - 1].id
     : null
 
+  const transactions = await enrichRows(userId, pageRows)
+  return { transactions, nextCursor, totalCount: null }
+}
+
+type RowForEnrichment = Prisma.TransactionGetPayload<{ include: { account: { select: { name: true } } } }>
+
+// Shared by the list and by PATCH, so a saved row comes back exactly as the list
+// would show it — including a verdict recomputed from the codes just written.
+async function enrichRows(userId: string, pageRows: RowForEnrichment[]): Promise<EnrichedTransaction[]> {
   // Classify the page's date range. classifyWindow pads either side, so a card
   // payment on the last row of this page still finds its partner on the next.
-  const verdicts = new Map<string, RowMeaning>()
+  const verdicts = new Map<string, Classified>()
   if (pageRows.length > 0) {
     const dates = pageRows.map(r => r.date.getTime())
     const startDay = await getPeriodStartDay(userId)
@@ -261,13 +283,14 @@ export async function searchTransactions(
       until: new Date(Math.max(...dates) + 86_400_000),
       startDay,
     })
-    for (const c of classified) verdicts.set(c.id, describeVerdict(c.verdict))
+    for (const c of classified) verdicts.set(c.id, c.verdict)
   }
 
-  const transactions: EnrichedTransaction[] = pageRows.map(r => {
+  return pageRows.map(r => {
     const bucket  = mapPlaidCategory(r.categoryPrimary)   // for color lookup
     const label   = labelForPrimary(r.categoryPrimary)    // for badge display
     const merchant = r.cleanName ?? r.name ?? "Unknown"
+    const verdict = verdicts.get(r.id)
     return {
       id:          r.id,
       name:        r.name ?? "Unknown",
@@ -283,32 +306,66 @@ export async function searchTransactions(
       account:     r.account?.name ?? "",
       // Every page row is inside the classified range, so this always resolves;
       // the fallback exists only so a gap fails visibly rather than as a crash.
-      meaning:     verdicts.get(r.id) ?? { kind: "unclassified_inflow", label: "Unclassified" },
+      meaning:     verdict ? describeVerdict(verdict) : { kind: "unclassified_inflow", label: "Unclassified" },
+      displayCategory:  bucket,
+      categoryEditable: verdict ? canRecategorise(verdict, r.categoryDetailed) : false,
     }
   })
+}
 
-  return { transactions, nextCursor, totalCount: null }
+/** A PATCH the caller got wrong, with the HTTP status that says how. */
+export class TransactionUpdateError extends Error {
+  constructor(public readonly status: 400 | 404 | 409, message: string) {
+    super(message)
+  }
 }
 
 export async function updateTransaction(
   userId: string,
   transactionId: string,
-  data: { tags?: string[]; notes?: string | null; category?: string }
-) {
-  const owned = await prisma.transaction.findFirst({
+  data: { tags?: string[]; notes?: string | null; category?: unknown }
+): Promise<EnrichedTransaction> {
+  const existing = await prisma.transaction.findFirst({
     where: { id: transactionId, userId },
-    select: { id: true },
+    include: { account: { select: { name: true } } },
   })
-  if (!owned) throw new Error("Transaction not found")
+  if (!existing) throw new TransactionUpdateError(404, "Transaction not found")
 
-  return prisma.transaction.update({
+  // A category arrives as a DISPLAY name and is stored as the Plaid codes that map
+  // back to it (ASSIGNABLE_CATEGORY_CODES). Unchanged is not an edit: the row keeps
+  // Plaid's own, more specific codes.
+  let codes: { categoryPrimary: string | null; categoryDetailed: string | null } | null = null
+  if (data.category !== undefined) {
+    if (!isAssignableCategory(data.category)) {
+      throw new TransactionUpdateError(
+        400,
+        `Unknown category ${JSON.stringify(data.category)}. Expected one of: ${ASSIGNABLE_CATEGORIES.join(", ")}`,
+      )
+    }
+    const [current] = await enrichRows(userId, [existing])
+    if (data.category !== current.displayCategory) {
+      if (!current.categoryEditable) {
+        throw new TransactionUpdateError(
+          409,
+          `This transaction is counted as "${current.meaning.label}", so its category doesn't decide any total and can't be changed.`,
+        )
+      }
+      const target = ASSIGNABLE_CATEGORY_CODES[data.category]
+      codes = { categoryPrimary: target.primary, categoryDetailed: target.detailed }
+    }
+  }
+
+  const updated = await prisma.transaction.update({
     where: { id: transactionId },
     data: {
-      ...(data.tags     !== undefined && { tags:            data.tags }),
-      ...(data.notes    !== undefined && { notes:           data.notes }),
-      ...(data.category !== undefined && { categoryPrimary: data.category }),
+      ...(data.tags     !== undefined && { tags:  data.tags }),
+      ...(data.notes    !== undefined && { notes: data.notes }),
+      ...(codes ?? {}),
     },
+    include: { account: { select: { name: true } } },
   })
+  const [enriched] = await enrichRows(userId, [updated])
+  return enriched
 }
 
 // ── M5.7 Step 4: Suggested tags endpoint ─────────────────────────────

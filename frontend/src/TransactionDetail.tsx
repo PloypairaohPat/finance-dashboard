@@ -22,7 +22,10 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
   const look = treatmentFor(transaction.amount, transaction.meaning, fmt)
   const [tags, setTags] = useState<string[]>(transaction.tags)
   const [notes, setNotes] = useState(transaction.notes ?? "")
-  const [category, setCategory] = useState(transaction.category)
+  // displayCategory, not category: `category` is Plaid's finer badge label
+  // ("Loan Payment"), which isn't an option, so the select used to open on
+  // "Housing" and invite exactly the wrong edit.
+  const [category, setCategory] = useState(transaction.displayCategory)
   const [tagInput, setTagInput] = useState("")
   const [suggestedTags, setSuggestedTags] = useState<string[]>([])
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([])
@@ -34,7 +37,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
     ;(async () => {
       const [tagRes, catRes] = await Promise.all([
         apiFetch(`${API_URL}/transactions/tags`),
-        apiFetch(`${API_URL}/budgets/categories`),
+        apiFetch(`${API_URL}/transactions/category-options`),
       ])
       if (tagRes.ok) setSuggestedTags(await tagRes.json())
       if (catRes.ok) setCategoryOptions(await catRes.json())
@@ -45,7 +48,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
   useEffect(() => {
     const t = setTimeout(async () => {
       const body: any = { tags, notes }
-      if (category !== transaction.category) body.category = category
+      if (category !== transaction.displayCategory) body.category = category
       try {
         const res = await apiFetch(`${API_URL}/transactions/${transaction.id}`, {
           method: "PATCH",
@@ -62,7 +65,10 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           return
         }
         setSaveError(null)
-        onUpdate({ ...transaction, tags, notes, category })
+        // The server's row, not a local merge: a category edit changes the
+        // stored Plaid codes, and the badge label and verdict follow from those.
+        const saved = (result.data as { transaction?: EnrichedTransaction } | null)?.transaction
+        onUpdate(saved ?? { ...transaction, tags, notes })
       } catch (e: any) {
         setSaveError(e.message)
       }
@@ -155,20 +161,35 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           }}>
             Category
           </div>
-          <select
-            value={category}
-            onChange={e => setCategory(e.target.value)}
-            style={{
-              width: "100%",
-              background: "#0d1510", border: "1px solid #253325", color: "#d4e8d4",
-              padding: "8px 10px", borderRadius: 6,
-              fontFamily: "inherit", fontSize: 13, outline: "none",
-            }}
-          >
-            {categoryOptions.map(c => (
-              <option key={c.category} value={c.category}>{c.category}</option>
-            ))}
-          </select>
+          {transaction.categoryEditable ? (
+            <select
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              style={{
+                width: "100%",
+                background: "#0d1510", border: "1px solid #253325", color: "#d4e8d4",
+                padding: "8px 10px", borderRadius: 6,
+                fontFamily: "inherit", fontSize: 13, outline: "none",
+              }}
+            >
+              {categoryOptions.map(c => (
+                <option key={c.category} value={c.category}>{c.category}</option>
+              ))}
+            </select>
+          ) : (
+            // Where a rule, not the category, decides how this row counts, an edit
+            // could only overwrite the Plaid code the rule matched on — turning a
+            // transfer or card payment into spending. So it is shown, not offered.
+            <div data-testid="category-locked" style={{
+              background: "#0d1510", border: "1px solid #253325", color: "#8ab88a",
+              padding: "8px 10px", borderRadius: 6, fontSize: 13, lineHeight: 1.45,
+            }}>
+              {category}
+              <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 4 }}>
+                Shown as “{transaction.meaning.label}”: a rule decides how this counts, not its category.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tags */}

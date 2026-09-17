@@ -171,8 +171,3 @@ wrong for you:
   as spending.
 
 Connecting those accounts makes both cases exact rather than inferred.
-
-**One thing to avoid for now:** changing a transaction's category from its detail panel.
-There's a known problem where picking a new category there can file the transaction under
-*Other* in your totals instead of the category you chose. It isn't new, and a fix is on the
-list — until then, leaving categories as they are keeps your totals right.
