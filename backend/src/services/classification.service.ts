@@ -211,13 +211,13 @@ export function spendByBucket(
 }
 
 /**
- * Payments to people, netted within exactly the rows given.
+ * The payment-app cap (D5) over exactly the rows given.
  *
- * Over a whole money period this IS the period cap (D5). Over any other window —
- * a week, part of a period — it is a different quantity: "net payments to people
- * in this window". That can be a legitimate figure to report, but it is not a
- * smaller version of the period figure and weekly numbers computed this way do
- * not sum to the period's. Use it deliberately, and say which one you mean.
+ * PERIOD-SCOPED: only correct when the rows are one whole money period. The
+ * floor at zero is what makes it so — applied to a week or any other slice it
+ * does not give a smaller version of the right answer, it gives a confidently
+ * wrong one. For any other window use paymentAppFlowsForRows and report the two
+ * gross sums instead.
  */
 export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
   let out = 0
@@ -230,7 +230,7 @@ export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
   return round2(Math.max(0, out - Math.min(out, inflow)))
 }
 
-/** Spend by bucket over exactly the rows given. Same period-scope warning as above. */
+/** Spend by bucket over one whole period's rows, cap included. PERIOD-SCOPED, as above. */
 export function spendByBucketForRows(
   rows: readonly ClassifiedRow[],
   paymentsToPeopleLabel: string,
@@ -239,6 +239,29 @@ export function spendByBucketForRows(
   const ptp = paymentAppCapForRows(rows)
   if (ptp > 0) out[paymentsToPeopleLabel] = round2((out[paymentsToPeopleLabel] ?? 0) + ptp)
   return out
+}
+
+// ── row-scoped: safe over any date range ──────────────────────────
+//
+// Plain sums over rows. No floor, no cap, nothing that assumes the rows are a
+// whole period — so these are the ones to use for a week, a custom range, or
+// anything else that is not exactly one money period.
+
+/** Ordinary spending by bucket, refunds netted, payments to people left out. */
+export function ordinarySpendByBucketForRows(rows: readonly ClassifiedRow[]): Record<string, number> {
+  return bucketsExcludingPaymentApps(rows)
+}
+
+/** Payments to people as two gross sums — the "$X out, $Y in" line, never netted. */
+export function paymentAppFlowsForRows(rows: readonly ClassifiedRow[]): { out: number; in: number } {
+  let out = 0
+  let inflow = 0
+  for (const r of rows) {
+    if (r.verdict.rule !== 4) continue
+    if (r.amount > 0) out += r.amount
+    else inflow += -r.amount
+  }
+  return { out: round2(out), in: round2(inflow) }
 }
 
 // ── the savings-rate floor ────────────────────────────────────────
