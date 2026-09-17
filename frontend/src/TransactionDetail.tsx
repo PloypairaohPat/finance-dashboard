@@ -4,6 +4,7 @@ import { useApiFetch } from "./lib/useApiFetch"
 import { readWriteResult } from "./lib/writeResult"
 import type { EnrichedTransaction, CategoryOption } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
+import { treatmentFor } from "./rowTreatment"
 
 interface Props {
   transaction: EnrichedTransaction
@@ -18,6 +19,7 @@ const fmtDate = (iso: string) =>
 
 export default function TransactionDetail({ transaction, onClose, onUpdate }: Props) {
   const apiFetch = useApiFetch()
+  const look = treatmentFor(transaction.amount, transaction.meaning, fmt)
   const [tags, setTags] = useState<string[]>(transaction.tags)
   const [notes, setNotes] = useState(transaction.notes ?? "")
   const [category, setCategory] = useState(transaction.category)
@@ -101,9 +103,11 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
         }}
       >
         {/* Header */}
-        <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 20 }}>
+        {/* Wraps on narrow screens: the amount drops below rather than squeezing
+            the merchant name down to a few characters. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 20 }}>
           <MerchantAvatar name={transaction.displayName} logoUrl={transaction.logoUrl} size={48} />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: "1 1 180px", minWidth: 0 }}>
             <div style={{
               fontFamily: "Fraunces, Georgia, serif", fontWeight: 300, fontSize: 20,
               color: "#e8f4e8", lineHeight: 1.2,
@@ -117,9 +121,28 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
             }}>
               {fmtDate(transaction.date)} · {transaction.account}
             </div>
+            {/* What this transaction IS — always shown, and allowed to wrap
+                onto its own line rather than be cut off. */}
+            <div style={{ marginTop: 6 }}>
+              <span data-testid="meaning-chip" style={{
+                display: "inline-block",
+                padding: "2px 8px", borderRadius: 3,
+                fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
+                textTransform: "uppercase", letterSpacing: ".06em",
+                whiteSpace: "nowrap",
+                ...(look.chip
+                  ? { color: look.chip.color, background: look.chip.background, border: `1px solid ${look.chip.border}` }
+                  : { color: "#8ab88a", background: "#0d1510", border: "1px solid #253325" }),
+              }}>{look.chip?.label ?? transaction.meaning.label}</span>
+            </div>
           </div>
-          <div style={{ fontFamily: "Fraunces, Georgia, serif", fontSize: 22, color: "#e8f4e8" }}>
-            {fmt(transaction.amount)}
+          {/* Styled from the verdict, not the sign. Previously this printed the raw
+              Plaid amount, so income read "-$2,450.00" here and "+" in the list. */}
+          <div style={{
+            fontFamily: "Fraunces, Georgia, serif", fontSize: 22,
+            color: look.amountColor, whiteSpace: "nowrap",
+          }}>
+            {look.amountText}
           </div>
         </div>
 

@@ -198,6 +198,24 @@ export interface NetWorthResponse {
   periodStartDay?: number
 }
 
+/** What a transaction IS, as decided by the backend classifier (M7.3). */
+export type RowKind =
+  | "spend"
+  | "income"
+  | "card_payment"
+  | "internal_transfer"
+  | "savings_transfer"
+  | "refund"
+  | "payment_app_in"
+  | "credit_inflow_not_income"
+  | "unclassified_inflow"
+
+export interface RowMeaning {
+  kind: RowKind
+  /** Chip text, e.g. "Card payment". Ordinary spending is labelled "Spending". */
+  label: string
+}
+
 export interface EnrichedTransaction {
   id: string
   name: string
@@ -211,6 +229,7 @@ export interface EnrichedTransaction {
   tags: string[]
   notes: string | null
   account: string
+  meaning: RowMeaning
 }
 
 export interface SearchResult {
