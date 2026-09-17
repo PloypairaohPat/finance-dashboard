@@ -9,7 +9,6 @@ import {
 import { fetchFirstTransactionDate } from "./activity.service"
 import { classifyWindow, incomeForPeriod, spendForPeriod } from "./classification.service"
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
 
 // One entry per period (M7.2). `month` is kept as the period key for callers
 // that still read it; for start day 1 a period is a calendar month.
@@ -25,7 +24,7 @@ export interface CashFlowPeriod extends Period {
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export async function fetchCashFlow(
-  userId: string = DEFAULT_USER_ID,
+  userId: string,
   periodCount: number = 6,
   startDay: number = DEFAULT_PERIOD_START_DAY,
   now: Date = new Date(),

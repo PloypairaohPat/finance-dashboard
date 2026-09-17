@@ -1,7 +1,5 @@
 import prisma from "../lib/prisma"
 
-const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID ?? "demo-user"
-
 // ── Range types ────────────────────────────────────────────────
 export type Range = "1M" | "3M" | "6M" | "1Y" | "All"
 
@@ -48,7 +46,7 @@ export interface NetWorthResponse {
 }
 
 // ── Capture today's balance snapshot for all accounts ──────────
-export async function captureBalanceSnapshots(userId: string = DEFAULT_USER_ID) {
+export async function captureBalanceSnapshots(userId: string) {
   const accounts = await prisma.account.findMany({
     where: { userId },
     select: {
@@ -105,7 +103,7 @@ export async function captureBalanceSnapshots(userId: string = DEFAULT_USER_ID) 
 
 // ── Fetch net worth history ────────────────────────────────────
 export async function fetchNetWorthHistory(
-  userId: string = DEFAULT_USER_ID,
+  userId: string,
   rawRange?: unknown,
 ): Promise<NetWorthResponse> {
   const range = normalizeRange(rawRange)
