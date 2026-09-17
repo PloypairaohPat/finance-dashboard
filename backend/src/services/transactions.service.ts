@@ -14,7 +14,8 @@ import {
   type Period,
 } from "../lib/period"
 import { fetchFirstTransactionDate } from "./activity.service"
-import { PAYMENTS_TO_PEOPLE } from "../lib/classifier"
+import { PAYMENTS_TO_PEOPLE, describeVerdict, type RowMeaning } from "../lib/classifier"
+import { getPeriodStartDay } from "./user.service"
 import { classifyWindow, spendByBucket, spendForPeriod } from "./classification.service"
 
 export async function fetchTransactions(userId: string) {
@@ -186,6 +187,12 @@ export interface EnrichedTransaction {
   tags:        string[]
   notes:       string | null
   account:     string
+  /**
+   * M7.3: what this row IS, from the classifier — the same verdict every total
+   * uses. The list renders from this, not from the sign of the amount, so a card
+   * payment stops showing as red spending while every total says it isn't.
+   */
+  meaning:     RowMeaning
 }
 
 export interface SearchResult {
@@ -243,6 +250,20 @@ export async function searchTransactions(
     ? pageRows[pageRows.length - 1].id
     : null
 
+  // Classify the page's date range. classifyWindow pads either side, so a card
+  // payment on the last row of this page still finds its partner on the next.
+  const verdicts = new Map<string, RowMeaning>()
+  if (pageRows.length > 0) {
+    const dates = pageRows.map(r => r.date.getTime())
+    const startDay = await getPeriodStartDay(userId)
+    const { rows: classified } = await classifyWindow(userId, {
+      since: new Date(Math.min(...dates)),
+      until: new Date(Math.max(...dates) + 86_400_000),
+      startDay,
+    })
+    for (const c of classified) verdicts.set(c.id, describeVerdict(c.verdict))
+  }
+
   const transactions: EnrichedTransaction[] = pageRows.map(r => {
     const bucket  = mapPlaidCategory(r.categoryPrimary)   // for color lookup
     const label   = labelForPrimary(r.categoryPrimary)    // for badge display
@@ -260,6 +281,9 @@ export async function searchTransactions(
       tags:        r.tags ?? [],
       notes:       r.notes ?? null,
       account:     r.account?.name ?? "",
+      // Every page row is inside the classified range, so this always resolves;
+      // the fallback exists only so a gap fails visibly rather than as a crash.
+      meaning:     verdicts.get(r.id) ?? { kind: "unclassified_inflow", label: "Unclassified" },
     }
   })
 

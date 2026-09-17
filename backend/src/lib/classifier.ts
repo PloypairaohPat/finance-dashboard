@@ -135,6 +135,41 @@ export interface Classified {
   reason: string
 }
 
+/**
+ * What a single row means, in words a transaction list can show.
+ *
+ * The chip text lives here, next to the verdicts, so a label can never describe
+ * a row differently from how the totals treat it — which is the §7 problem
+ * moved from totals into rows.
+ */
+export interface RowMeaning {
+  kind: ClassKind
+  label: string
+}
+
+export function describeVerdict(verdict: Pick<Classified, 'kind' | 'rule'>): RowMeaning {
+  switch (verdict.kind) {
+    case 'spend':
+      return { kind: 'spend', label: verdict.rule === 4 ? 'Payment to a person' : 'Spending' }
+    case 'income':
+      return { kind: 'income', label: 'Income' }
+    case 'card_payment':
+      return { kind: 'card_payment', label: 'Card payment' }
+    case 'internal_transfer':
+      return { kind: 'internal_transfer', label: 'Transfer' }
+    case 'savings_transfer':
+      return { kind: 'savings_transfer', label: 'To savings' }
+    case 'refund':
+      return { kind: 'refund', label: 'Refund' }
+    case 'payment_app_in':
+      return { kind: 'payment_app_in', label: 'Repayment' }
+    case 'credit_inflow_not_income':
+      return { kind: 'credit_inflow_not_income', label: 'Card credit' }
+    case 'unclassified_inflow':
+      return { kind: 'unclassified_inflow', label: 'Unidentified' }
+  }
+}
+
 export interface ClassifyOptions {
   /** Institution names the user has linked. */
   linkedInstitutions: string[]
