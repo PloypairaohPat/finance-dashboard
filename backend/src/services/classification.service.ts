@@ -21,6 +21,8 @@ import {
   type ClassificationResult,
   type ClassifierTx,
   type Classified,
+  isCappedPaymentApp,
+  isPaymentAppOutflow,
 } from '../lib/classifier'
 import { periodContaining, periodKeyOf } from '../lib/period'
 
@@ -158,7 +160,7 @@ export function spendForPeriod(
   let total = 0
   for (const r of rows) {
     if (periodKeyOf(r.date, startDay) !== periodKey) continue
-    if (r.verdict.rule === 4) continue // capped below
+    if (isCappedPaymentApp(r.verdict)) continue // capped below
     if (r.verdict.kind === 'spend' || r.verdict.kind === 'refund') total += r.amount
   }
   return round2(total + (paymentAppByPeriod.get(periodKey) ?? 0))
@@ -182,7 +184,7 @@ export function incomeForPeriod(
 function bucketsExcludingPaymentApps(rows: readonly ClassifiedRow[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const r of rows) {
-    if (r.verdict.rule === 4) continue
+    if (isCappedPaymentApp(r.verdict)) continue
     if (r.verdict.kind === 'spend') {
       const bucket = r.verdict.bucket ?? 'Other'
       out[bucket] = round2((out[bucket] ?? 0) + r.amount)
@@ -223,8 +225,8 @@ export function paymentAppCapForRows(rows: readonly ClassifiedRow[]): number {
   let out = 0
   let inflow = 0
   for (const r of rows) {
-    if (r.verdict.rule !== 4) continue
-    if (r.amount > 0) out += r.amount
+    if (!isCappedPaymentApp(r.verdict)) continue
+    if (isPaymentAppOutflow(r.verdict)) out += r.amount
     else inflow += -r.amount
   }
   return round2(Math.max(0, out - Math.min(out, inflow)))
@@ -257,8 +259,8 @@ export function paymentAppFlowsForRows(rows: readonly ClassifiedRow[]): { out: n
   let out = 0
   let inflow = 0
   for (const r of rows) {
-    if (r.verdict.rule !== 4) continue
-    if (r.amount > 0) out += r.amount
+    if (!isCappedPaymentApp(r.verdict)) continue
+    if (isPaymentAppOutflow(r.verdict)) out += r.amount
     else inflow += -r.amount
   }
   return { out: round2(out), in: round2(inflow) }

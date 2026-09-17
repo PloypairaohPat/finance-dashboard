@@ -135,6 +135,25 @@ export interface Classified {
   reason: string
 }
 
+// ── payment-app rows, by what they are ────────────────────────────
+//
+// Code that needs "the payment-app rows" asks these, never `rule === 4`. The
+// rule number says which rule caught a row, not what the row is, and the two
+// come apart as soon as a payment-app inflow can be something other than a
+// repayment (a user setting that counts it as income, or a user override).
+// Keyed on rule number, such a row would still be netted by the cap AND
+// counted as income: the same money twice.
+
+/** Money out to a person through a payment app: "Payments to people". */
+export const isPaymentAppOutflow = (v: Pick<Classified, 'mechanism'>) => v.mechanism === 'payment-app-out'
+
+/** Money in through a payment app that nets against payment-app outflows (D5's cap). */
+export const isPaymentAppRepayment = (v: Pick<Classified, 'mechanism'>) => v.mechanism === 'payment-app-in'
+
+/** Either side of the cap: summed as a per-period total, never row by row. */
+export const isCappedPaymentApp = (v: Pick<Classified, 'mechanism'>) =>
+  isPaymentAppOutflow(v) || isPaymentAppRepayment(v)
+
 /**
  * What a single row means, in words a transaction list can show.
  *
@@ -147,10 +166,10 @@ export interface RowMeaning {
   label: string
 }
 
-export function describeVerdict(verdict: Pick<Classified, 'kind' | 'rule'>): RowMeaning {
+export function describeVerdict(verdict: Pick<Classified, 'kind' | 'mechanism'>): RowMeaning {
   switch (verdict.kind) {
     case 'spend':
-      return { kind: 'spend', label: verdict.rule === 4 ? 'Payment to a person' : 'Spending' }
+      return { kind: 'spend', label: isPaymentAppOutflow(verdict) ? 'Payment to a person' : 'Spending' }
     case 'income':
       return { kind: 'income', label: 'Income' }
     case 'card_payment':
@@ -448,10 +467,10 @@ export function classify(
   const flows = new Map<string, PeriodFlow>()
   for (const t of rows) {
     const verdict = byId.get(t.id)
-    if (!verdict || verdict.rule !== 4) continue
+    if (!verdict || !isCappedPaymentApp(verdict)) continue
     const key = options.periodKeyOf(asDate(t.date))
     const flow = flows.get(key) ?? { key, out: 0, in: 0 }
-    if (isOut(t)) flow.out = Math.round((flow.out + t.amount) * 100) / 100
+    if (isPaymentAppOutflow(verdict)) flow.out = Math.round((flow.out + t.amount) * 100) / 100
     else flow.in = Math.round((flow.in - t.amount) * 100) / 100
     flows.set(key, flow)
   }

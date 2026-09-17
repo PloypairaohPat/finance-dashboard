@@ -1,6 +1,6 @@
 import prisma from "../lib/prisma"
 import { mapPlaidCategory, CATEGORY_COLORS } from "../lib/categoryMap"
-import { PAYMENTS_TO_PEOPLE } from "../lib/classifier"
+import { PAYMENTS_TO_PEOPLE, isPaymentAppOutflow } from "../lib/classifier"
 import {
   classifyWindow,
   incomeForPeriod,
@@ -113,7 +113,7 @@ export async function fetchInsights(
     (r) =>
       periodKeyOf(r.date, startDay) === thisPeriod.key &&
       r.verdict.kind === "spend" &&
-      r.verdict.rule !== 4,
+      !isPaymentAppOutflow(r.verdict),
   )
 
   const merchantMap = new Map<string, { total: number; count: number }>()
