@@ -54,15 +54,35 @@ export interface ReadOnlyConnection {
   writeRefusedWith: string
 }
 
+export interface ResolvedConnection {
+  /** Which environment variable the URL came from. */
+  envName: string
+  /** The connection URL, unmodified. Never print it: it carries the password. */
+  url: URL
+  host: string
+  isLocal: boolean
+}
+
 /**
- * Connect read-only, or exit.
+ * Pick the connection and apply the --allow-remote speed bump, or exit.
  *
  * DIRECT_URL first, then DATABASE_URL, overridable with `--url-env NAME`; every
- * refusal names the variable it read. A non-local host is refused unless
- * `--allow-remote` names that exact host — a speed bump, not a security
- * boundary, so that pointing at production is always deliberate.
+ * refusal names the variable it read.
+ *
+ * `--allow-remote <host>` is compared with the host ACTUALLY in the chosen
+ * connection string, in both directions:
+ *   - a remote host needs --allow-remote naming exactly that host;
+ *   - --allow-remote naming a host the connection does not point at is refused
+ *     too, even when the connection is local. Either mismatch means the person
+ *     running it believes they are pointed somewhere they are not.
+ * A speed bump, not a security boundary: it makes pointing at production a
+ * deliberate, named act. Nothing here reads RAILWAY_ENVIRONMENT or any other
+ * variable a laptop can set to look like a server.
+ *
+ * Used by connectReadOnly and by the demo seed's write mode, so read and write
+ * agree on which database they mean.
  */
-export async function connectReadOnly(scriptName: string): Promise<ReadOnlyConnection> {
+export function resolveConnection(scriptName: string): ResolvedConnection {
   // Typed explicitly: TypeScript only narrows after a never-returning call when
   // the callee's type is declared, not inferred.
   const refuse: (message: string) => never = makeRefuse(scriptName)
@@ -92,13 +112,31 @@ export async function connectReadOnly(scriptName: string): Promise<ReadOnlyConne
     refuse(`${envName} is not a valid URL.`)
   }
   const host = parsed.hostname.toLowerCase()
+  const isLocal = LOCAL_HOSTNAMES.has(host)
   const allowRemote = flag('allow-remote')?.toLowerCase()
-  if (!LOCAL_HOSTNAMES.has(host) && allowRemote !== host) {
+  if (allowRemote !== undefined && allowRemote !== host) {
     refuse(
-      `${envName} points at "${host}", which is not local. To read from there, pass --allow-remote ${host}.` +
+      `--allow-remote names "${allowRemote}", but ${envName} points at "${host}".\n` +
+      '  They must match exactly: this refuses rather than guess which one you meant.',
+    )
+  }
+  if (!isLocal && allowRemote !== host) {
+    refuse(
+      `${envName} points at "${host}", which is not local. To use it, pass --allow-remote ${host}.` +
       (envName === 'DIRECT_URL' ? '\n  (Reading DIRECT_URL, not DATABASE_URL — the host to name is this one.)' : ''),
     )
   }
+  return { envName, url: parsed, host, isLocal }
+}
+
+/**
+ * Connect read-only, or exit. See resolveConnection for which database, and
+ * the header of this file for why the session cannot write.
+ */
+export async function connectReadOnly(scriptName: string): Promise<ReadOnlyConnection> {
+  const refuse: (message: string) => never = makeRefuse(scriptName)
+  const { envName, url, host } = resolveConnection(scriptName)
+  const parsed = new URL(url.toString())
 
   parsed.searchParams.set('options', '-c default_transaction_read_only=on')
   // One connection, so what is verified below is what every later query uses.
