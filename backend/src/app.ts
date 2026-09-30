@@ -63,6 +63,9 @@ const REQUIRED_ENV = [
   'ENCRYPTION_KEY',
   'CLERK_SECRET_KEY',
   'CLERK_PUBLISHABLE_KEY',
+  // Unset, every Plaid Item linked would be created with no webhook, silently.
+  // Whether it points at THIS deployment is checked at startup (lib/webhookUrl.ts).
+  'WEBHOOK_URL',
 ]
 
 REQUIRED_ENV.forEach((key) => {

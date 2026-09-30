@@ -40,6 +40,7 @@ jobs:
       ENCRYPTION_KEY: abababababababababababababababababababababababababababababababab
       CLERK_SECRET_KEY: sk_test_dummy_ci
       CLERK_PUBLISHABLE_KEY: pk_test_dummy_ci
+      WEBHOOK_URL: http://localhost:3001/webhook
 
     steps:
       - uses: actions/checkout@v4
