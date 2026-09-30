@@ -4,6 +4,7 @@
 
 import { app, plaidClient } from './app'
 import { startScheduler } from './scheduler'
+import { checkWebhookUrl } from './lib/webhookUrl'
 
 // ── Start ─────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001
@@ -20,5 +21,13 @@ app.listen(PORT, () => {
   console.log(`   GET  /recurring`)
   console.log(`   POST /webhook`)
   console.log(`   GET  /health\n`)
+
+  // Plaid bakes this URL into every Item at creation, so a stale value is
+  // silent until webhooks start 404ing. Say so on every boot.
+  const webhook = checkWebhookUrl(process.env.WEBHOOK_URL, process.env.RAILWAY_PUBLIC_DOMAIN)
+  const mark = { ok: '✅', warn: '⚠️ ', error: '❌' }[webhook.level]
+  const log = webhook.level === 'ok' ? console.log : console.error
+  log(`   ${mark} Webhook: ${webhook.message}\n`)
+
   startScheduler(plaidClient)
 })

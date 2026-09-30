@@ -116,6 +116,7 @@ process.env.PLAID_ENV ??= 'sandbox'
 process.env.ENCRYPTION_KEY ??= 'ab'.repeat(32)
 process.env.CLERK_SECRET_KEY ??= 'sk_test_dummy_isolation_suite'
 process.env.CLERK_PUBLISHABLE_KEY ??= 'pk_test_dummy_isolation_suite'
+process.env.WEBHOOK_URL ??= 'http://localhost:3001/webhook'
 
 // ── 5. Auth stub — mock ONLY Clerk's token verification ────────────────
 // Everything downstream of this (requireSession, demoReadOnly, getUserId,
