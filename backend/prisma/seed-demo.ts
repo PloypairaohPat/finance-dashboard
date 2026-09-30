@@ -1,27 +1,51 @@
 /**
- * seed-demo.ts — write the demo user's data into a LOCAL database.
+ * seed-demo.ts — rebuild the demo user's data from prisma/demo-dataset.ts.
  *
- * The data itself lives in prisma/demo-dataset.ts as a pure function, together
- * with the manifest of what the M7.3 classifier must decide about every row.
- * This file is only the writer: guard, wipe, insert, report.
+ * The data lives in demo-dataset.ts as a pure function, with the manifest of
+ * what the classifier must decide about every row. This file is the writer.
  *
- * Safety:
- *   - Refuses any DATABASE_URL that is not localhost. The old version loaded
- *     backend/.env via `import 'dotenv/config'`, so a bare `npx tsx
- *     prisma/seed-demo.ts` pointed at PRODUCTION. It no longer loads any env
- *     file: the URL has to come from the environment, and it has to be local.
- *   - Every row is scoped to DEMO_USER_ID. Nothing else is read or written.
- *   - Idempotent: re-running wipes ONLY the demo user's data, then rebuilds it.
- *   - No Plaid calls.
+ * It deletes and rebuilds rows in a database that may also hold real users,
+ * so it is built like a migration:
+ *
+ *   - ONE TRANSACTION. The wipe and the rebuild commit together or not at all.
+ *     If anything fails partway, the demo keeps its old data, and visitors to
+ *     ?demo=1 never see a half-built or empty demo — readers keep seeing the
+ *     old rows until the commit.
+ *
+ *   - EVERYONE ELSE IS PROVEN UNTOUCHED, before commit. Every non-demo row is
+ *     fingerprinted (count and id hash, per table and per user) inside the
+ *     transaction before the first write, and again after the last. Any
+ *     difference throws, which rolls the whole rebuild back. (A check after
+ *     commit would only report damage already done.) The transaction is
+ *     REPEATABLE READ, so both fingerprints see the same snapshot and a real
+ *     user syncing mid-run cannot look like damage; only this transaction's
+ *     own writes could change the second one.
+ *
+ *   - --dry-run goes through scripts/lib/read-only-db.ts: the database itself
+ *     refuses writes, so a wrong code path cannot write either.
+ *
+ *   - --allow-remote <host> is required for any non-local database and must
+ *     name the host actually in the connection string (scripts/lib/
+ *     read-only-db.ts: resolveConnection). Nothing is keyed on an environment
+ *     variable, and guard-local-db.ts is untouched: `npm run db:dev:seed` still
+ *     runs it first.
+ *
+ * Every delete is `where: { userId: DEMO_USER_ID }`, where DEMO_USER_ID is the
+ * literal 'demo-user' (an undefined here would mean NO filter). No foreign key
+ * cascades: all five are ON DELETE RESTRICT, so a delete can only ever fail,
+ * never spread. Every write is a create, never an upsert or update of anyone
+ * else's row; the one upsert is the demo User row itself.
+ *
+ * No alerts are seeded. The detectors produce real ones from this data on the
+ * first bell open. The old seed inserted kinds no detector owns, which nothing
+ * could ever resolve, so they sat in the demo bell permanently.
  *
  * Run:
- *   cd backend && npm run db:dev:seed
- *
- * Reseeding the PRODUCTION demo is deliberately not possible from here. The
- * extended seed reproduces the §7 mechanisms (transfers, card payments,
- * payment-app flows) that the current endpoints still miscount, so the public
- * demo should only be reseeded once the classifier lands.
+ *   local:       cd backend && npm run db:dev:seed           (add -- --dry-run to preview)
+ *   production:  railway run npx tsx prisma/seed-demo.ts --allow-remote <db host> --dry-run
+ *                then the same without --dry-run
  */
+import { randomUUID } from 'node:crypto'
 import { PrismaClient, Prisma } from '@prisma/client'
 import {
   DEMO_BUDGETS,
@@ -29,42 +53,65 @@ import {
   MONTHS_OF_HISTORY,
   buildDemoDataset,
   toRawJson,
+  type DemoDataset,
   type DemoTransaction,
 } from './demo-dataset'
+import { connectReadOnly, hasFlag, makeRefuse, redact, resolveConnection } from '../scripts/lib/read-only-db'
+import {
+  NON_DEMO_TABLES, diffBaselines, summariseBaseline, takeBaseline, type BaselineEntry, type RawQuerier,
+} from '../scripts/lib/non-demo-baseline'
 
 export { DEMO_USER_ID }
 
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+const SCRIPT = 'seed-demo'
+const refuse: (message: string) => never = makeRefuse(SCRIPT)
 
-function assertLocalDatabase(): void {
-  const url = process.env.DATABASE_URL
-  if (!url) {
-    console.error(
-      '\n[seed-demo] REFUSING TO RUN: DATABASE_URL is not set.\n' +
-        'Run this through `npm run db:dev:seed`, which loads backend/.env.dev.\n',
-    )
-    process.exit(1)
-  }
-  let host = ''
-  try {
-    host = new URL(url).hostname.toLowerCase()
-  } catch {
-    console.error('\n[seed-demo] REFUSING TO RUN: DATABASE_URL is not a valid URL.\n')
-    process.exit(1)
-  }
-  if (!LOCAL_HOSTNAMES.has(host)) {
-    console.error(
-      `\n[seed-demo] REFUSING TO RUN: DATABASE_URL host "${host}" is not local.\n` +
-        'The demo seed deletes and rewrites rows; it may only ever target the local\n' +
-        'dev database. Start it with "npm run db:dev:up" and use "npm run db:dev:seed".\n',
-    )
-    process.exit(1)
-  }
-  console.log(`[seed-demo] target: ${host} — local, OK`)
-}
+/**
+ * The transaction's time limit. Chosen from measurement, not guessed:
+ *
+ *   Measured locally (3 runs): inside the transaction ~0.25 s — 41 round trips
+ *   at ~1 ms, the rest server work, mostly the 543-row insert. Engine start and
+ *   connecting (~2 s) happen BEFORE the transaction and don't count against it.
+ *   The rebuild sends ~400 KB, almost all of it transaction rawJson.
+ *
+ *   Remote, the cost is round trips × RTT, plus the upload:
+ *     100 ms RTT, 5 Mbps up (ordinary connection)   41×0.10 + 0.2 + 0.7 ≈  5 s
+ *     250 ms RTT, 1 Mbps up (bad Wi-Fi)             41×0.25 + 0.2 + 3.3 ≈ 14 s
+ *   Prisma's default of 5 s would fail on an ordinary connection.
+ *
+ *   60 s is ~4× the bad case. It is also a ceiling that matters: a transaction
+ *   left hanging holds locks on the demo rows it deleted, and a visitor opening
+ *   the bell writes demo alert rows, which would wait on them. 60 s bounds that.
+ *
+ * The dry run measures this connection's actual round trip and prints the
+ * projection against this limit, before anything is written.
+ */
+const TX_TIMEOUT_MS = 60_000
+/** How long to wait for a connection to start the transaction on. */
+const TX_MAX_WAIT_MS = 15_000
+
+/** The tables the wipe clears, in foreign-key-safe order. */
+const WIPE_ORDER = ['transaction', 'account', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const
+/** The tables the rebuild fills, each with one createMany. Transactions last: the largest. */
+const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction'] as const
+
+/**
+ * Round trips inside the transaction. An interactive transaction pays one per
+ * statement, so this — not the row count — is what a remote connection makes
+ * slow:
+ *   baseline before + after   NON_DEMO_TABLES × 2
+ *   wipe                      WIPE_ORDER
+ *   demo User upsert          1
+ *   rebuild                   CREATE_ORDER (createMany: one statement per table)
+ *   demo count check          NON_DEMO_TABLES (same tables, demo side)
+ *   BEGIN, SET ISOLATION, COMMIT  3
+ */
+const TX_STATEMENTS =
+  NON_DEMO_TABLES.length * 2 + WIPE_ORDER.length + 1 + CREATE_ORDER.length + NON_DEMO_TABLES.length + 3
 
 const CURRENCY = 'USD'
 const money = (n: number) => n.toFixed(2)
+const SENTINEL_TOKEN = 'DEMO-NO-TOKEN'
 
 function mulberry32(seed: number) {
   return function () {
@@ -76,202 +123,332 @@ function mulberry32(seed: number) {
   }
 }
 
-function summarise(transactions: DemoTransaction[]): string {
-  const byKind: Record<string, number> = {}
-  let decisionTagged = 0
-  for (const t of transactions) {
-    byKind[t.expected.kind] = (byKind[t.expected.kind] ?? 0) + 1
-    if (t.decisions.length > 0) decisionTagged++
-  }
-  const kinds = Object.entries(byKind)
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, n]) => `${k} ${n}`)
-    .join(', ')
-  return `${kinds}\n  rows whose expectation depends on a pending decision: ${decisionTagged}`
+// ── the plan: every row the rebuild will create, built before connecting ──
+
+interface Plan {
+  dataset: DemoDataset
+  plaidItem: Prisma.PlaidItemCreateManyInput[]
+  account: Prisma.AccountCreateManyInput[]
+  budget: Prisma.BudgetCreateManyInput[]
+  balanceSnapshot: Prisma.BalanceSnapshotCreateManyInput[]
+  goal: Prisma.GoalCreateManyInput[]
+  transaction: Prisma.TransactionCreateManyInput[]
 }
 
-async function main() {
-  assertLocalDatabase()
-  const prisma = new PrismaClient()
-  const now = new Date()
+/**
+ * Ids are generated here rather than by the database, so every table can be
+ * written with ONE createMany: an account needs its item's id, a transaction
+ * its account's, and createMany returns no ids.
+ */
+function buildPlan(now: Date): Plan {
   const dataset = buildDemoDataset(now)
 
-  console.log(`Seeding demo user "${DEMO_USER_ID}"…`)
+  const itemId = new Map<string, string>()
+  const plaidItem = dataset.items.map((item) => {
+    const id = randomUUID()
+    itemId.set(item.key, id)
+    return {
+      id,
+      userId: DEMO_USER_ID,
+      itemId: item.itemId,
+      // Plaintext sentinel, deliberately: the demo path never syncs, and an
+      // encrypted value would break local seeding, whose ENCRYPTION_KEY is an
+      // invalid placeholder on purpose.
+      accessToken: SENTINEL_TOKEN,
+      institutionId: item.institutionId,
+      institutionName: item.institutionName,
+    }
+  })
+
+  const accountId = new Map<string, string>()
+  const plaidAccountId = new Map<string, string>()
+  const account = dataset.accounts.map((a) => {
+    const id = randomUUID()
+    accountId.set(a.key, id)
+    plaidAccountId.set(a.key, a.plaidAccountId)
+    return {
+      id,
+      userId: DEMO_USER_ID,
+      plaidItemId: itemId.get(a.itemKey)!,
+      plaidAccountId: a.plaidAccountId,
+      name: a.name,
+      officialName: a.officialName,
+      type: a.type,
+      subtype: a.subtype,
+      mask: a.mask,
+      currentBalance: a.currentBalance,
+      availableBalance: a.availableBalance,
+      isoCurrencyCode: CURRENCY,
+    }
+  })
+
+  const transaction = dataset.transactions.map((t: DemoTransaction) => ({
+    userId: DEMO_USER_ID,
+    accountId: accountId.get(t.accountKey)!,
+    plaidTransactionId: t.plaidTransactionId,
+    date: new Date(`${t.date}T00:00:00.000Z`),
+    amount: money(t.amount),
+    name: t.name,
+    cleanName: t.merchantName ?? t.name,
+    merchantName: t.merchantName,
+    categoryPrimary: t.primary,
+    categoryDetailed: t.detailed,
+    isoCurrencyCode: CURRENCY,
+    pending: t.pending,
+    rawJson: toRawJson(t, plaidAccountId.get(t.accountKey)!) as Prisma.InputJsonValue,
+  }))
+
+  // Budgets are stored under DISPLAY names, which is what fetchBudgetsWithSpend looks up.
+  const budget = DEMO_BUDGETS.map((b) => ({ userId: DEMO_USER_ID, category: b.category, monthlyLimit: b.monthlyLimit }))
+
+  // Monthly balance snapshots (the net-worth trend), UTC month ends.
+  const rnd = mulberry32(20260825)
+  const between = (min: number, max: number) => min + rnd() * (max - min)
+  const balanceSnapshot: Prisma.BalanceSnapshotCreateManyInput[] = []
+  for (let back = MONTHS_OF_HISTORY; back >= 0; back--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back + 1, 0))
+    const step = MONTHS_OF_HISTORY - back
+    const mk = (key: string, name: string, type: string, bal: number) =>
+      balanceSnapshot.push({
+        userId: DEMO_USER_ID,
+        accountId: accountId.get(key)!,
+        accountName: name,
+        accountType: type,
+        currentBalance: money(bal),
+        availableBalance: null,
+        isoCurrencyCode: CURRENCY,
+        date: d,
+      })
+    mk('checking', 'Everyday Checking', 'depository', between(3600, 4600))
+    mk('savings', 'High-Yield Savings', 'depository', 9000 + step * 1240)
+    mk('card', 'Rewards Card', 'credit', between(1000, 1850))
+    mk('nwChecking', 'Northwind Checking', 'depository', between(2200, 2900))
+  }
+
+  const goal: Prisma.GoalCreateManyInput[] = [
+    {
+      userId: DEMO_USER_ID, type: 'savings', name: 'Emergency Fund',
+      targetAmount: '20000.00', startAmount: '9000.00',
+      deadline: new Date(Date.UTC(now.getUTCFullYear(), 11, 31)),
+    },
+    {
+      userId: DEMO_USER_ID, type: 'debt_payoff', name: 'Pay off Rewards Card',
+      targetAmount: '0.00', startAmount: '1850.00', accountId: accountId.get('card')!,
+    },
+  ]
+
+  return { dataset, plaidItem, account, budget, balanceSnapshot, goal, transaction }
+}
+
+/** Rows the plan creates, per table, in the same shape as demoCounts(). */
+function plannedCounts(plan: Plan): Record<string, number> {
+  return {
+    User: 1,
+    PlaidItem: plan.plaidItem.length,
+    Account: plan.account.length,
+    Transaction: plan.transaction.length,
+    Budget: plan.budget.length,
+    BalanceSnapshot: plan.balanceSnapshot.length,
+    Alert: 0,
+    Goal: plan.goal.length,
+  }
+}
+
+/** The demo user's rows, per table. */
+async function demoCounts(db: RawQuerier): Promise<Record<string, number>> {
+  const out: Record<string, number> = {}
+  for (const [table, owner] of NON_DEMO_TABLES) {
+    const [r] = await db.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT count(*)::int AS n FROM "${table}" WHERE "${owner}" = $1`,
+      DEMO_USER_ID,
+    )
+    out[table] = Number(r.n)
+  }
+  return out
+}
+
+function printTable(title: string, rows: Array<Record<string, string | number>>): void {
+  console.log(title)
+  const cols = Object.keys(rows[0])
+  const w = Object.fromEntries(cols.map((c) => [c, Math.max(c.length, ...rows.map((r) => String(r[c]).length))]))
+  console.log('  ' + cols.map((c) => c.padEnd(w[c])).join('  '))
+  console.log('  ' + cols.map((c) => '─'.repeat(w[c])).join('  '))
+  for (const r of rows) console.log('  ' + cols.map((c) => String(r[c]).padEnd(w[c])).join('  '))
+  console.log()
+}
+
+function printBaseline(entries: BaselineEntry[]): void {
+  printTable('Everyone else — must come through unchanged (non-demo rows, per table):',
+    summariseBaseline(entries).map((s) => ({ table: s.table, users: s.users, rows: s.rows })))
+  const users = [...new Set(entries.map((e) => e.user))]
+  for (const u of users) {
+    const mine = entries.filter((e) => e.user === u)
+    console.log(`  user ${u.slice(0, 12)}…  ` + mine.map((e) => `${e.table} ${e.rows}`).join(', '))
+  }
+  console.log()
+}
+
+/** "Plaintext sentinel", "looks encrypted", or "unrecognised". Never the value. */
+function describeToken(token: string): string {
+  if (token === SENTINEL_TOKEN) return `plaintext sentinel '${SENTINEL_TOKEN}'`
+  if (/^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i.test(token)) return 'looks encrypted (iv:tag:ciphertext)'
+  return 'unrecognised format (value not shown)'
+}
+
+// ── dry run: read-only, the database itself refuses writes ──────────
+
+async function dryRun(plan: Plan): Promise<void> {
+  const db = await connectReadOnly(SCRIPT)
+  console.log(`\n${SCRIPT} — DRY RUN, nothing will be written`)
+  console.log(`  target  ${db.database} on ${db.host} via ${db.envName}`)
+  console.log(`  proof   ${db.writeRefusedWith}\n`)
+
+  const current = await demoCounts(db.prisma)
+  const planned = plannedCounts(plan)
+  printTable('The demo user (demo-user) — deleted, then created:', NON_DEMO_TABLES.map(([t]) => ({
+    table: t,
+    'now (deleted)': t === 'User' ? `${current[t]} (kept, upserted)` : current[t],
+    'after (created)': planned[t],
+  })))
+
+  const tokens = await db.prisma.plaidItem.findMany({ where: { userId: DEMO_USER_ID }, select: { itemId: true, accessToken: true } })
+  console.log('Demo PlaidItem access tokens in this database now:')
+  if (tokens.length === 0) console.log('  (no demo items)')
+  for (const t of tokens) console.log(`  ${t.itemId}: ${describeToken(t.accessToken)}`)
+  console.log()
+
+  printBaseline(await takeBaseline(db.prisma))
+
+  // Round trip, measured rather than assumed: the transaction's cost on this
+  // connection is roughly one round trip per statement.
+  const samples: number[] = []
+  for (let i = 0; i < 7; i++) {
+    const t0 = performance.now()
+    await db.prisma.$queryRawUnsafe('SELECT 1')
+    samples.push(performance.now() - t0)
+  }
+  samples.sort((a, b) => a - b)
+  const rtt = samples[Math.floor(samples.length / 2)]
+  const worst = samples[samples.length - 1]
+  const projected = TX_STATEMENTS * worst
+  console.log('Transaction time budget:')
+  console.log(`  round trip here     median ${rtt.toFixed(0)} ms, worst of 7 ${worst.toFixed(0)} ms`)
+  console.log(`  statements in tx    ${TX_STATEMENTS}`)
+  console.log(`  projected           ~${(projected / 1000).toFixed(1)} s at the worst round trip, plus row payload`)
+  console.log(`  timeout             ${TX_TIMEOUT_MS / 1000} s  (${(TX_TIMEOUT_MS / Math.max(projected, 1)).toFixed(0)}× the projection)`)
+  console.log('\nDry run complete. Nothing was written.\n')
+  await db.prisma.$disconnect()
+}
+
+// ── the real thing ──────────────────────────────────────────────────
+
+class BaselineChanged extends Error {}
+
+async function write(plan: Plan): Promise<void> {
+  const conn = resolveConnection(SCRIPT)
+  console.log(`\n${SCRIPT} — writing to ${conn.url.pathname.replace(/^\//, '')} on ${conn.host} via ${conn.envName}`)
+
+  // Its own client on exactly the resolved URL: the shared one reads
+  // DATABASE_URL, which may name a different (pooled) connection.
+  const prisma = new PrismaClient({ datasourceUrl: conn.url.toString() })
+  const planned = plannedCounts(plan)
+  const timings: Record<string, number> = {}
+  const t0 = performance.now()
+  let mark = t0
+  const lap = (name: string) => {
+    const t = performance.now()
+    timings[name] = t - mark
+    mark = t
+  }
 
   try {
-    // 1) Wipe existing demo data (FK-safe order), scoped strictly to the demo user.
-    await prisma.$transaction([
-      prisma.transaction.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.account.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.plaidItem.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.budget.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.balanceSnapshot.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.alert.deleteMany({ where: { userId: DEMO_USER_ID } }),
-      prisma.goal.deleteMany({ where: { userId: DEMO_USER_ID } }),
-    ])
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Engine start and connecting happen before this point, outside the
+        // transaction's timeout; everything after is inside it.
+        lap('connect + begin')
+        const before = await takeBaseline(tx)
+        lap('baseline before')
 
-    // 2) Demo user — calendar months, like the default.
-    await prisma.user.upsert({
-      where: { id: DEMO_USER_ID },
-      update: { periodStartDay: dataset.startDay },
-      create: { id: DEMO_USER_ID, email: 'demo@ledger.app', periodStartDay: dataset.startDay },
-    })
+        const deleted: Record<string, number> = {}
+        for (const table of WIPE_ORDER) {
+          // Every one scoped to the demo user. DEMO_USER_ID is a string literal.
+          deleted[table] = (await (tx[table] as any).deleteMany({ where: { userId: DEMO_USER_ID } })).count
+        }
+        lap('wipe')
 
-    // 3) Items. accessToken is a sentinel — the demo path never syncs.
-    const itemIds = new Map<string, string>()
-    for (const item of dataset.items) {
-      const row = await prisma.plaidItem.create({
-        data: {
-          userId: DEMO_USER_ID,
-          itemId: item.itemId,
-          accessToken: 'DEMO-NO-TOKEN',
-          institutionId: item.institutionId,
-          institutionName: item.institutionName,
-        },
-      })
-      itemIds.set(item.key, row.id)
-    }
-
-    // 4) Accounts
-    const accountIds = new Map<string, string>()
-    const plaidAccountIds = new Map<string, string>()
-    for (const account of dataset.accounts) {
-      const row = await prisma.account.create({
-        data: {
-          userId: DEMO_USER_ID,
-          plaidItemId: itemIds.get(account.itemKey)!,
-          plaidAccountId: account.plaidAccountId,
-          name: account.name,
-          officialName: account.officialName,
-          type: account.type,
-          subtype: account.subtype,
-          mask: account.mask,
-          currentBalance: account.currentBalance,
-          availableBalance: account.availableBalance,
-          isoCurrencyCode: CURRENCY,
-        },
-      })
-      accountIds.set(account.key, row.id)
-      plaidAccountIds.set(account.key, account.plaidAccountId)
-    }
-
-    // 5) Transactions, with the rawJson the classifier reads.
-    const txData: Prisma.TransactionCreateManyInput[] = dataset.transactions.map((t) => ({
-      userId: DEMO_USER_ID,
-      accountId: accountIds.get(t.accountKey)!,
-      plaidTransactionId: t.plaidTransactionId,
-      date: new Date(`${t.date}T00:00:00.000Z`),
-      amount: money(t.amount),
-      name: t.name,
-      cleanName: t.merchantName ?? t.name,
-      merchantName: t.merchantName,
-      categoryPrimary: t.primary,
-      categoryDetailed: t.detailed,
-      isoCurrencyCode: CURRENCY,
-      pending: t.pending,
-      rawJson: toRawJson(t, plaidAccountIds.get(t.accountKey)!) as Prisma.InputJsonValue,
-    }))
-    await prisma.transaction.createMany({ data: txData })
-
-    // 6) Budgets — stored under DISPLAY names, which is what fetchBudgetsWithSpend
-    //    looks up. Stored under Plaid codes (as before) they always showed $0.
-    await prisma.budget.createMany({
-      data: DEMO_BUDGETS.map((b) => ({
-        userId: DEMO_USER_ID,
-        category: b.category,
-        monthlyLimit: b.monthlyLimit,
-      })),
-    })
-
-    // 7) Monthly balance snapshots (drives the net-worth trend), UTC month ends.
-    const rnd = mulberry32(20260825)
-    const between = (min: number, max: number) => min + rnd() * (max - min)
-    const snaps: Prisma.BalanceSnapshotCreateManyInput[] = []
-    for (let back = MONTHS_OF_HISTORY; back >= 0; back--) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back + 1, 0))
-      const step = MONTHS_OF_HISTORY - back
-      const mk = (key: string, name: string, type: string, bal: number, avail?: number) =>
-        snaps.push({
-          userId: DEMO_USER_ID,
-          accountId: accountIds.get(key)!,
-          accountName: name,
-          accountType: type,
-          currentBalance: money(bal),
-          availableBalance: avail != null ? money(avail) : null,
-          isoCurrencyCode: CURRENCY,
-          date: d,
+        await tx.user.upsert({
+          where: { id: DEMO_USER_ID },
+          update: { periodStartDay: plan.dataset.startDay },
+          create: { id: DEMO_USER_ID, email: 'demo@ledger.app', periodStartDay: plan.dataset.startDay },
         })
-      mk('checking', 'Everyday Checking', 'depository', between(3600, 4600))
-      mk('savings', 'High-Yield Savings', 'depository', 9000 + step * 1240)
-      mk('card', 'Rewards Card', 'credit', between(1000, 1850))
-      mk('nwChecking', 'Northwind Checking', 'depository', between(2200, 2900))
-    }
-    await prisma.balanceSnapshot.createMany({ data: snaps, skipDuplicates: true })
+        for (const table of CREATE_ORDER) {
+          try {
+            await (tx[table] as any).createMany({ data: plan[table] })
+          } catch (e: any) {
+            // Say which table: Prisma's message names the field, not the table.
+            const reason = String(e?.message ?? e).split('\n').map((l: string) => l.trim()).filter(Boolean)
+            throw new Error(`creating ${plan[table].length} ${table} row(s) failed: ${reason[reason.length - 1] ?? 'unknown error'}`)
+          }
+        }
+        lap('rebuild')
 
-    // 8) A few alerts
-    await prisma.alert.createMany({
-      data: [
-        {
-          userId: DEMO_USER_ID,
-          kind: 'large_transaction',
-          fingerprint: 'demo-large-1',
-          severity: 'low',
-          title: 'Large purchase detected',
-          body: 'A purchase of $184.20 at BEST BUY is larger than your typical spend.',
-        },
-        {
-          userId: DEMO_USER_ID,
-          kind: 'budget_pace',
-          fingerprint: 'demo-pace-1',
-          severity: 'medium',
-          title: 'Dining budget pace',
-          body: "You're on track to exceed your Food & Dining budget this period.",
-        },
-        {
-          userId: DEMO_USER_ID,
-          kind: 'new_merchant',
-          fingerprint: 'demo-newmerchant-1',
-          severity: 'low',
-          title: 'New merchant',
-          body: 'First time seeing SWEETGREEN in your transactions.',
-        },
-      ],
-    })
+        // Everyone else, again, in the same snapshot. Any difference rolls it all back.
+        const after = await takeBaseline(tx)
+        const damage = diffBaselines(before, after)
+        lap('baseline after')
+        if (damage.length > 0) {
+          throw new BaselineChanged(
+            `non-demo rows changed, so nothing was committed:\n  ${damage.join('\n  ')}`,
+          )
+        }
 
-    // 9) Goals
-    await prisma.goal.createMany({
-      data: [
-        {
-          userId: DEMO_USER_ID,
-          type: 'savings',
-          name: 'Emergency Fund',
-          targetAmount: '20000.00',
-          startAmount: '9000.00',
-          deadline: new Date(Date.UTC(now.getUTCFullYear(), 11, 31)),
-        },
-        {
-          userId: DEMO_USER_ID,
-          type: 'debt_payoff',
-          name: 'Pay off Rewards Card',
-          targetAmount: '0.00',
-          startAmount: '1850.00',
-          accountId: accountIds.get('card')!,
-        },
-      ],
-    })
-
-    console.log(
-      `Done. ${dataset.items.length} institutions, ${dataset.accounts.length} accounts, ` +
-        `${dataset.transactions.length} transactions, ${DEMO_BUDGETS.length} budgets, ` +
-        `${snaps.length} snapshots, 3 alerts, 2 goals.\n` +
-        `  classifier fixtures: ${dataset.cases.length} named cases\n  ${summarise(dataset.transactions)}`,
+        const written = await demoCounts(tx)
+        const short = Object.keys(planned).filter((t) => written[t] !== planned[t])
+        if (short.length > 0) {
+          throw new Error(
+            `the demo user's rows don't match the plan, so nothing was committed: ` +
+            short.map((t) => `${t} ${written[t]} ≠ ${planned[t]}`).join(', '),
+          )
+        }
+        lap('demo check')
+        return { before, deleted, written }
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        timeout: TX_TIMEOUT_MS,
+        maxWait: TX_MAX_WAIT_MS,
+      },
     )
+    const total = performance.now() - t0
+
+    console.log('  committed.\n')
+    printTable('The demo user — deleted, then created:', NON_DEMO_TABLES.map(([t]) => ({
+      table: t,
+      deleted: t === 'User' ? '(kept)' : result.deleted[t[0].toLowerCase() + t.slice(1)] ?? 0,
+      created: result.written[t],
+    })))
+    printBaseline(result.before)
+    console.log('  Non-demo rows: identical before and after, checked inside the transaction before commit.')
+    console.log(`  Time: ${(total / 1000).toFixed(2)} s for ${TX_STATEMENTS} statements (` +
+      Object.entries(timings).map(([k, v]) => `${k} ${v.toFixed(0)} ms`).join(', ') + ')')
+    console.log(`  Classifier fixtures: ${plan.dataset.cases.length} named cases.\n`)
+  } catch (e: any) {
+    console.error(`\n✗ ${SCRIPT}: rolled back. The demo user's previous data is unchanged.`)
+    console.error(`  ${redact(String(e?.message ?? e)).split('\n').join('\n  ')}\n`)
+    process.exitCode = 1
   } finally {
     await prisma.$disconnect()
   }
 }
 
+async function main() {
+  const plan = buildPlan(new Date())
+  if (hasFlag('dry-run')) await dryRun(plan)
+  else await write(plan)
+}
+
 main().catch((e) => {
-  console.error('Demo seed failed:', e)
+  console.error(redact(String(e?.stack ?? e)))
   process.exit(1)
 })

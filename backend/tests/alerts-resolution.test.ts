@@ -133,8 +133,9 @@ describe('a condition that stops being true resolves itself', () => {
   })
 
   it('leaves an alert nobody owns alone, rather than resolving it by absence', async () => {
-    // The demo seed carries kinds no detector emits. Absence must not clear them:
-    // no detector answered for that kind, so nothing has said it is untrue.
+    // An alert of a kind no detector emits (the demo seed used to insert these).
+    // Absence must not clear it: no detector answered for that kind, so nothing
+    // has said it is untrue.
     await prisma.alert.create({
       data: {
         userId: USER, kind: 'budget_pace', fingerprint: `${USER}-orphan`,
