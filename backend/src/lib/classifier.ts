@@ -311,6 +311,21 @@ const primaryOf = (t: ClassifierTx) => (t.categoryPrimary ?? '').toUpperCase()
 const gatePasses = (t: ClassifierTx, levels: readonly string[]) =>
   t.confidence !== null && levels.includes(t.confidence.toUpperCase())
 
+/**
+ * D1's transfer signal: a TRANSFER_IN_* / TRANSFER_OUT_* detailed code, or a
+ * financial_institution counterparty naming one of the user's linked banks.
+ *
+ * Exported so measurement scripts ask the classifier rather than re-implement
+ * it — this file stays the only definition of what a transfer signal is.
+ */
+export function hasTransferSignal(t: ClassifierTx, linkedInstitutions: readonly string[]): boolean {
+  if (/^TRANSFER_(IN|OUT)_/.test(detailedOf(t))) return true
+  const linked = new Set(linkedInstitutions.map(normalize))
+  return t.counterparties.some(
+    (c) => (c.type ?? '').toLowerCase() === 'financial_institution' && linked.has(normalize(c.name ?? '')),
+  )
+}
+
 export function classify(
   transactions: readonly ClassifierTx[],
   options: ClassifyOptions,
@@ -327,8 +342,7 @@ export function classify(
       (c) => (c.type ?? '').toLowerCase() === 'financial_institution' && withCredit.has(normalize(c.name ?? '')),
     )
   /** D1: a transfer signal is a transfer code, or the user's own bank named. */
-  const hasTransferSignal = (t: ClassifierTx) =>
-    /^TRANSFER_(IN|OUT)_/.test(detailedOf(t)) || matchesLinkedBank(t)
+  const signalled = (t: ClassifierTx) => hasTransferSignal(t, options.linkedInstitutions)
 
   const byId = new Map<string, Classified>()
   const claim = (c: Classified) => byId.set(c.id, c)
@@ -374,13 +388,13 @@ export function classify(
 
   // ── R2: internal transfer (pair) ────────────────────────────────
   for (const out of rows) {
-    if (byId.has(out.id) || !isOut(out) || !isDepository(out) || !hasTransferSignal(out)) continue
+    if (byId.has(out.id) || !isOut(out) || !isDepository(out) || !signalled(out)) continue
     const partner = nearest(
       out,
       (i) =>
         isDepository(i) &&
         i.accountId !== out.accountId &&
-        hasTransferSignal(i) &&
+        signalled(i) &&
         gapDays(out, i) <= R2_WINDOW_DAYS,
     )
     if (!partner) continue
