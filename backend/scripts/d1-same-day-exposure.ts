@@ -157,7 +157,7 @@ async function main() {
     }
     const signalShape = (p: { out: Leg; in: Leg }) =>
       p.out.signal && p.in.signal ? 'both legs' : p.out.signal ? 'outflow only' : p.in.signal ? 'inflow only' : 'neither'
-    const PAIRED = new Set(['internal-transfer-pair', 'card-payment-pair'])
+    const PAIRED = new Set(['internal-transfer-pair', 'internal-transfer-same-day', 'card-payment-pair'])
     const alreadyPaired = (p: { out: Leg; in: Leg }) => PAIRED.has(p.out.mechanism) && PAIRED.has(p.in.mechanism)
 
     table('Day-0, exact-amount pairs across this user\'s own depository accounts:', Object.entries(countBy(pairs, signalShape))

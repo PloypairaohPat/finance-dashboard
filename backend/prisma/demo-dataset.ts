@@ -88,7 +88,7 @@ export interface DemoAccount {
  * should fail a named test, not drift silently. See docs/m7.3-classifier.md.
  */
 export type DecisionId =
-  | 'D1' // R2 needs a transfer signal on BOTH legs (the rent coincidence)
+  | 'D1' // R2 needs a signal on both legs, except same-day with the inflow coded and the outflow naming no one
   | 'D2' // R1 refuses legs carrying a merchant/marketplace/payment_app counterparty
   | 'D3' // R5's linked-bank branch needs a linked CREDIT account at that institution
   | 'D4' // linked-bank exclusion is an allowlist of account-transfer codes only
@@ -1047,7 +1047,39 @@ export function buildDemoDataset(now: Date): DemoDataset {
         confidence: 'HIGH', expected: income(), decisions: ['D1'],
       })
       addCase('rent-coincidence-real-shape', 'rent-coincidence', 'wrong-claim',
-        'the real user-2 row: rent out of one account, an exact-amount transfer into another, same day. D1 keeps the rent as spend', [rent, a])
+        'rent paid to a landlord (a merchant counterparty) beside an exact-amount transfer into another account, same day: ' +
+        'the rent is still spend. Not the D1 incident: that outflow named no one (see d1-memo-rent-same-day)', [rent, a])
+
+      // D1, implemented: the incident's actual shape. A move between the user's
+      // own accounts whose typed memo Plaid read as rent. The outflow names no
+      // counterparty; only the inflow carries the transfer code.
+      const b = add({
+        slug: 'd1-memo-rent-out', day: 10, account: 'savings', amount: 1287.43,
+        name: 'TRANSFER TO CHECKING RENT', detailed: 'RENT_AND_UTILITIES_RENT', cps: [],
+        confidence: 'HIGH', expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D1'],
+      })
+      const c = add({
+        slug: 'd1-memo-rent-in', day: 10, account: 'checking', amount: -1287.43,
+        name: 'TRANSFER FROM SAVINGS', detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', cps: [],
+        confidence: 'VERY_HIGH', expected: { kind: 'internal_transfer', rule: 2 }, decisions: ['D1'],
+      })
+      addCase('d1-memo-rent-same-day', 'rent-coincidence', 'near-miss-inside',
+        'the D1 incident: a same-day move between own accounts, memo read as rent, outflow naming no one. ' +
+        'Only the inflow is transfer-coded; R2\'s same-day pass pairs it', [b, c])
+
+      // The same shape one day apart: the same-day pass must not reach it.
+      const d = add({
+        slug: 'd1-memo-rent-1day-out', day: 14, account: 'savings', amount: 1343.61,
+        name: 'TRANSFER TO CHECKING RENT', detailed: 'RENT_AND_UTILITIES_RENT', cps: [],
+        confidence: 'HIGH', expected: spend('RENT_AND_UTILITIES_RENT'), decisions: ['D1'],
+      })
+      const e = add({
+        slug: 'd1-memo-rent-1day-in', day: 15, account: 'checking', amount: -1343.61,
+        name: 'TRANSFER FROM SAVINGS', detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', cps: [],
+        confidence: 'VERY_HIGH', expected: income(), decisions: ['D1'],
+      })
+      addCase('d1-memo-rent-one-day-apart', 'rent-coincidence', 'near-miss-outside',
+        'the incident shape one day apart: day 0 only, so the rent stays spend and the inflow stays income', [d, e])
     }
     if (back === 3) {
       const a = add({

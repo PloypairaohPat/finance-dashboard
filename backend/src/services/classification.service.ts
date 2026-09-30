@@ -39,6 +39,12 @@ const DAY_MS = 86_400_000
 /** The user settings the classifier itself reads. */
 export interface ClassifierSettings {
   paymentAppInflowsAreIncome: boolean
+  /**
+   * Not a user setting and never stored: R2's same-day pass (D1) is always on
+   * in the app. Settable only through withClassifierSettings, so a script can
+   * measure the figures with and without it.
+   */
+  sameDayTransferPairs?: boolean
 }
 
 // Answering "what would this user's figures be with the setting the other way?"
@@ -144,6 +150,7 @@ export async function classifyWindow(
       institutionsWithCreditAccount,
       periodKeyOf: (d: Date) => periodKeyOf(d, window.startDay),
       paymentAppInflowsAreIncome: settings.paymentAppInflowsAreIncome,
+      sameDayTransferPairs: settings.sameDayTransferPairs,
     },
   )
 

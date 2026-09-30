@@ -111,6 +111,8 @@ export type Mechanism =
   | 'card-payment-pair'
   | 'card-payment-unpaired'
   | 'internal-transfer-pair'
+  /** R2's second pass: same day, inflow transfer-coded, outflow naming no one (D1). */
+  | 'internal-transfer-same-day'
   | 'linked-bank-exclusion'
   | 'savings-exclusion'
   | 'refund'
@@ -277,6 +279,12 @@ export interface ClassifyOptions {
    * one someone mostly receives is a fact about them, not about the row.
    */
   paymentAppInflowsAreIncome?: boolean
+  /**
+   * R2's same-day, inflow-coded pass (D1). On unless explicitly false. It is an
+   * option only so a before/after can be measured through the app's real
+   * pipelines (scripts/d1-before-after.ts); nothing in the app turns it off.
+   */
+  sameDayTransferPairs?: boolean
 }
 
 export interface ClassificationResult {
@@ -401,6 +409,48 @@ export function classify(
     const reason = `moved between the user's own accounts: exact-amount pair ${gapDays(out, partner)} day(s) apart, transfer signal on both legs`
     claim({ id: out.id, kind: 'internal_transfer', rule: 2, mechanism: 'internal-transfer-pair', partnerId: partner.id, reason })
     claim({ id: partner.id, kind: 'internal_transfer', rule: 2, mechanism: 'internal-transfer-pair', partnerId: out.id, reason })
+  }
+
+  // ── R2, second pass: same day, inflow coded (D1) ────────────────
+  //
+  // The pair D1 was decided on: a user moves money between their own accounts
+  // and types a memo ("rent") that Plaid reads as a bill category at HIGH
+  // confidence. The inflow still carries its TRANSFER_IN code; the outflow
+  // carries a confident, wrong category. The pass above needs a signal on
+  // BOTH legs, so it counts the pair as rent plus income.
+  //
+  // This pass pairs it, and nothing wider:
+  //   - after the pass above, so every both-legs pair claims first;
+  //   - day 0 only, so it adds nothing to the 4-day window's false-positive
+  //     exposure (D8);
+  //   - exact amount, depository ↔ depository, different accounts;
+  //   - the INFLOW carries the transfer signal and the outflow does not;
+  //   - the outflow carries NO counterparty at all. A real bill names who it
+  //     paid — a landlord as merchant, a lender as financial_institution — and
+  //     the seed's wrong-claim fixtures are exactly those, beside a same-day
+  //     TRANSFER_IN of the same amount. The incident's outflow names nobody.
+  //
+  // Deliberately omitted: the mirror image, an uncoded INFLOW beside a coded
+  // outflow. No real instance exists, and it is the only direction that can
+  // change net saved (the inflow may have been unidentified rather than
+  // income, so excluding both legs would lower spend without lowering income).
+  // Also not used: a reference number shared between the two descriptions. It
+  // appears at one institution only, so it cannot be a general signal.
+  if (options.sameDayTransferPairs !== false) {
+    for (const out of rows) {
+      if (byId.has(out.id) || !isOut(out) || !isDepository(out)) continue
+      if (signalled(out) || out.counterparties.length > 0) continue
+      const partner = nearest(
+        out,
+        (i) => isDepository(i) && i.accountId !== out.accountId && signalled(i) && gapDays(out, i) === 0,
+      )
+      if (!partner) continue
+      const reason =
+        'moved between the user\'s own accounts: same-day exact-amount pair, the inflow coded as a transfer ' +
+        'and the outflow naming no one (D1)'
+      claim({ id: out.id, kind: 'internal_transfer', rule: 2, mechanism: 'internal-transfer-same-day', partnerId: partner.id, reason })
+      claim({ id: partner.id, kind: 'internal_transfer', rule: 2, mechanism: 'internal-transfer-same-day', partnerId: out.id, reason })
+    }
   }
 
   // ── R3-R7, in order, on whatever is left ────────────────────────

@@ -100,7 +100,7 @@ function r1Candidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[
   return []
 }
 
-/** R2 geometry: depository ↔ depository, exact, ≤ 3 days, transfer signal on BOTH legs (D1). */
+/** R2 geometry: depository ↔ depository, exact, ≤ 4 days, transfer signal on BOTH legs. */
 function r2Candidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[]>): DemoTransaction[] {
   if (!hasTransferSignal(t)) return []
   const same = byAmount.get(Math.abs(cents(t.amount))) ?? []
@@ -108,6 +108,22 @@ function r2Candidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[
     o.accountKey !== t.accountKey && hasTransferSignal(o) && gapDays(t, o) <= R2_WINDOW_DAYS
   if (isDepositoryOut(t)) return same.filter((o) => isDepositoryIn(o) && ok(o))
   if (isDepositoryIn(t)) return same.filter((o) => isDepositoryOut(o) && ok(o))
+  return []
+}
+
+/**
+ * R2's same-day pass (D1), restated here independently of the classifier:
+ * day 0, exact, depository ↔ depository, different accounts, the INFLOW
+ * signalled, the outflow unsignalled and naming no counterparty at all.
+ */
+function r2SameDayCandidates(t: DemoTransaction, byAmount: Map<number, DemoTransaction[]>): DemoTransaction[] {
+  const same = byAmount.get(Math.abs(cents(t.amount))) ?? []
+  const bareOut = (o: DemoTransaction) =>
+    isDepositoryOut(o) && !hasTransferSignal(o) && o.counterparties.length === 0
+  const codedIn = (i: DemoTransaction) => isDepositoryIn(i) && hasTransferSignal(i)
+  const ok = (a: DemoTransaction, b: DemoTransaction) => a.accountKey !== b.accountKey && gapDays(a, b) === 0
+  if (bareOut(t)) return same.filter((o) => codedIn(o) && ok(t, o))
+  if (codedIn(t)) return same.filter((o) => bareOut(o) && ok(t, o))
   return []
 }
 
@@ -519,8 +535,35 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(cents(rent.amount)).toBe(-cents(inflow.amount))
     expect(gapDays(rent, inflow)).toBe(0)
     expect(rent.accountKey).not.toBe(inflow.accountKey)
-    expect(hasTransferSignal(rent)).toBe(false) // D1 keeps them apart
+    expect(hasTransferSignal(rent)).toBe(false)
+    expect(hasTransferSignal(inflow)).toBe(true)
+    // Same day, inflow coded, outflow uncoded: everything the same-day pass
+    // looks for, except that the rent names its landlord. That is what keeps
+    // them apart now.
+    expect(rent.counterparties.length).toBeGreaterThan(0)
     expect(rent.expected.kind).toBe('spend')
+    expect(inflow.expected.kind).toBe('income')
+  },
+  'd1-memo-rent-same-day': ([out, inflow]) => {
+    expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')
+    expect(out.confidence).toBe('HIGH') // Plaid was sure, and wrong
+    expect(hasTransferSignal(out)).toBe(false)
+    expect(out.counterparties).toEqual([]) // names no one
+    expect(hasTransferSignal(inflow)).toBe(true)
+    expect(gapDays(out, inflow)).toBe(0)
+    expect(cents(out.amount)).toBe(-cents(inflow.amount))
+    expect(out.accountKey).not.toBe(inflow.accountKey)
+    expect(out.expected).toEqual({ kind: 'internal_transfer', rule: 2 })
+    expect(inflow.expected).toEqual({ kind: 'internal_transfer', rule: 2 })
+  },
+  'd1-memo-rent-one-day-apart': ([out, inflow]) => {
+    // Identical to the incident in every way but the day.
+    expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')
+    expect(out.counterparties).toEqual([])
+    expect(hasTransferSignal(inflow)).toBe(true)
+    expect(gapDays(out, inflow)).toBe(1)
+    expect(cents(out.amount)).toBe(-cents(inflow.amount))
+    expect(out.expected.kind).toBe('spend')
     expect(inflow.expected.kind).toBe('income')
   },
   'rent-coded-but-linked-counterparty': ([out, inflow]) => {
@@ -750,16 +793,28 @@ describe('the only pairs in the seed are the declared ones', () => {
           expect(r1Candidates(c1[0], byAmount).map((x) => x.plaidTransactionId)).toEqual([
             t.plaidTransactionId,
           ])
-        } else if (t.expected.kind === 'internal_transfer' && t.expected.rule === 2) {
+        } else if (t.expected.kind === 'internal_transfer' && t.expected.rule === 2 && c2.length > 0) {
           expect(c2.length, `${where} R2 candidates`).toBe(1)
           expect(c1.length, `${where} R1 candidates`).toBe(0)
           expect(c2[0].expected).toEqual({ kind: 'internal_transfer', rule: 2 })
           expect(r2Candidates(c2[0], byAmount).map((x) => x.plaidTransactionId)).toEqual([
             t.plaidTransactionId,
           ])
+        } else if (t.expected.kind === 'internal_transfer' && t.expected.rule === 2) {
+          // Not a both-legs pair, so it must be exactly one same-day (D1) pair.
+          const sd = r2SameDayCandidates(t, byAmount)
+          expect(sd.length, `${where} R2 same-day candidates`).toBe(1)
+          expect(c1.length, `${where} R1 candidates`).toBe(0)
+          expect(sd[0].expected).toEqual({ kind: 'internal_transfer', rule: 2 })
+          expect(r2SameDayCandidates(sd[0], byAmount).map((x) => x.plaidTransactionId)).toEqual([
+            t.plaidTransactionId,
+          ])
         } else {
           expect(c1.map((x) => x.plaidTransactionId), `${where} unexpected R1 pair`).toEqual([])
           expect(c2.map((x) => x.plaidTransactionId), `${where} unexpected R2 pair`).toEqual([])
+          // No existing row may be reachable by the new pass on any build date.
+          expect(r2SameDayCandidates(t, byAmount).map((x) => x.plaidTransactionId), `${where} unexpected same-day pair`)
+            .toEqual([])
         }
       }
     }
