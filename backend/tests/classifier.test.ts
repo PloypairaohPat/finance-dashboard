@@ -213,6 +213,7 @@ describe('the classifier is order-independent and explains itself', () => {
       'card-payment-pair',
       'card-payment-unpaired',
       'internal-transfer-pair',
+      'internal-transfer-same-day',
       'linked-bank-exclusion',
       'savings-exclusion',
       'refund',
