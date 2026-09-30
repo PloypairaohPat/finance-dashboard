@@ -23,9 +23,9 @@ const tx = (over: Partial<ClassifierTx> & { id: string }): ClassifierTx => ({
 })
 const transferIn = (over: Partial<ClassifierTx> & { id: string }) =>
   tx({ accountId: 'checking', amount: -900, categoryPrimary: 'TRANSFER_IN', categoryDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', confidence: 'VERY_HIGH', ...over })
-const options = (sameDayTransferPairs?: boolean) => ({
+const options = () => ({
   linkedInstitutions: ['Home Credit Union'], institutionsWithCreditAccount: [],
-  periodKeyOf: () => '2026-01-01', sameDayTransferPairs,
+  periodKeyOf: () => '2026-01-01',
 })
 const verdicts = (rows: ClassifierTx[], opts = options()) => classify(rows, opts).byId
 
@@ -80,12 +80,6 @@ describe('the same-day pass in the classifier', () => {
     ])
     expect(v.get('coded-out')).toMatchObject({ mechanism: 'internal-transfer-pair', partnerId: 'in' })
     expect(v.get('bare-out')!.kind).toBe('spend')
-  })
-
-  it('is on unless the measurement switch turns it off', () => {
-    const rows = [tx({ id: 'out' }), transferIn({ id: 'in' })]
-    expect(verdicts(rows, options(undefined)).get('out')!.kind).toBe('internal_transfer')
-    expect(verdicts(rows, options(false)).get('out')!.kind).toBe('spend')
   })
 })
 
