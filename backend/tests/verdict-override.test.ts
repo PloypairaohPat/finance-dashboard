@@ -141,7 +141,11 @@ beforeAll(async () => {
     const created = await prisma.transaction.create({
       data: {
         userId: USER, accountId: account.id, plaidTransactionId: `${USER}-${id}`,
-        date: new Date(today.getTime() - back * DAY_MS), amount: String(amount),
+        // Never before the 1st: the assertions read the CURRENT money period
+        // (start day 1), and on the first days of a month "2 days back" is last
+        // month. That made these tests fail on the 1st and 2nd of every month.
+        date: new Date(Math.max(today.getTime() - back * DAY_MS, Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+        amount: String(amount),
         name: id.toUpperCase(), cleanName: id.toUpperCase(),
         categoryPrimary: primary, categoryDetailed: detailed, pending,
         isoCurrencyCode: 'USD',
