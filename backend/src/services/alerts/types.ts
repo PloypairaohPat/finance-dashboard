@@ -6,6 +6,8 @@ import type { Period } from "../../lib/period"
 export type AlertKind =
   | "overspending"
   | "low_balance"
+  // No detector until M7.6 (see docs/m7.3-consumer-audit.md, "Carried to M7.6").
+  // An unowned kind is never resolved by absence; none are stored.
   | "missed_paycheck"
   | "large_transaction"
   | "subscription_price_up"
@@ -44,7 +46,14 @@ export interface DetectorContext {
   /** Payment-app spend after the per-period cap, by period key. */
   paymentAppByPeriod: Map<string, number>
   budgets: Budget[]
-  subscriptionAnalysis: SubscriptionAnalysis | null  // null if we couldn't fetch
+  /**
+   * Recurring streams from STORED data only (analyseStoredSubscriptions): the
+   * bell must not call Plaid. A failure is carried rather than swallowed, so the
+   * detector that needs this can throw and answer for nothing — instead of
+   * answering "nothing" and resolving its alerts by absence, which is what a
+   * `null` here used to make it do.
+   */
+  subscriptions: { ok: true; analysis: SubscriptionAnalysis } | { ok: false; error: Error }
   /**
    * Alerts still standing, by fingerprint — not resolved, not deleted, whether
    * or not the user dismissed them. A detector needs this when "still true"
