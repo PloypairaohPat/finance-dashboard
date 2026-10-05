@@ -237,6 +237,19 @@ A few things worth knowing:
 - **Re-linking a bank loses your marks**, just as it loses tags, notes and your answers
   to "What was this money?" — reconnecting brings the transactions back as new ones.
 
+## Linking a bank you've already connected
+
+Connecting the same bank a second time used to replace your existing connection — and
+everything you'd added to its transactions (tags, notes, your answers to "What was this
+money?", subscription marks) went with it. It no longer does:
+
+- **If it's the same accounts**, you'll be told the bank is already connected and offered
+  **Reconnect** instead. Nothing changes.
+- **If it's that bank with different accounts**, you'll be asked whether it's a different
+  login. If it is — a joint account under another login, say — it's added alongside the
+  one you have. If it's the same login, you can add those accounts to your existing
+  connection instead.
+
 ## A category can now show a negative number
 
 If you got more back in refunds in a category than you spent in it, that category shows
