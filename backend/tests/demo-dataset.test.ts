@@ -544,6 +544,22 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(rent.expected.kind).toBe('spend')
     expect(inflow.expected.kind).toBe('income')
   },
+  'subscription-price-rise': (charges) => {
+    // Regular, recent, subscription-sized, and the last charge higher by more
+    // than the service's 5% threshold: everything subscription_price_up needs.
+    expect(charges).toHaveLength(4)
+    const days = charges.map((t) => Date.parse(`${t.date}T00:00:00Z`) / 86_400_000)
+    expect(days.slice(1).map((d, i) => d - days[i])).toEqual([25, 25, 25])
+    const built = Date.UTC(ds.now.getUTCFullYear(), ds.now.getUTCMonth(), ds.now.getUTCDate()) / 86_400_000
+    expect(built - days[3]).toBe(2)
+    for (const t of charges) {
+      expect(t.amount).toBeLessThan(50) // a subscription, not a bill
+      expect(t.detailed).toBe('ENTERTAINMENT_TV_AND_MOVIES')
+      expect(t.expected).toEqual(expect.objectContaining({ kind: 'spend', rule: 7 }))
+    }
+    const [, , prev, last] = charges.map((t) => t.amount)
+    expect((last - prev) / prev).toBeGreaterThan(0.05)
+  },
   'd1-memo-rent-same-day': ([out, inflow]) => {
     expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')
     expect(out.confidence).toBe('HIGH') // Plaid was sure, and wrong

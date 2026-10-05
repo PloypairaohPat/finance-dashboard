@@ -1,3 +1,4 @@
+import type { PlaidApi } from "plaid"
 import prisma from "../lib/prisma"
 import { fetchRecurring } from "./recurring.service"
 import { mapPlaidCategory } from "../lib/categoryMap"
@@ -10,6 +11,14 @@ export type Frequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "SEMI_MONTHLY" | "AN
 export interface EnrichedStream {
   merchant: string
   cleanMerchant: string           // matched against transactions.cleanName
+  /**
+   * The grouping key: normalizeMerchant of the name. Stable across display-name
+   * variants ("STREAMBOX.COM" and "Streambox" share "streambox"), unlike
+   * `merchant`, which custom detection sets to the SHORTEST name in its group
+   * and so can change when a new variant arrives. Key anything that must stay
+   * the same across runs — an alert fingerprint, a price lookup — on this.
+   */
+  key: string
   kind: StreamKind
   category: string                // display category
   frequency: Frequency
@@ -108,7 +117,7 @@ function detectCustomRecurring(
   }
 
   const out: EnrichedStream[] = []
-  for (const g of groups.values()) {
+  for (const [key, g] of groups) {
     if (g.occurrences.length < 3) continue
 
     // Sort by date asc
@@ -142,6 +151,7 @@ function detectCustomRecurring(
     out.push({
       merchant: g.cleanMerchant,
       cleanMerchant: g.cleanMerchant,
+      key,
       kind,
       category: display,
       frequency: freq,
@@ -165,7 +175,12 @@ function computePriceChange(
   stream: EnrichedStream,
   txsByMerchant: Map<string, Array<{ date: Date; amount: number }>>,
 ) {
-  const matches = txsByMerchant.get(stream.cleanMerchant.toLowerCase())
+  // By the grouping key, which is what the map is keyed on. It used to look up
+  // cleanMerchant.toLowerCase(), which only matches when normalizing changes
+  // nothing — so any merchant with a space, punctuation or a ".com" in its name
+  // ("Apple iCloud") never had a price change, and subscription_price_up could
+  // not have fired for it even with the detector fixed.
+  const matches = txsByMerchant.get(stream.key)
   if (!matches || matches.length < 2) return null
   const sorted = [...matches].sort((a, b) => b.date.getTime() - a.date.getTime())
   const [latest, prev] = sorted
@@ -196,15 +211,51 @@ function predictNextCharge(stream: EnrichedStream, today: Date) {
 }
 
 // — — — Main entry — — —
+//
+// Two analyses, one composed from the other (M7.3):
+//
+//   analyseStoredSubscriptions  — stored data only. What the bell reads: alert
+//     detectors run when the bell opens and must not call Plaid.
+//   fetchSubscriptionAnalysis   — the Subscriptions tab: the SAME stored
+//     streams, plus any Plaid stream whose grouping key isn't already among
+//     them. A stored stream is never dropped or renamed by the merge, so every
+//     stream the bell can alert on is in the tab by construction.
+//
+// Before M7.3 the order was the other way round: Plaid streams first, and
+// custom detection skipped any merchant Plaid already had. That precedence never
+// mattered, because the Plaid half has never produced a stream: fetchRecurring
+// returns streams already mapped (merchantName, lastAmount, lastDate…), while
+// the code below reads the raw Plaid fields (is_active, merchant_name, …), and
+// `is_active` is always undefined. Recorded for M7.6, which replaces both.
 
-export async function fetchSubscriptionAnalysis(
-  userId: string,
-  plaidClient: any,                 // PlaidApi
-): Promise<SubscriptionAnalysis> {
-  const now = new Date()
+/** Recent spend rows: all subscription detection reads. */
+async function loadSpendRows(userId: string, now: Date) {
   const ninetyAgo = new Date(now); ninetyAgo.setDate(ninetyAgo.getDate() - 90)
 
-  // 1. Pull Plaid recurring streams (existing service)
+  // M7.3, minimum change only: a row the classifier does not call spending
+  // cannot become a subscription. Any repeating positive amount used to qualify,
+  // so a monthly transfer to savings, or a card payment, could be detected as a
+  // recurring "bill". Detection itself is untouched — whether "subscription" is
+  // a classifier concept at all is M7.6's question, and this machinery is being
+  // replaced with Plaid Recurring Transactions there.
+  const startDay = await getPeriodStartDay(userId)
+  const { rows } = await classifyWindow(userId, { since: ninetyAgo, until: now, startDay })
+
+  return rows
+    .filter(row => row.verdict.kind === "spend")
+    .map(row => ({
+      date: row.date,
+      amount: row.amount,
+      category: row.categoryPrimary,
+      cleanName: row.merchantLabel,
+      name: row.merchantLabel,
+    }))
+}
+
+type SpendRow = Awaited<ReturnType<typeof loadSpendRows>>[number]
+
+/** Plaid's recurring streams for the user. See the note above: today it returns none. */
+async function plaidStreamsFor(userId: string, plaidClient: PlaidApi, now: Date): Promise<EnrichedStream[]> {
   const plaidData = await fetchRecurring(plaidClient, userId)
   const plaidStreams: EnrichedStream[] = []
 
@@ -219,7 +270,7 @@ export async function fetchSubscriptionAnalysis(
     const lastDate = s.last_date ?? now.toISOString().slice(0, 10)
 
     plaidStreams.push({
-      merchant, cleanMerchant: merchant,
+      merchant, cleanMerchant: merchant, key: normalizeMerchant(merchant),
       kind: classifyStream(lastAmount, category),
       category, frequency: freq, lastAmount, lastDate,
       monthlyAmount: normalizeMonthly(lastAmount, freq),
@@ -228,35 +279,33 @@ export async function fetchSubscriptionAnalysis(
       nextChargeDate: null, daysUntilNextCharge: null,
     })
   }
+  return plaidStreams
+}
 
-  // 2. Pull recent transactions for custom detection + enrichment
-  //
-  // M7.3, minimum change only: a row the classifier does not call spending
-  // cannot become a subscription. Any repeating positive amount used to qualify,
-  // so a monthly transfer to savings, or a card payment, could be detected as a
-  // recurring "bill". Detection itself is untouched — whether "subscription" is
-  // a classifier concept at all is M7.6's question, and this machinery is being
-  // replaced with Plaid Recurring Transactions there.
-  const startDay = await getPeriodStartDay(userId)
-  const { rows } = await classifyWindow(userId, { since: ninetyAgo, until: now, startDay })
+/** The bell's input: stored data only. No Plaid call, for real users or the demo. */
+export async function analyseStoredSubscriptions(
+  userId: string,
+  now: Date = new Date(),
+): Promise<SubscriptionAnalysis> {
+  const txs = await loadSpendRows(userId, now)
+  return analyse(detectCustomRecurring(txs, new Set()), txs, now)
+}
 
-  const txsNormalized = rows
-    .filter(row => row.verdict.kind === "spend")
-    .map(row => ({
-      date: row.date,
-      amount: row.amount,
-      category: row.categoryPrimary,
-      cleanName: row.merchantLabel,
-      name: row.merchantLabel,
-    }))
+/** The Subscriptions tab: the stored analysis's streams, with Plaid's merged in. */
+export async function fetchSubscriptionAnalysis(
+  userId: string,
+  plaidClient: PlaidApi,
+): Promise<SubscriptionAnalysis> {
+  const now = new Date()
+  const txs = await loadSpendRows(userId, now)
+  const stored = detectCustomRecurring(txs, new Set())
+  const storedKeys = new Set(stored.map(s => s.key))
+  const plaid = (await plaidStreamsFor(userId, plaidClient, now)).filter(p => !storedKeys.has(p.key))
+  return analyse([...stored, ...plaid], txs, now)
+}
 
-  // 3. Custom detection — exclude merchants already in Plaid streams
-  const plaidMerchants = new Set(plaidStreams.map(s => normalizeMerchant(s.merchant)))
-  const customStreams = detectCustomRecurring(txsNormalized, plaidMerchants)
-
-  // 4. Merge streams
-  const allStreams = [...plaidStreams, ...customStreams]
-
+/** Steps 5–11 over a set of streams: price change, next charge, duplicates, split, alerts, totals. */
+function analyse(allStreams: EnrichedStream[], txsNormalized: SpendRow[], now: Date): SubscriptionAnalysis {
   // 5. Build merchant lookup for price-change enrichment
   const txsByMerchant = new Map<string, Array<{ date: Date; amount: number }>>()
   for (const tx of txsNormalized) {
@@ -346,7 +395,7 @@ export async function fetchSubscriptionAnalysis(
 
 export async function getSubscriptionMerchants(
   userId: string,
-  plaidClient: any,
+  plaidClient: PlaidApi,
 ): Promise<Set<string>> {
   const analysis = await fetchSubscriptionAnalysis(userId, plaidClient)
   return new Set(

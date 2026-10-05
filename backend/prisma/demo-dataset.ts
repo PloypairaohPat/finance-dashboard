@@ -137,6 +137,7 @@ export type CaseBranch =
   | 'payment-app-cap'
   | 'unclassified-inflow'
   | 'pending'
+  | 'subscription-price'
 
 export type CaseRole = 'easy' | 'near-miss-inside' | 'near-miss-outside' | 'wrong-claim'
 
@@ -1324,6 +1325,52 @@ export function buildDemoDataset(now: Date): DemoDataset {
       addCase('pending-included', 'pending', 'easy',
         'pending rows count everywhere, so today\'s spending is not invisible', [a, b])
     }
+  }
+
+  // ── case: a subscription price rise, placed relative to the build date ──
+  // An invented streaming service, charged every 25 days and ending 2 days
+  // before `now`, the last charge higher. Relative to `now` rather than on a
+  // day of the month for two reasons: subscription_price_up ages out after its
+  // lookback, so the rise has to be recent whenever the demo is reseeded; and
+  // custom detection needs the gaps to stay regular, which month-day placement
+  // breaks near the start of a month. Uses no rnd(), so every other row is
+  // unchanged.
+  {
+    const DAY = 86_400_000
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    const charges = [
+      { ago: 77, amount: 9.99 },
+      { ago: 52, amount: 9.99 },
+      { ago: 27, amount: 9.99 },
+      { ago: 2, amount: 11.99 }, // +20%
+    ]
+    const ids = charges.map(({ ago, amount }, i) => {
+      const id = `demo-price-rise-${i + 1}`
+      transactions.push({
+        plaidTransactionId: id,
+        accountKey: 'card',
+        date: new Date(today - ago * DAY).toISOString().slice(0, 10),
+        amount,
+        name: 'VIEWLOOM',
+        merchantName: 'Viewloom',
+        primary: 'ENTERTAINMENT',
+        detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+        confidence: 'VERY_HIGH',
+        counterparties: [CP.merchant('Viewloom')],
+        pending: false,
+        expected: spend('ENTERTAINMENT_TV_AND_MOVIES'),
+        decisions: [],
+      })
+      return id
+    })
+    cases.push({
+      id: 'subscription-price-rise',
+      branch: 'subscription-price',
+      role: 'easy',
+      note: 'a subscription charged 20% more than last time, two days ago: the bell shows a price-rise alert ' +
+        'until the raised charge is older than the detector\'s lookback',
+      txIds: ids,
+    })
   }
 
   return {
