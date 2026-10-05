@@ -43,7 +43,7 @@ describe('diffBaselines', () => {
   })
 
   it('never prints a whole user id', () => {
-    const long = 'user_3IW7DjZ3CYy3sww7KZxG1VaGnkY'
+    const long = 'user_2FAKEab12CDef34GHij56KLmn78'
     const [msg] = diffBaselines([e('Budget', long, 5)], [])
     expect(msg).not.toContain(long)
   })
