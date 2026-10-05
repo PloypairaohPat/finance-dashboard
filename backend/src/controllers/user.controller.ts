@@ -2,6 +2,10 @@ import { Request, Response } from "express"
 import { getUserId } from "../middleware/auth"
 import { getUserSettings as loadUserSettings, updateUserSettings } from "../services/user.service"
 import { isValidPeriodStartDay, MIN_PERIOD_START_DAY, MAX_PERIOD_START_DAY } from "../lib/period"
+import * as Sentry from "@sentry/node"
+import { clerkClient } from "@clerk/express"
+import { plaidClient } from "../lib/plaidClient"
+import { DELETE_CONFIRMATION, DeletionError, confirms, deleteUserData } from "../services/accountDeletion.service"
 
 // GET /user/settings
 export async function getUserSettings(req: Request, res: Response): Promise<void> {
@@ -44,5 +48,34 @@ export async function putUserSettings(req: Request, res: Response): Promise<void
   } catch (err: any) {
     console.error("putUserSettings:", err.message)
     res.status(500).json({ error: "Failed to save settings" })
+  }
+}
+
+// ── "Delete account and all data" ─────────────────────────────────
+
+export async function deleteMyAccount(req: Request, res: Response) {
+  // The caller only: an id in the body is never read.
+  const userId = getUserId(req)
+  if (!confirms(req.body?.confirmation)) {
+    res.status(400).json({ error: `Type "${DELETE_CONFIRMATION}" to confirm.` })
+    return
+  }
+  try {
+    const report = await deleteUserData(userId, { plaidClient, clerk: clerkClient.users })
+    res.json({
+      deleted: true,
+      accountDeleted: report.clerkDeleted,
+      ...(report.clerkDeleted ? {} : {
+        message: 'Your data is deleted. Removing your sign-in account failed; you are signed out and it will be retried.',
+      }),
+    })
+  } catch (err: any) {
+    if (err instanceof DeletionError) {
+      res.status(err.status).json({ error: err.message })
+      return
+    }
+    Sentry.captureException(err)
+    // Plaid removal may already have happened, so don't claim nothing changed.
+    res.status(500).json({ error: "Deletion didn't finish. Your bank connections may already be disconnected; please try again." })
   }
 }
