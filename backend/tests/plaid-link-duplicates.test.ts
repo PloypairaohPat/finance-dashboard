@@ -78,6 +78,10 @@ const items = (userId = USER) => prisma.plaidItem.findMany({ where: { userId }, 
 
 async function cleanup() {
   for (const userId of [USER, OTHER]) {
+    // Sync writes snapshots and alerts too; leaving them orphaned their user
+    // (refused now that those tables have a foreign key to User).
+    await prisma.alert.deleteMany({ where: { userId } })
+    await prisma.balanceSnapshot.deleteMany({ where: { userId } })
     await prisma.transaction.deleteMany({ where: { userId } })
     await prisma.account.deleteMany({ where: { userId } })
     await prisma.plaidItem.deleteMany({ where: { userId } })
