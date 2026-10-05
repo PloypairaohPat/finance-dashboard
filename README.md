@@ -43,10 +43,11 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 ## Features
 
 ### Banking & sync
-- **Plaid Production** integration with Wells Fargo — `/transactions/sync`, Recurring Transactions product, balance fetch
+- **Plaid Production** integration with Wells Fargo — `/transactions/sync`, Recurring Transactions product, cached balances from `/accounts/get`
 - **Daily cron sync** via `node-cron` — runs at 06:00 UTC, syncs transactions, snapshots balances
 - **Cursor pagination** on transactions — handles unbounded history without re-fetching
 - **Incremental updates only** — persisted Plaid sync cursor per item
+- **Balances: one source.** Every balance in the app is Plaid's cached balance from `/accounts/get`, as of the Item's last successful update — about once a day for Items with Transactions. Real-time `/accounts/balance/get` is a separately authorised, paid product this client doesn't have; sync used to call it and get `INVALID_PRODUCT` every time, then fall back. Real-time Balance is a possible M7.5 addition if cached balances prove too stale for utilization advice.
 
 ### Intelligence
 - **7-detector Smart Alerts engine** — large transactions, new merchants, monthly pace, budget exceeded, low balance, missed paycheck, subscription price-up
@@ -74,7 +75,7 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
                                   └────────┬────────┘
                                            │ /transactions/sync
                                            │ /transactions/recurring/get
-                                           │ /accounts/balance/get
+                                           │ /accounts/get
                                            ▼
 ┌──────────────┐   HTTPS    ┌──────────────────────────────┐    SQL    ┌──────────────┐
 │ React SPA    │◀──────────▶│  Node.js + Express + Prisma  │◀─────────▶│  PostgreSQL  │

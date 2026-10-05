@@ -71,8 +71,7 @@ export default function ConnectedBanks() {
     // syncVersion is a trigger only: item status and last-synced time change on sync.
   }, [demoMode, isSignedIn, reload, syncVersion])
 
-  // ── Reconnect (update-mode Plaid Link) — same pattern as App.tsx's
-  // "⚡ Live Balances" flow, scoped to a specific item via itemId. ──────
+  // ── Reconnect (update-mode Plaid Link), scoped to one item via itemId. ──
   const onUpdateSuccess = useCallback(async () => {
     setUpdateLinkToken(null)
     setReconnectingId(null)

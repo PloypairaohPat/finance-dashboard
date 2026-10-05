@@ -275,8 +275,8 @@ export async function createUpdateLinkToken(
   const accessToken = decrypt(item.accessToken)
 
   // Update mode: pass access_token, omit products.
-  // Plaid re-authenticates the user against the institution which resolves
-  // ITEM_LOGIN_REQUIRED errors and refreshes the item so balance/get succeeds.
+  // Plaid re-authenticates the user against the institution, which resolves
+  // ITEM_LOGIN_REQUIRED and similar errors on the Item.
   const response = await plaidClient.linkTokenCreate({
     user:          { client_user_id: userId },
     client_name:   'My Finance App',
@@ -303,15 +303,12 @@ export async function triggerSync(
     // Isolate each item's sync — one broken connection must not abort the rest.
     try {
       const accessToken = decrypt(item.accessToken)
-      let acctResp: Awaited<ReturnType<typeof plaidClient.accountsBalanceGet>>
-      try {
-        acctResp = await plaidClient.accountsBalanceGet({ access_token: accessToken })
-        console.log(`💰 [sync] balance/get succeeded for item ${item.id}`)
-      } catch (balErr: any) {
-        const code = balErr.response?.data?.error_code ?? balErr.message
-        console.warn(`⚠️  [sync] balance/get failed (${code}) — falling back to accounts/get for item ${item.id}`)
-        acctResp = await plaidClient.accountsGet({ access_token: accessToken })
-      }
+      // Balances come from /accounts/get only: Plaid's cached balance, as of the
+      // Item's last successful update (about once a day with Transactions).
+      // Real-time /accounts/balance/get is a separately authorised, paid
+      // product this client doesn't have; every call returned INVALID_PRODUCT
+      // and fell back to this anyway. See README, "Balances".
+      const acctResp = await plaidClient.accountsGet({ access_token: accessToken })
       for (const acct of acctResp.data.accounts) {
         const fields = {
           name:             sanitizeAccountName(acct.name),
