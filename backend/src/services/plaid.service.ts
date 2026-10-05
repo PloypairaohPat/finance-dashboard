@@ -32,117 +32,236 @@ export async function createLinkToken(
   return response.data.link_token
 }
 
+// ── Linking: never a second Item for the same accounts ────────────
+//
+// An Item bills monthly from the moment its public token is exchanged, and
+// removal isn't pro-rated, so the cheapest duplicate is the one never
+// exchanged. Two checks, one rule:
+//
+//   BEFORE exchange, on Link's onSuccess metadata (from the browser, so a
+//   cost and UX guard only): an overlapping account at the same institution
+//   is refused (DUPLICATE_ITEM -> Reconnect); the same institution with no
+//   overlap is ambiguous — a second login, or the same login with other
+//   accounts — so the user is asked (SAME_INSTITUTION) unless they have
+//   confirmed a different login.
+//
+//   AFTER exchange, on Plaid's own accounts (the real guarantee): an overlap
+//   removes the NEW Item. The user's existing Item, and every tag, note,
+//   override and mark on its rows, is never touched by a new link. (It used
+//   to be: any new link at a known institution removed the old Item and
+//   deleted its rows.)
+//
+// Store first: the new Item's row is written straight after the exchange,
+// before anything else can fail, so no billed Item is ever invisible to us.
+// If a later step fails, it is removed at Plaid and its row deleted; if that
+// removal fails too, the row stays (unlink can still remove it) and the
+// item_id — never the token — goes to Sentry, to report to Plaid by id.
+//
+// The overlap check and the write run under a per-user Postgres advisory
+// lock, inside one transaction: two links finishing at once (two tabs, or two
+// Railway instances during a deploy) are serialised, and the second sees the
+// first's accounts.
+
+/** An account as Link's metadata or Plaid's /accounts/get describes it. */
+export interface LinkAccount {
+  name: string | null
+  mask: string | null
+  subtype: string | null
+}
+
+const normName = (n: string | null) => (n ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * The same account: same subtype and same mask. Where neither has a mask,
+ * the name decides. One masked and one not is not the same account.
+ */
+export function accountsOverlap(a: LinkAccount, b: LinkAccount): boolean {
+  if ((a.subtype ?? null) !== (b.subtype ?? null)) return false
+  if (a.mask && b.mask) return a.mask === b.mask
+  if (!a.mask && !b.mask) return normName(a.name) !== '' && normName(a.name) === normName(b.name)
+  return false
+}
+
+type ExistingItem = { id: string; institutionId: string | null; institutionName: string | null; accounts: LinkAccount[] }
+
+type LinkVerdict =
+  | { kind: 'new' }
+  | { kind: 'duplicate'; item: ExistingItem }
+  | { kind: 'same-institution'; item: ExistingItem }
+
+/** How a link relates to the user's Items. A null institution id never matches. */
+function judgeLink(institutionId: string | null, accounts: LinkAccount[], items: ExistingItem[]): LinkVerdict {
+  if (!institutionId) return { kind: 'new' }
+  const sameInstitution = items.filter((i) => i.institutionId === institutionId)
+  const dup = sameInstitution.find((i) => i.accounts.some((a) => accounts.some((b) => accountsOverlap(a, b))))
+  if (dup) return { kind: 'duplicate', item: dup }
+  if (sameInstitution.length > 0) return { kind: 'same-institution', item: sameInstitution[0] }
+  return { kind: 'new' }
+}
+
+/** A link the server won't complete, and why: the controller answers 409 with these. */
+export class LinkRefused extends Error {
+  constructor(
+    public readonly code: 'DUPLICATE_ITEM' | 'SAME_INSTITUTION',
+    public readonly itemId: string,
+    public readonly institutionName: string | null,
+  ) {
+    super(code === 'DUPLICATE_ITEM'
+      ? 'This bank is already connected. Reconnect it instead of linking it again.'
+      : 'You already have this bank connected. Is this a different login?')
+  }
+}
+
+export interface LinkMetadata {
+  institutionId?: string | null
+  accounts?: LinkAccount[]
+  /** The user said this is a different login at a bank they already have. */
+  confirmedNewLogin?: boolean
+}
+
+type ItemReader = { plaidItem: Pick<typeof prisma.plaidItem, 'findMany'> }
+
+async function itemsOf(db: ItemReader, userId: string, excludeId?: string): Promise<ExistingItem[]> {
+  return db.plaidItem.findMany({
+    where: { userId, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { id: true, institutionId: true, institutionName: true, accounts: { select: { name: true, mask: true, subtype: true } } },
+  })
+}
+
 export async function exchangePublicToken(
   plaidClient:  PlaidApi,
   publicToken:  string,
-  userId:       string
+  userId:       string,
+  meta:         LinkMetadata = {},
 ): Promise<{ institutionName: string | null }> {
-  // 0. Clerk authenticates the user but never creates our own User row —
-  // do that first so every downstream write (PlaidItem, Account, Transaction) has a valid FK.
+  // Clerk authenticates the user but never creates our User row: do that
+  // first so the PlaidItem, Account and Transaction writes have a valid FK.
   await ensureUser(userId)
 
-  // 1. Exchange for permanent access token
+  // ── Before exchange: nothing is billed yet ──────────────────────────
+  if (meta.institutionId) {
+    const verdict = judgeLink(meta.institutionId, meta.accounts ?? [], await itemsOf(prisma, userId))
+    if (verdict.kind === 'duplicate') {
+      throw new LinkRefused('DUPLICATE_ITEM', verdict.item.id, verdict.item.institutionName)
+    }
+    if (verdict.kind === 'same-institution' && !meta.confirmedNewLogin) {
+      throw new LinkRefused('SAME_INSTITUTION', verdict.item.id, verdict.item.institutionName)
+    }
+  }
+
+  // ── Exchange: from here the Item exists at Plaid and bills ──────────
   const tokenResponse = await plaidClient.itemPublicTokenExchange({ public_token: publicToken })
   const { access_token, item_id } = tokenResponse.data
-
-  // 2. Encrypt before storing
   const encryptedToken = encrypt(access_token)
 
-  // 3. Get institution details
-  const itemResponse  = await plaidClient.itemGet({ access_token })
-  const institutionId = itemResponse.data.item.institution_id
-
-  let institutionName: string | null = null
-  if (institutionId) {
-    const instResponse = await plaidClient.institutionsGetById({
-      institution_id: institutionId,
-      country_codes:  ['US' as CountryCode],
-    })
-    institutionName = instResponse.data.institution.name
-  }
-
-  // 4. Re-link: if item exists for this institution, replace it cleanly
-  const existingItem = await prisma.plaidItem.findFirst({
-    where: { userId, institutionId },
-  })
-
-  if (existingItem) {
-    console.log(`🔄 Re-linking ${institutionName} — replacing existing item`)
-
-    // The superseded Item stays live at Plaid — and keeps billing monthly —
-    // unless /item/remove is called. Do it before dropping local rows, and let
-    // a genuine failure abort the re-link so we never orphan a billable Item.
-    await removeItemAtPlaid(plaidClient, existingItem.accessToken)
-
-    const existingAccounts = await prisma.account.findMany({
-      where:  { plaidItemId: existingItem.id },
+  // Store first, before anything else can fail.
+  let stored: { id: string } | null = null
+  try {
+    stored = await prisma.plaidItem.create({
+      data: { userId, itemId: item_id, accessToken: encryptedToken, institutionId: null, institutionName: null },
       select: { id: true },
     })
-    const accountIds = existingAccounts.map((a: { id: string }) => a.id)
 
-    await prisma.$transaction([
-      prisma.transaction.deleteMany({ where: { accountId: { in: accountIds } } }),
-      prisma.account.deleteMany({ where: { plaidItemId: existingItem.id } }),
-      prisma.plaidItem.delete({ where: { id: existingItem.id } }),
-    ])
+    const itemResponse  = await plaidClient.itemGet({ access_token })
+    const institutionId = itemResponse.data.item.institution_id ?? null
 
-    console.log(`🗑  Removed old item + ${accountIds.length} accounts`)
-  }
+    let institutionName: string | null = null
+    if (institutionId) {
+      try {
+        const instResponse = await plaidClient.institutionsGetById({
+          institution_id: institutionId,
+          country_codes:  ['US' as CountryCode],
+        })
+        institutionName = instResponse.data.institution.name
+      } catch {
+        // A display name only: the link stands without it.
+      }
+    }
 
-  // 5. Create fresh PlaidItem
-  const plaidItem = await prisma.plaidItem.create({
-    data: {
-      userId,
-      itemId:          item_id,
-      accessToken:     encryptedToken,
-      institutionId,
-      institutionName,
-    },
-  })
+    const accountsResponse = await plaidClient.accountsGet({ access_token })
+    const plaidAccounts = accountsResponse.data.accounts
 
-  // 6. Fetch and persist accounts
-  const accountsResponse = await plaidClient.accountsGet({ access_token })
+    // ── After exchange: the real check, serialised per user ───────────
+    const newId = stored.id
+    const duplicateOf = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plaid-link'), hashtext(${userId}))`
+      const verdict = judgeLink(
+        institutionId,
+        plaidAccounts.map((a) => ({ name: a.name, mask: a.mask ?? null, subtype: a.subtype ?? null })),
+        await itemsOf(tx, userId, newId),
+      )
+      if (verdict.kind === 'duplicate') return verdict.item
 
-  for (const acct of accountsResponse.data.accounts) {
-    await prisma.account.upsert({
-      where:  { plaidAccountId: acct.account_id },
-      update: {
-        userId,
-        plaidItemId:      plaidItem.id,
-        name:             sanitizeAccountName(acct.name),
-        officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
-        type:             acct.type,
-        subtype:          acct.subtype                    ?? null,
-        mask:             acct.mask                       ?? null,
-        currentBalance:   acct.balances.current,
-        availableBalance: acct.balances.available,
-        isoCurrencyCode:  acct.balances.iso_currency_code ?? null,
-      },
-      create: {
-        userId,
-        plaidItemId:      plaidItem.id,
-        plaidAccountId:   acct.account_id,
-        name:             sanitizeAccountName(acct.name),
-        officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
-        type:             acct.type,
-        subtype:          acct.subtype                    ?? null,
-        mask:             acct.mask                       ?? null,
-        currentBalance:   acct.balances.current,
-        availableBalance: acct.balances.available,
-        isoCurrencyCode:  acct.balances.iso_currency_code ?? null,
-      },
+      await tx.plaidItem.update({ where: { id: newId }, data: { institutionId, institutionName } })
+      for (const acct of plaidAccounts) {
+        const fields = {
+          userId,
+          plaidItemId:      newId,
+          name:             sanitizeAccountName(acct.name),
+          officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
+          type:             acct.type,
+          subtype:          acct.subtype                    ?? null,
+          mask:             acct.mask                       ?? null,
+          currentBalance:   acct.balances.current,
+          availableBalance: acct.balances.available,
+          isoCurrencyCode:  acct.balances.iso_currency_code ?? null,
+        }
+        await tx.account.upsert({
+          where:  { plaidAccountId: acct.account_id },
+          update: fields,
+          create: { ...fields, plaidAccountId: acct.account_id },
+        })
+      }
+      return null
     })
-  }
 
-  console.log(`✅ ${institutionName} connected — ${accountsResponse.data.accounts.length} accounts`)
-  return { institutionName }
+    if (duplicateOf) {
+      // The NEW Item goes; the user's existing one, and its rows, stay.
+      await discardNewItem(plaidClient, newId, encryptedToken, item_id)
+      throw new LinkRefused('DUPLICATE_ITEM', duplicateOf.id, duplicateOf.institutionName)
+    }
+
+    console.log(`✅ ${institutionName} connected — ${plaidAccounts.length} accounts`)
+    return { institutionName }
+  } catch (err) {
+    if (err instanceof LinkRefused) throw err
+    // Anything failed after the exchange: don't leave a billed Item behind.
+    if (stored) await discardNewItem(plaidClient, stored.id, encryptedToken, item_id)
+    else await removeOrReport(plaidClient, encryptedToken, item_id)
+    throw err
+  }
+}
+
+/** Remove a just-exchanged Item at Plaid, then its row. If Plaid refuses, keep the row and report the id. */
+async function discardNewItem(plaidClient: PlaidApi, rowId: string, encryptedToken: string, itemId: string) {
+  if (await removeOrReport(plaidClient, encryptedToken, itemId)) {
+    await prisma.account.deleteMany({ where: { plaidItemId: rowId } })
+    await prisma.plaidItem.delete({ where: { id: rowId } })
+  } else {
+    await prisma.plaidItem.update({ where: { id: rowId }, data: { status: 'error', lastErrorAt: new Date() } })
+  }
+}
+
+/** /item/remove; on failure, the item_id (never the token) to Sentry. True when removed. */
+async function removeOrReport(plaidClient: PlaidApi, encryptedToken: string, itemId: string): Promise<boolean> {
+  try {
+    await removeItemAtPlaid(plaidClient, encryptedToken)
+    return true
+  } catch (removeErr: any) {
+    Sentry.captureMessage('plaid.link: a just-exchanged Item could not be removed; report it to Plaid by item_id', {
+      level: 'error',
+      extra: { itemId, errorCode: removeErr?.response?.data?.error_code ?? null },
+    })
+    return false
+  }
 }
 
 export async function createUpdateLinkToken(
   plaidClient:  PlaidApi,
   userId:       string,
   countryCodes: CountryCode[],
-  itemId?:      string
+  itemId?:      string,
+  options:      { accountSelection?: boolean } = {},
 ): Promise<string> {
   // Ownership check: an explicit itemId must belong to this user. With no itemId,
   // fall back to the user's oldest item — deterministic, but callers with more than
@@ -165,6 +284,8 @@ export async function createUpdateLinkToken(
     country_codes: countryCodes,
     language:      'en',
     webhook:       process.env.WEBHOOK_URL,
+    // Lets the user add accounts to this Item instead of linking it again.
+    ...(options.accountSelection ? { update: { account_selection_enabled: true } } : {}),
   })
   return response.data.link_token
 }
@@ -192,13 +313,26 @@ export async function triggerSync(
         acctResp = await plaidClient.accountsGet({ access_token: accessToken })
       }
       for (const acct of acctResp.data.accounts) {
-        await prisma.account.updateMany({
-          where: { plaidAccountId: acct.account_id },
-          data: {
-            name:             sanitizeAccountName(acct.name),
-            officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
-            currentBalance:   acct.balances.current,
-            availableBalance: acct.balances.available,
+        const fields = {
+          name:             sanitizeAccountName(acct.name),
+          officialName:     acct.official_name ? sanitizeAccountName(acct.official_name) : null,
+          currentBalance:   acct.balances.current,
+          availableBalance: acct.balances.available,
+        }
+        // Upsert, not update: an account the user added to this Item through
+        // update mode's account selection appears here for the first time.
+        await prisma.account.upsert({
+          where:  { plaidAccountId: acct.account_id },
+          update: fields,
+          create: {
+            ...fields,
+            userId,
+            plaidItemId:     item.id,
+            plaidAccountId:  acct.account_id,
+            type:            acct.type,
+            subtype:         acct.subtype                    ?? null,
+            mask:            acct.mask                       ?? null,
+            isoCurrencyCode: acct.balances.iso_currency_code ?? null,
           },
         })
       }
