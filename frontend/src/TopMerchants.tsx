@@ -1,7 +1,7 @@
 import React from "react"
 
 interface Props {
-  merchants: Array<{ merchant: string; total: number; count: number }>
+  merchants: Array<{ merchant: string; total: number; count: number; pendingCount: number }>
 }
 
 const fmt = (n: number) =>
@@ -36,6 +36,12 @@ export default function TopMerchants({ merchants }: Props) {
               fontSize: 10, color: "#5a7a5a", marginTop: 2,
             }}>
               {m.count} {m.count === 1 ? "transaction" : "transactions"}
+              {/* Pending rows count in the total, so it says how many there are. */}
+              {m.pendingCount > 0 && (
+                <span style={{ color: "#f0a030" }} title="Not posted yet: counted in this total now">
+                  {" · "}{m.pendingCount} pending
+                </span>
+              )}
             </div>
           </div>
           <div style={{

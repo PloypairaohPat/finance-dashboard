@@ -5,6 +5,7 @@ import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
 import type { SubscriptionAnalysis, EnrichedStream, Frequency } from "./types"
+import PendingChip from "./PendingChip"
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n)
@@ -98,6 +99,8 @@ function StreamRow({ s }: { s: EnrichedStream }) {
           fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a",
           marginTop: 2,
         }}>{FREQ_LABEL[s.frequency]}</div>
+        {/* The amount above is a charge that hasn't posted yet. */}
+        {s.lastChargePending && <div style={{ marginTop: 3 }}><PendingChip /></div>}
       </div>
     </div>
   )

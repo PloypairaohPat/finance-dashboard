@@ -205,8 +205,14 @@ export interface EnrichedTransaction {
    * category, so an editor must start from this field rather than that one.
    */
   displayCategory:  DisplayCategory
-  /** Whether PATCH will accept a category change for this row (see canRecategorise). */
+  /** Whether PATCH will accept a category change for this row (see canRecategorise). Never while pending. */
   categoryEditable: boolean
+  /**
+   * Plaid hasn't settled it yet. Counted in every figure like any other row,
+   * so it's marked wherever it's shown. Replaced by a new row when it posts, so
+   * nothing a user sets on it (tags, notes, category, override, mark) is accepted.
+   */
+  pending: boolean
   /**
    * M7.3: the user's own answer about what this row is, for the one verdict the
    * rules cannot settle from the data — money in through a payment app.
@@ -318,7 +324,8 @@ async function enrichRows(userId: string, pageRows: RowForEnrichment[]): Promise
       // the fallback exists only so a gap fails visibly rather than as a crash.
       meaning:     verdict ? describeVerdict(verdict) : { kind: "unclassified_inflow", label: "Unclassified" },
       displayCategory:  bucket,
-      categoryEditable: verdict ? canRecategorise(verdict, r.categoryDetailed) : false,
+      categoryEditable: verdict && !r.pending ? canRecategorise(verdict, r.categoryDetailed) : false,
+      pending:     r.pending,
       verdictOverride:  isVerdictOverride(r.verdictOverride) ? r.verdictOverride : null,
       // Asked of the verdict BEFORE any override, so a row stays overridable
       // after it has been overridden — otherwise it could never be changed back.
@@ -342,11 +349,30 @@ export async function updateTransaction(
   transactionId: string,
   data: { tags?: string[]; notes?: string | null; category?: unknown; verdictOverride?: unknown }
 ): Promise<EnrichedTransaction> {
+  // deletedAt: null — a replaced row (a pending row Plaid removed when it
+  // posted) is gone. A panel left open across a sync used to save into it and
+  // report success.
   const existing = await prisma.transaction.findFirst({
-    where: { id: transactionId, userId },
+    where: { id: transactionId, userId, deletedAt: null },
     include: { account: { select: { name: true } } },
   })
   if (!existing) throw new TransactionUpdateError(404, "Transaction not found")
+
+  // Nothing a user sets on a pending row can follow it: Plaid replaces it with
+  // a new row when it posts. Sending what the row already has isn't a change.
+  if (existing.pending) {
+    const sameTags = (a: string[], b: string[]) => a.length === b.length && a.every((t, i) => t === b[i])
+    const changesTags = data.tags !== undefined && !sameTags(data.tags, existing.tags ?? [])
+    const changesNotes = data.notes !== undefined && (data.notes ?? null) !== (existing.notes ?? null)
+    const changesCategory = data.category !== undefined &&
+      data.category !== (await enrichRows(userId, [existing]))[0].displayCategory
+    if (changesTags || changesNotes || changesCategory) {
+      throw new TransactionUpdateError(
+        409,
+        "This transaction is still pending. Tags, notes and category are available once it posts: a pending row is replaced by a new one when it posts, and anything set on it would be lost.",
+      )
+    }
+  }
 
   // A category arrives as a DISPLAY name and is stored as the Plaid codes that map
   // back to it (ASSIGNABLE_CATEGORY_CODES). Unchanged is not an edit: the row keeps

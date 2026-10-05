@@ -5,6 +5,7 @@ import { readWriteResult } from "./lib/writeResult"
 import type { EnrichedTransaction, CategoryOption, MarkMembership } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 import { treatmentFor } from "./rowTreatment"
+import PendingChip from "./PendingChip"
 
 interface Props {
   transaction: EnrichedTransaction
@@ -109,8 +110,18 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
     })()
   }, [apiFetch])
 
+  // What the server last had: the row as opened, then whatever last saved.
+  // Autosave only runs when the form differs from it. It used to run on open
+  // too, re-sending unchanged values — a write per open, an error in demo mode,
+  // and a refused save on every pending row now that those take no edits.
+  const lastSaved = React.useRef({ tags: transaction.tags, notes: transaction.notes ?? "", category: transaction.displayCategory })
+
   // Auto-save on change (debounced 500ms)
   useEffect(() => {
+    const was = lastSaved.current
+    const unchanged = notes === was.notes && category === was.category &&
+      tags.length === was.tags.length && tags.every((t, i) => t === was.tags[i])
+    if (unchanged || transaction.pending) return
     const t = setTimeout(async () => {
       const body: any = { tags, notes }
       if (category !== transaction.displayCategory) body.category = category
@@ -130,6 +141,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           return
         }
         setSaveError(null)
+        lastSaved.current = { tags, notes, category }
         // The server's row, not a local merge: a category edit changes the
         // stored Plaid codes, and the badge label and verdict follow from those.
         const saved = (result.data as { transaction?: EnrichedTransaction } | null)?.transaction
@@ -205,6 +217,8 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
                   ? { color: look.chip.color, background: look.chip.background, border: `1px solid ${look.chip.border}` }
                   : { color: "#8ab88a", background: "#0d1510", border: "1px solid #253325" }),
               }}>{look.chip?.label ?? transaction.meaning.label}</span>
+              {/* Counted in every figure, but not settled yet. */}
+              {transaction.pending && <span style={{ marginLeft: 6 }}><PendingChip /></span>}
             </div>
           </div>
           {/* Styled from the verdict, not the sign. Previously this printed the raw
@@ -323,7 +337,17 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           }}>
             Category
           </div>
-          {transaction.categoryEditable ? (
+          {transaction.pending ? (
+            <div data-testid="category-pending" style={{
+              background: "#0d1510", border: "1px solid #253325", color: "#8ab88a",
+              padding: "8px 10px", borderRadius: 6, fontSize: 13, lineHeight: 1.45,
+            }}>
+              {category}
+              <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 4 }}>
+                Available once this posts: a pending charge is replaced by a new one when it posts.
+              </div>
+            </div>
+          ) : transaction.categoryEditable ? (
             <select
               value={category}
               onChange={e => setCategory(e.target.value)}
@@ -363,6 +387,11 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           }}>
             Tags
           </div>
+          {transaction.pending ? (
+            <div style={{ fontSize: 11.5, color: "#5a7a5a", lineHeight: 1.45 }}>
+              Available once this posts.
+            </div>
+          ) : (<>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
             {tags.map(t => (
               <span
@@ -409,6 +438,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
               ))}
             </div>
           )}
+          </>)}
         </div>
 
         {/* Notes */}
@@ -420,6 +450,11 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           }}>
             Notes
           </div>
+          {transaction.pending ? (
+            <div style={{ fontSize: 11.5, color: "#5a7a5a", lineHeight: 1.45 }}>
+              Available once this posts.
+            </div>
+          ) : (
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
@@ -432,6 +467,7 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
               lineHeight: 1.5, outline: "none",
             }}
           />
+          )}
         </div>
 
         {saveError ? (
@@ -447,7 +483,9 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
             color: "#5a7a5a", letterSpacing: ".08em", textTransform: "uppercase",
             textAlign: "center", marginTop: 16,
           }}>
-            Changes save automatically.
+            {transaction.pending
+              ? "Pending — tags, notes and category open once it posts."
+              : "Changes save automatically."}
           </div>
         )}
       </div>

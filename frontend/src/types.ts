@@ -122,10 +122,12 @@ export interface InsightsResponse {
     /** M7.2 — the period these figures cover. */
     period: PeriodInfo
   }
-  topMerchants: Array<{ merchant: string; total: number; count: number }>
+  /** pendingCount: how many of `count` haven't posted yet. */
+  topMerchants: Array<{ merchant: string; total: number; count: number; pendingCount: number }>
   largestPurchases: Array<{
     id: string; merchant: string; amount: number;
     date: string; category: string; color: string
+    pending: boolean
   }>
   runway: {
     months: number | null
@@ -149,6 +151,8 @@ export interface EnrichedStream {
   frequency: Frequency
   lastAmount: number
   lastDate: string
+  /** The last charge hasn't posted yet. */
+  lastChargePending: boolean
   monthlyAmount: number
   source: "plaid" | "custom"
   priceChange: { previousAmount: number; pctChange: number } | null
@@ -254,6 +258,11 @@ export interface EnrichedTransaction {
   verdictOverridable: boolean
   /** What the rules said, when the user has overridden it. */
   verdictBeforeOverride: RowMeaning | null
+  /**
+   * Not posted yet. Counted in every figure, so marked wherever it's shown; and
+   * replaced by a new row when it posts, so tags, notes and category wait.
+   */
+  pending: boolean
 }
 
 export interface SearchResult {

@@ -165,6 +165,20 @@ A card payment you made yesterday that hasn't fully settled now counts on every 
 Previously some screens included it and some didn't, so a total could change slightly
 overnight for no reason you could see.
 
+**And it says so.** Because a pending charge counts, it's marked **Pending** wherever it
+appears — in your transactions, on the Overview's largest purchases and top merchants, and
+on a subscription whose latest charge hasn't settled — so you can tell what's still
+moving.
+
+A few things wait until a charge posts. When a pending charge settles, your bank replaces
+it with a new transaction, sometimes on a different day or for a slightly different
+amount, and anything attached to the pending one would be lost. So:
+
+- **Tags, notes and category** can be added once it posts.
+- **"Large purchase" and "price went up" alerts** wait for it to post too. Alerting on the
+  pending charge meant alerting twice — once for the pending charge and again for the
+  settled one.
+
 ## Alerts now clear themselves — and a few old ones may reappear once
 
 Previously an alert stayed in the bell until you dismissed it by hand, whether or not it

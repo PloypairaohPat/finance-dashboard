@@ -7,7 +7,9 @@ import { useDemo } from "./lib/DemoContext"
 import { useUrlParams } from "./lib/useUrlParams"
 import type { EnrichedTransaction, SearchResult, CategoryOption } from "./types"
 import { treatmentFor } from "./rowTreatment"
-import MerchantAvatar from "./MerchantAvatar"
+import PendingChip from "./PendingChip"
+import MerchantAvatar from "./MerchantAvatar"
+
 import { useSettings } from "./SettingsProvider"
 
 interface Props { onRowClick: (tx: EnrichedTransaction) => void }
@@ -317,6 +319,8 @@ export default function TransactionList({ onRowClick }: Props) {
                       whiteSpace: "nowrap", flexShrink: 0,
                     }}>{tx.category}</span>
                   )}
+                  {/* Counted in every figure, so it says it hasn't posted. */}
+                  {tx.pending && <PendingChip />}
                   {tx.tags.slice(0, 2).map(t => (
                     <span key={t} style={{
                       padding: "1px 6px", borderRadius: 3,

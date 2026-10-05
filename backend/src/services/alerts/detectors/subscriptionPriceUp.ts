@@ -36,6 +36,10 @@ export const detectSubscriptionPriceUp: Detector = (ctx) => {
   for (const s of ctx.subscriptions.analysis.subscriptions) {
     // A marked subscription that has ended isn't news, whatever it last cost.
     if (s.status === "ended") continue
+    // Wait for the raised charge to post: a pending amount can still change,
+    // and the posted row's date (part of the fingerprint) usually differs, so
+    // the same rise would fire twice.
+    if (s.lastChargePending) continue
     const change = s.priceChange
     if (!change || change.pctChange <= 0) continue
 

@@ -37,6 +37,11 @@ export const detectLargeTransaction: Detector = (ctx) => {
   const out = []
   for (const row of spending) {
     if (row.date < lookback) continue
+    // Wait for it to post: the posted row has a new id (so a new fingerprint)
+    // and possibly a different amount, so alerting on the pending one meant
+    // alerting twice, and a dismissed alert coming back. The pending row still
+    // counts in every total; only this event waits.
+    if (row.pending) continue
     const amt = row.amount
 
     const merchant = row.merchantLabel.toLowerCase()

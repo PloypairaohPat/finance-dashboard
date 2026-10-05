@@ -26,6 +26,8 @@ export interface EnrichedStream {
   frequency: Frequency
   lastAmount: number
   lastDate: string                // YYYY-MM-DD
+  /** The last charge hasn't posted yet: shown as pending, and price-up waits for it. */
+  lastChargePending: boolean
   monthlyAmount: number           // normalized to monthly cost
   source: "plaid" | "custom"      // where we detected it
   // Enrichments
@@ -88,7 +90,7 @@ function classifyStream(amount: number, category: string): StreamKind {
 
 interface DetectionCandidate {
   cleanMerchant: string
-  occurrences: Array<{ id: string; date: Date; amount: number; category: string | null }>
+  occurrences: Array<{ id: string; date: Date; amount: number; category: string | null; pending: boolean }>
 }
 
 function detectCustomRecurring(txs: SpendRow[]): EnrichedStream[] {
@@ -100,7 +102,7 @@ function detectCustomRecurring(txs: SpendRow[]): EnrichedStream[] {
     const g = groups.get(tx.merchantKey) ?? { cleanMerchant: tx.merchantLabel, occurrences: [] }
     // Prefer the shortest display name (e.g. "Hbo Max" over "Help.Hbomax.Com Hbomax")
     if (tx.merchantLabel.length < g.cleanMerchant.length) g.cleanMerchant = tx.merchantLabel
-    g.occurrences.push({ id: tx.id, date: tx.date, amount: tx.amount, category: tx.category })
+    g.occurrences.push({ id: tx.id, date: tx.date, amount: tx.amount, category: tx.category, pending: tx.pending })
     groups.set(tx.merchantKey, g)
   }
 
@@ -145,6 +147,7 @@ function detectCustomRecurring(txs: SpendRow[]): EnrichedStream[] {
       frequency: freq,
       lastAmount: Number(last.amount.toFixed(2)),
       lastDate: last.date.toISOString().slice(0, 10),
+      lastChargePending: last.pending,
       monthlyAmount: normalizeMonthly(last.amount, freq),
       source: "custom",
       priceChange: null,         // filled in later
@@ -244,6 +247,7 @@ async function loadSpendRows(userId: string, now: Date, since: Date) {
       category: row.categoryPrimary,
       merchantLabel: row.merchantLabel,
       merchantKey: row.merchantKey,
+      pending: row.pending,
     }))
 }
 
@@ -318,6 +322,7 @@ function markedStreams(marks: Mark[], rows: SpendRow[], now: Date, since: Date):
       frequency,
       lastAmount: Number(last.amount.toFixed(2)),
       lastDate: last.date.toISOString().slice(0, 10),
+      lastChargePending: byId.get(last.id)?.pending ?? false,
       // An unknown schedule has no monthly cost yet: an annual charge assumed
       // monthly would put a year's price into the monthly total.
       monthlyAmount: series.period ? normalizeMonthly(last.amount, frequency) : 0,
@@ -368,7 +373,7 @@ async function plaidStreamsFor(userId: string, plaidClient: PlaidApi, now: Date)
     plaidStreams.push({
       merchant, cleanMerchant: merchant, key: normalizeMerchant(merchant),
       kind: classifyStream(lastAmount, category),
-      category, frequency: freq, lastAmount, lastDate,
+      category, frequency: freq, lastAmount, lastDate, lastChargePending: false,
       monthlyAmount: normalizeMonthly(lastAmount, freq),
       source: "plaid",
       priceChange: null, isDuplicate: false,
