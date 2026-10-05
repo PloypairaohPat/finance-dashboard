@@ -86,12 +86,17 @@ export async function unlinkPlaidItem(
 
   const accounts = await prisma.account.findMany({
     where:  { plaidItemId: item.id },
-    select: { id: true },
+    select: { id: true, plaidAccountId: true },
   })
   const accountIds = accounts.map((a) => a.id)
 
+  // Everything tied to this bank goes with it: its transactions and accounts,
+  // and its net-worth snapshots (keyed on the Plaid account id). A goal that
+  // tracked one of its accounts keeps existing, unlinked from it.
   await prisma.$transaction([
     prisma.transaction.deleteMany({ where: { accountId: { in: accountIds } } }),
+    prisma.balanceSnapshot.deleteMany({ where: { userId, accountId: { in: accounts.map((a) => a.plaidAccountId) } } }),
+    prisma.goal.updateMany({ where: { userId, accountId: { in: accountIds } }, data: { accountId: null } }),
     prisma.account.deleteMany({ where: { plaidItemId: item.id } }),
     prisma.plaidItem.delete({ where: { id: item.id } }),
   ])
