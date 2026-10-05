@@ -72,6 +72,17 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 .github/scripts/check-notebook-outputs.py
 
+  # Real users' ids and dated amounts never belong in a committed file. Prints
+  # path, line and kind only, so a real hit doesn't land in a public log.
+  personal-data:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/check-personal-data.py
+
   # M7.2 — before this job, a frontend-only break (type error, lint error that
   # fails the CRA build, or a URL-param regression) passed CI.
   frontend:

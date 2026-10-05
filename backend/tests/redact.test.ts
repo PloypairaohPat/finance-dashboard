@@ -39,7 +39,8 @@ describe('redact', () => {
   })
 
   it('leaves an item_id and a request_id readable', () => {
-    const line = 'item eVBnVMp7zdTJLkRNr33Rs6zr7KNJqBFL1DzZ9 request_id xY7aB2'
+    // Invented, in Plaid's 37-character item_id shape; FAKE marks it for the personal-data check.
+    const line = 'item FAKEVMp7zdTJLkRNr33Rs6zr7KNJqBFL1DzZ9 request_id xY7aB2'
     expect(redact(line)).toBe(line)
   })
 })

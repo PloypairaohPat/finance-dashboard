@@ -1,0 +1,6 @@
+# Files the personal-data check (.github/scripts/check-personal-data.py) skips.
+# One path per line, then '#' and the reason. Only for files whose matches are
+# all invented; an entry without a reason, or for a file that no longer
+# exists, fails the check.
+
+docs/m7.3-reconciliation.md  # generated from the demo seed on the local dev database: dates and amounts are seed output, not a real account's
