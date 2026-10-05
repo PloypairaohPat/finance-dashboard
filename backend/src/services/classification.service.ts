@@ -27,6 +27,7 @@ import {
   isVerdictOverride,
 } from '../lib/classifier'
 import { periodContaining, periodKeyOf } from '../lib/period'
+import { merchantIdentity } from '../lib/merchantIdentity'
 
 /**
  * Taken from the rules themselves, so widening a pairing window widens the
@@ -71,6 +72,8 @@ export interface ClassifiedRow {
   categoryPrimary: string | null
   categoryDetailed: string | null
   merchantLabel: string
+  /** Which merchant this is, by the one rule every consumer shares (lib/merchantIdentity). */
+  merchantKey: string
   verdict: Classified
 }
 
@@ -101,7 +104,7 @@ export async function classifyWindow(
       select: {
         id: true, accountId: true, date: true, amount: true, pending: true,
         categoryPrimary: true, categoryDetailed: true, cleanName: true, name: true, rawJson: true,
-        verdictOverride: true,
+        verdictOverride: true, merchantEntityId: true, counterpartyEntities: true,
       },
       orderBy: { date: 'asc' },
     }),
@@ -168,6 +171,11 @@ export async function classifyWindow(
       categoryPrimary: p.row.categoryPrimary,
       categoryDetailed: p.row.categoryDetailed,
       merchantLabel: p.row.cleanName ?? p.row.name ?? 'Unknown',
+      merchantKey: merchantIdentity({
+        merchantEntityId: p.row.merchantEntityId,
+        counterpartyEntities: p.row.counterpartyEntities,
+        label: p.row.cleanName ?? p.row.name ?? 'Unknown',
+      }),
       verdict: result.byId.get(p.row.id)!,
     })),
     result,
