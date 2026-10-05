@@ -34,6 +34,8 @@ export const detectSubscriptionPriceUp: Detector = (ctx) => {
   const out: DetectedAlert[] = []
 
   for (const s of ctx.subscriptions.analysis.subscriptions) {
+    // A marked subscription that has ended isn't news, whatever it last cost.
+    if (s.status === "ended") continue
     const change = s.priceChange
     if (!change || change.pctChange <= 0) continue
 
@@ -43,9 +45,10 @@ export const detectSubscriptionPriceUp: Detector = (ctx) => {
 
     out.push({
       kind: "subscription_price_up",
-      // The grouping key, not the display name: the name can change when a new
-      // variant of the merchant's name arrives, which would fire the same rise
-      // twice. One alert per stream per raised charge.
+      // The grouping key (merchantIdentity), not the display name: the name can
+      // change when a new variant of the merchant's name arrives, which would
+      // fire the same rise twice. One alert per stream per raised charge. A
+      // marked subscription feeds this exactly as a detected one does.
       fingerprint: `price_up:${s.key}:${s.lastDate}`,
       severity: change.pctChange > 25 ? "high" : "medium",
       title: `${s.merchant} raised its price`,

@@ -26,6 +26,7 @@ interface ExtraFixture {
   goalId: string
   alertId: string
   snapshotId: string
+  markId: string
 }
 
 interface UserFixture {
@@ -153,7 +154,10 @@ async function seedUser(userId: string, withExtras: boolean): Promise<UserFixtur
       },
     })
 
-    fixture.extra = { budgetId: budget.id, goalId: goal.id, alertId: alert.id, snapshotId: snapshot.id }
+    // A subscription mark on the shop charge: its id must never reach another user.
+    const mark = await prisma.subscriptionMark.create({ data: { userId, transactionId: transactionIds[3] } })
+
+    fixture.extra = { budgetId: budget.id, goalId: goal.id, alertId: alert.id, snapshotId: snapshot.id, markId: mark.id }
     fixture.markers.push(
       budget.id,
       goal.id,
@@ -163,6 +167,7 @@ async function seedUser(userId: string, withExtras: boolean): Promise<UserFixtur
       alert.body,
       snapshot.id,
       snapshot.accountName,
+      mark.id,
     )
   }
 
@@ -172,6 +177,7 @@ async function seedUser(userId: string, withExtras: boolean): Promise<UserFixtur
 async function cleanupUser(userId: string): Promise<void> {
   // FK-safe order (mirrors prisma/seed-demo.ts): Transaction -> Account ->
   // PlaidItem -> User, plus the independent (no-FK) models.
+  await prisma.subscriptionMark.deleteMany({ where: { userId } })
   await prisma.transaction.deleteMany({ where: { userId } })
   await prisma.account.deleteMany({ where: { userId } })
   await prisma.plaidItem.deleteMany({ where: { userId } })
@@ -346,6 +352,39 @@ describe('B. IDOR re-test — user-b cannot mutate user-a rows by id', () => {
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
   })
 
+  it('POST /subscriptions/marks with a user-a transaction as user-b -> 404, no row written', async () => {
+    const txId = userA.transactionIds[0]
+    const before = await prisma.subscriptionMark.findMany({ orderBy: { id: 'asc' } })
+
+    const res = await request(app)
+      .post('/subscriptions/marks')
+      .set('X-Test-User', USER_B)
+      .send({ transactionId: txId })
+
+    expect(res.status).toBe(404)
+    expect(await prisma.subscriptionMark.findMany({ orderBy: { id: 'asc' } })).toEqual(before)
+    expect(await prisma.subscriptionMark.count({ where: { transactionId: txId } })).toBe(0)
+    expect(await prisma.subscriptionMark.count({ where: { userId: USER_B } })).toBe(0)
+  })
+
+  it('GET /subscriptions/marks/membership/:id (user-a tx) as user-b -> 404, nothing about it', async () => {
+    const res = await request(app)
+      .get(`/subscriptions/marks/membership/${userA.transactionIds[3]}`)
+      .set('X-Test-User', USER_B)
+    expect(res.status).toBe(404)
+    assertNoLeak(res, userA.markers, 'GET membership (as user-b)')
+  })
+
+  it('DELETE /subscriptions/marks/:id (user-a mark) as user-b -> 404, row unchanged', async () => {
+    const markId = userA.extra!.markId
+    const before = await prisma.subscriptionMark.findUniqueOrThrow({ where: { id: markId } })
+
+    const res = await request(app).delete(`/subscriptions/marks/${markId}`).set('X-Test-User', USER_B)
+
+    expect(res.status).toBe(404)
+    expect(await prisma.subscriptionMark.findUnique({ where: { id: markId } })).toEqual(before)
+  })
+
   it('DELETE /plaid-items/:id (user-a item) as user-b -> 404, rows unchanged, Plaid never called', async () => {
     const itemBefore = await prisma.plaidItem.findUniqueOrThrow({ where: { id: userA.plaidItemId } })
     const accountBefore = await prisma.account.findUniqueOrThrow({ where: { id: userA.accountId } })
@@ -411,12 +450,18 @@ describe('B. IDOR re-test — user-b cannot mutate user-a rows by id', () => {
       },
     })
 
+    // A mark on it: the foreign key cascades, so unlinking can't fail on it.
+    const mark = await prisma.subscriptionMark.create({ data: { userId: USER_A, transactionId: tx.id } })
+
     const res = await request(app).delete(`/plaid-items/${item.id}`).set('X-Test-User', USER_A)
 
     expect(res.status).toBe(200)
     expect(await prisma.plaidItem.findUnique({ where: { id: item.id } })).toBeNull()
     expect(await prisma.account.findUnique({ where: { id: account.id } })).toBeNull()
     expect(await prisma.transaction.findUnique({ where: { id: tx.id } })).toBeNull()
+    expect(await prisma.subscriptionMark.findUnique({ where: { id: mark.id } })).toBeNull()
+    // user-a's other mark, on a transaction of another item, is untouched.
+    expect(await prisma.subscriptionMark.findUnique({ where: { id: userA.extra!.markId } })).not.toBeNull()
   })
 })
 
@@ -457,6 +502,28 @@ describe('C. Demo mode — read-only, resolves to the demo user only', () => {
 
     const after = await prisma.transaction.findUniqueOrThrow({ where: { id: txId } })
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+  })
+
+  it('POST /subscriptions/marks is blocked in demo mode with no DB change', async () => {
+    const before = await prisma.subscriptionMark.findMany({ orderBy: { id: 'asc' } })
+
+    const res = await request(app)
+      .post('/subscriptions/marks')
+      .set('X-Demo-Mode', '1')
+      .send({ transactionId: userA.transactionIds[0] })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ demo: true, ok: false })
+    expect(await prisma.subscriptionMark.findMany({ orderBy: { id: 'asc' } })).toEqual(before)
+  })
+
+  it('DELETE /subscriptions/marks/:id is blocked in demo mode with no DB change', async () => {
+    const markId = userA.extra!.markId
+    const res = await request(app).delete(`/subscriptions/marks/${markId}`).set('X-Demo-Mode', '1')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ demo: true, ok: false })
+    expect(await prisma.subscriptionMark.findUnique({ where: { id: markId } })).not.toBeNull()
   })
 
   it('POST /goals is blocked in demo mode with no DB change', async () => {
