@@ -103,6 +103,20 @@ model Transaction {
   verdictOverride   String?
   verdictOverrideAt DateTime?
 
+  // Plaid's entity ids, copied out of the payload so merchant identity can be
+  // computed without reading rawJson (which is written on create only). Raw
+  // ids, not a derived key: the identity rule lives in code and can change
+  // without a backfill. Plaid sync writes both on create and on every update.
+  //   merchantEntityId     — Plaid's merchant_entity_id
+  //   counterpartyEntities — "<type>:<entity_id>" per counterparty that has an
+  //                          entity id, in Plaid's order
+  // No default, on purpose: NULL means "no new code has written this row yet",
+  // which is how scripts/backfill-entity-columns.ts tells rows it may fill from
+  // create-time rawJson from rows sync has written since. Every writer sets a
+  // list, possibly empty.
+  merchantEntityId     String?
+  counterpartyEntities String[]
+
   @@index([userId, date])
   @@index([userId, categoryPrimary])
   @@index([accountId])

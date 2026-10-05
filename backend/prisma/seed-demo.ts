@@ -56,6 +56,7 @@ import {
   type DemoDataset,
   type DemoTransaction,
 } from './demo-dataset'
+import { entityColumns } from '../src/lib/entityColumns'
 import { connectReadOnly, hasFlag, makeRefuse, redact, resolveConnection } from '../scripts/lib/read-only-db'
 import {
   NON_DEMO_TABLES, diffBaselines, summariseBaseline, takeBaseline, type BaselineEntry, type RawQuerier,
@@ -182,21 +183,26 @@ function buildPlan(now: Date): Plan {
     }
   })
 
-  const transaction = dataset.transactions.map((t: DemoTransaction) => ({
-    userId: DEMO_USER_ID,
-    accountId: accountId.get(t.accountKey)!,
-    plaidTransactionId: t.plaidTransactionId,
-    date: new Date(`${t.date}T00:00:00.000Z`),
-    amount: money(t.amount),
-    name: t.name,
-    cleanName: t.merchantName ?? t.name,
-    merchantName: t.merchantName,
-    categoryPrimary: t.primary,
-    categoryDetailed: t.detailed,
-    isoCurrencyCode: CURRENCY,
-    pending: t.pending,
-    rawJson: toRawJson(t, plaidAccountId.get(t.accountKey)!) as Prisma.InputJsonValue,
-  }))
+  const transaction = dataset.transactions.map((t: DemoTransaction) => {
+    const raw = toRawJson(t, plaidAccountId.get(t.accountKey)!)
+    return {
+      userId: DEMO_USER_ID,
+      accountId: accountId.get(t.accountKey)!,
+      plaidTransactionId: t.plaidTransactionId,
+      date: new Date(`${t.date}T00:00:00.000Z`),
+      amount: money(t.amount),
+      name: t.name,
+      cleanName: t.merchantName ?? t.name,
+      merchantName: t.merchantName,
+      categoryPrimary: t.primary,
+      categoryDetailed: t.detailed,
+      isoCurrencyCode: CURRENCY,
+      pending: t.pending,
+      // Through the same function plaidSync uses, so demo rows can't disagree with their rawJson.
+      ...entityColumns(raw),
+      rawJson: raw as Prisma.InputJsonValue,
+    }
+  })
 
   // Budgets are stored under DISPLAY names, which is what fetchBudgetsWithSpend looks up.
   const budget = DEMO_BUDGETS.map((b) => ({ userId: DEMO_USER_ID, category: b.category, monthlyLimit: b.monthlyLimit }))
