@@ -24,6 +24,7 @@ model User {
   plaidItems   PlaidItem[]
   accounts     Account[]
   transactions Transaction[]
+  subscriptionMarks SubscriptionMark[]
 }
 
 // ── PlaidItem ─────────────────────────────────────────────────────
@@ -117,9 +118,14 @@ model Transaction {
   merchantEntityId     String?
   counterpartyEntities String[]
 
+  subscriptionMarks SubscriptionMark[]
+
   @@index([userId, date])
   @@index([userId, categoryPrimary])
   @@index([accountId])
+  // What SubscriptionMark's foreign key references, so a mark can only ever
+  // point at a transaction of its own user.
+  @@unique([id, userId])
 }
 
 // ── Budget ────────────────────────────────────────────────────────
@@ -194,4 +200,26 @@ model Goal {
   deletedAt     DateTime?
 
   @@index([userId, createdAt(sort: Desc)])
+}
+
+// "Mark as subscription": the user says the charge they marked is one. The
+// mark stores only that charge (its anchor). Which merchant it is comes from
+// the anchor's raw entity ids under the CURRENT identity rule
+// (src/lib/merchantIdentity.ts), and which charges belong to it is walked from
+// the anchor on every read (src/lib/subscriptionSeries.ts) — so a change to
+// either rule never leaves a mark pointing at a stale key.
+//
+// The foreign key is (transactionId, userId) -> Transaction(id, userId): the
+// database refuses a mark whose user is not its transaction's user. Deleting a
+// transaction (unlinking or re-linking a bank) deletes its marks.
+model SubscriptionMark {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId, userId], references: [id, userId], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, transactionId])
+  @@index([userId])
 }
