@@ -101,7 +101,11 @@ describe('entity backfill', () => {
   it('refuses, writing nothing, when the count differs from the dry run', async () => {
     const plan = await planBackfill(prisma)
     for (const wrong of [plan.rows.length - 1, plan.rows.length + 1]) {
-      await expect(runBackfill(prisma, wrong)).rejects.toBeInstanceOf(BackfillRefused)
+      const refusal = runBackfill(prisma, wrong)
+      await expect(refusal).rejects.toBeInstanceOf(BackfillRefused)
+      // Expected against found, and a sync as one possible cause rather than the cause.
+      await expect(refusal).rejects.toThrow(`--expect ${wrong}, but ${plan.rows.length} row(s) need filling`)
+      await expect(refusal).rejects.toThrow(/Either the figure passed is not the dry run's, or rows changed/)
       expect(await row(ids.gym)).toMatchObject({ merchantEntityId: null, counterpartyEntities: null })
     }
   })

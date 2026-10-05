@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────
 //  tests/verdict-override.test.ts — the user's own answer about a row
 //
-//  Scoped deliberately. On the real account, 125 payment-app inflows totalling
-//  $39,374.54 were measured: 4 rows ($504) are the user's own money coming back
-//  and the rest are genuinely from other people. So this is an edge-case tool
-//  for those 4 rows, not a general "make this row anything" mechanism — every
+//  Scoped deliberately. Measured on real data, only a handful of payment-app
+//  inflows are the user's own money coming back; the rest are genuinely from
+//  other people. So this is an edge-case tool for those few rows, not a
+//  general "make this row anything" mechanism — every
 //  other verdict is decided by structure (a matched pair, a card payment, a
 //  category) and belongs to the rules.
 //
@@ -131,7 +131,7 @@ beforeAll(async () => {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const rows: Array<[string, number, number, string, string, boolean, boolean]> = [
     // [id, days back, amount, primary, detailed, via payment app, pending]
-    ['cashout', 1, -504, 'TRANSFER_IN', 'TRANSFER_IN_TRANSFER_IN_FROM_APPS', true, false],
+    ['cashout', 1, -275, 'TRANSFER_IN', 'TRANSFER_IN_TRANSFER_IN_FROM_APPS', true, false],
     ['rent-share', 1, -900, 'TRANSFER_IN', 'TRANSFER_IN_TRANSFER_IN_FROM_APPS', true, false],
     ['pending-in', 0, -25, 'TRANSFER_IN', 'TRANSFER_IN_TRANSFER_IN_FROM_APPS', true, true],
     ['groceries', 0, 120, 'FOOD_AND_DRINK', 'FOOD_AND_DRINK_GROCERIES', false, false],
@@ -167,7 +167,7 @@ describe('PATCH /transactions/:id verdictOverride', () => {
   it('takes a cash-out out of income, and puts it back when cleared', async () => {
     // The pending $25 inflow counts too: pending rows count everywhere (M7.3).
     const before = (await insights()).body.summary.income
-    expect(before).toBeCloseTo(3000 + 504 + 900 + 25, 2)
+    expect(before).toBeCloseTo(3000 + 275 + 900 + 25, 2)
 
     const res = await patch('cashout', { verdictOverride: 'repayment' })
     expect(res.status).toBe(200)
@@ -224,7 +224,7 @@ describe('PATCH /transactions/:id verdictOverride', () => {
     await prisma.transaction.updateMany({
       where: { plaidTransactionId: `${USER}-cashout` },
       data: {
-        pending: false, amount: '-504', merchantName: 'Venmo',
+        pending: false, amount: '-275', merchantName: 'Venmo',
         categoryPrimary: 'TRANSFER_IN', categoryDetailed: 'TRANSFER_IN_TRANSFER_IN_FROM_APPS',
       },
     })
