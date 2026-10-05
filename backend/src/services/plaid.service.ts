@@ -15,6 +15,16 @@ function sanitizeAccountName(name: string): string {
   return name.replace(/��/g, '®').replace(/�/g, '').trim()
 }
 
+/**
+ * Days of transaction history a NEW link asks for. Plaid's default is 90;
+ * Plaid recommends at least 180 for Recurring Transactions, which M7.6 stores.
+ * It applies only when Transactions is first initialised on an Item ("once
+ * Transactions has been added to an Item, this value cannot be updated"), so
+ * existing Items keep what they had, and the update-mode token leaves it out.
+ * Plaid's docs tie no pricing to it; more days make the first pull slower.
+ */
+export const LINK_HISTORY_DAYS = 180
+
 export async function createLinkToken(
   plaidClient:   PlaidApi,
   products:      Products[],
@@ -28,6 +38,7 @@ export async function createLinkToken(
     country_codes: countryCodes,
     language:      'en',
     webhook:       process.env.WEBHOOK_URL,
+    transactions:  { days_requested: LINK_HISTORY_DAYS },
   })
   return response.data.link_token
 }
