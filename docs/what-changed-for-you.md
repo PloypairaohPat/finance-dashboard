@@ -64,6 +64,20 @@ that colour does less of the work.
 Taking $200 out of a cash machine looks, to the bank, a lot like a transfer — your bank
 is named on both sides. It isn't one: that money left and got spent. It still counts.
 
+## A transfer that looked like a bill now counts as a transfer
+
+Sometimes you move money between two of your own accounts on the same day, and the bank's
+description of it reads like a bill — so Plaid, which labels transactions for us, calls
+it one. The app used to believe that label, and counted the money twice: once as spending
+as it left one account, and once as income as it arrived in the other. It now recognises
+the two halves as one transfer, which is neither.
+
+In a month where that happened, your income and your spending both fall by the same
+amount. What you saved that month doesn't change. Your savings rate can look worse,
+because the same savings are now measured against a smaller, truer income.
+
+Nothing about your actual money changed; only how the app reads that pair of transactions.
+
 ## "Payments to people" is now its own line
 
 Venmo, Zelle, Cash App and the like get their own line, showing both directions: what
