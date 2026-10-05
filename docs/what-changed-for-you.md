@@ -194,6 +194,35 @@ The Subscriptions & Bills page could list your monthly credit-card payment as a 
 bill. It isn't one — it pays for purchases that are already on the page individually. It
 no longer appears there, and neither does a regular transfer into savings.
 
+## You can mark a subscription yourself
+
+Some subscriptions never show up on the Subscriptions & Bills page on their own. The
+usual reason is that the merchant's name keeps changing on your statement — the same
+gym can appear under several different names over a few months — or that its price
+changed and it stopped looking regular.
+
+Open any charge and choose **Mark as subscription**. From then on that subscription is
+tracked from the charge you marked: later charges from the same merchant that arrive on
+its usual schedule are counted as the same subscription, even under a different name
+and even at a new price. A price rise shows in the bell, like any other.
+
+A few things worth knowing:
+
+- **A one-off purchase from the same place isn't mixed in.** Only charges that land
+  around the subscription's usual date count; buying something else there mid-month
+  doesn't.
+- **With only one charge so far, the schedule is unknown.** It's listed, but left out
+  of your monthly total until a second charge shows whether it's monthly, yearly or
+  something else.
+- **When the charges stop, it's shown as ended** and leaves your totals. If it starts
+  again later, mark the new charge.
+- **Un-marking only removes the mark.** Nothing about the transactions changes. If we
+  also found that subscription on our own, it stays on the page.
+- **Pending charges can't be marked.** Mark it once it has posted: a pending charge is
+  replaced by a new one when it posts, and the mark would be lost.
+- **Re-linking a bank loses your marks**, just as it loses tags, notes and your answers
+  to "What was this money?" — reconnecting brings the transactions back as new ones.
+
 ## A category can now show a negative number
 
 If you got more back in refunds in a category than you spent in it, that category shows
