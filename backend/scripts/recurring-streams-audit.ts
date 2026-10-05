@@ -9,7 +9,13 @@
 //  (analyseStoredSubscriptions), which only reads.
 //
 //  Counts only. Users and Items appear as "user N" and "item N"; no names,
-//  amounts, ids or dates are printed. Plaid errors are printed by error code.
+//  amounts, ids or dates are printed: categories appear as Plaid's codes only.
+//  Plaid errors are printed by error code.
+//
+//  Per user: streams by status, frequency, is_active and category; inflows by
+//  detailed category code; each stream bucketed by our classifier's verdict on
+//  its transactions (all spend / all transfer / all income / mixed); outflows
+//  matched against the detector; inflows that look like regular income.
 //
 //  It decrypts Plaid access tokens, so it runs through Railway:
 //    railway run npx tsx scripts/recurring-streams-audit.ts --allow-remote <db host>
@@ -41,6 +47,8 @@ async function main() {
   const { plaidClient } = await import('../src/lib/plaidClient')
   const { merchantIdentity } = await import('../src/lib/merchantIdentity')
   const { analyseStoredSubscriptions } = await import('../src/services/subscriptions.service')
+  const { classifyWindow } = await import('../src/services/classification.service')
+  const { getPeriodStartDay } = await import('../src/services/user.service')
 
   const users = await db.prisma.user.findMany({
     where: { plaidItems: { some: {} } },
@@ -106,6 +114,47 @@ async function main() {
       show('by frequency', freq)
       show('by is_active', active)
       show('by category primary', cat)
+    }
+    // Inflows by detailed code: tells salary from interest, dividends, transfers.
+    const detailed: Counter = new Map()
+    for (const s of inflow) bump(detailed, String(s.personal_finance_category?.detailed ?? 'NONE'))
+    show('inflow streams by detailed category', detailed)
+
+    // ── our classifier's verdict on each stream's transactions ────
+    // A stream is "all spend", "all transfer", "all income", "mixed", or
+    // "unmatched" (none of its transactions found in our rows).
+    const allIds = [...new Set([...inflow, ...outflow].flatMap((s) => s.transaction_ids ?? []))]
+    const streamRows = await db.prisma.transaction.findMany({
+      where: { userId, plaidTransactionId: { in: allIds } },
+      select: { id: true, plaidTransactionId: true, date: true },
+    })
+    const rowOf = new Map(streamRows.map((r) => [r.plaidTransactionId, r]))
+    const verdictOf = new Map<string, string>()
+    if (streamRows.length > 0) {
+      const since = new Date(Math.min(...streamRows.map((r) => r.date.getTime())))
+      const { rows: classified } = await classifyWindow(userId, {
+        since, until: new Date(Date.now() + 86_400_000), startDay: await getPeriodStartDay(userId),
+      })
+      for (const c of classified) verdictOf.set(c.id, c.verdict.kind)
+    }
+    const classOf = (kind: string | undefined) =>
+      kind === 'spend' ? 'spend'
+        : kind === 'income' ? 'income'
+          : kind === 'internal_transfer' || kind === 'card_payment' || kind === 'savings_transfer' ? 'transfer'
+            : kind === undefined ? 'unclassified' : 'other'
+    for (const [name, streams] of [['outflow', outflow], ['inflow', inflow]] as const) {
+      const byVerdict: Counter = new Map()
+      for (const s of streams) {
+        const classes = new Set(
+          (s.transaction_ids ?? [])
+            .map((t: string) => rowOf.get(t))
+            .filter(Boolean)
+            .map((r: { id: string }) => classOf(verdictOf.get(r.id))),
+        )
+        const verdict = classes.size === 0 ? 'unmatched' : classes.size === 1 ? `all ${[...classes][0]}` : 'mixed'
+        bump(byVerdict, `${verdict} / ${s.personal_finance_category?.primary ?? 'NONE'}`)
+      }
+      show(`${name} streams by our verdict on their transactions / Plaid category primary`, byVerdict)
     }
 
     // ── outflows against the detector ─────────────────────────────
