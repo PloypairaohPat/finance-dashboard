@@ -61,6 +61,17 @@ jobs:
 
       - run: npm test
 
+  # Notebooks are committed with outputs cleared: a saved output in this repo
+  # is a query result from a real database, and the repo is public.
+  notebooks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/check-notebook-outputs.py
+
   # M7.2 — before this job, a frontend-only break (type error, lint error that
   # fails the CRA build, or a URL-param regression) passed CI.
   frontend:
