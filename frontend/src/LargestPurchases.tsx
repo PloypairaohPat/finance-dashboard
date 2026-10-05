@@ -1,9 +1,11 @@
 import React from "react"
+import PendingChip from "./PendingChip"
 
 interface Props {
   purchases: Array<{
     id: string; merchant: string; amount: number;
     date: string; category: string; color: string
+    pending: boolean
   }>
 }
 
@@ -41,8 +43,10 @@ export default function LargestPurchases({ purchases }: Props) {
             <div style={{
               fontFamily: "IBM Plex Mono, monospace",
               fontSize: 10, color: "#5a7a5a", marginTop: 2,
+              display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, rowGap: 3,
             }}>
-              {fmtDate(p.date)} · {p.category}
+              <span>{fmtDate(p.date)} · {p.category}</span>
+              {p.pending && <PendingChip />}
             </div>
           </div>
           <div style={{

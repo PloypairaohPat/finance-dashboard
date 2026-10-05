@@ -562,6 +562,13 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     const [, , prev, last] = charges.map((t) => t.amount)
     expect((last - prev) / prev).toBeGreaterThan(0.05)
   },
+  'pending-large-purchase': ([big]) => {
+    expect(big.pending).toBe(true)
+    // Over the large-purchase threshold, so only its being pending keeps the alert quiet.
+    expect(big.amount).toBeGreaterThanOrEqual(500)
+    expect(big.expected).toEqual(expect.objectContaining({ kind: 'spend', rule: 7 }))
+    expect(big.date).toBe(new Date(Date.UTC(ds.now.getUTCFullYear(), ds.now.getUTCMonth(), ds.now.getUTCDate())).toISOString().slice(0, 10))
+  },
   'subscription-mark-follows-price': (rows) => {
     // Four monthly charges and a one-off, one merchant entity throughout.
     expect(rows).toHaveLength(5)

@@ -1331,6 +1331,19 @@ export function buildDemoDataset(now: Date): DemoDataset {
       })
       addCase('pending-included', 'pending', 'easy',
         'pending rows count everywhere, so today\'s spending is not invisible', [a, b])
+
+      // Large enough for the large-purchase alert (ABSOLUTE_THRESHOLD) if it had
+      // posted, and the period's largest purchase: it shows the Pending marker in
+      // Largest purchases and Top merchants, and proves the alert waits for posting.
+      const big = add({
+        slug: 'pending-large', day: lastDay, account: 'card', amount: 649.99,
+        name: 'GADGETHAUS', detailed: 'GENERAL_MERCHANDISE_ELECTRONICS', merchant: 'Gadgethaus',
+        cps: [CP.merchant('Gadgethaus')], confidence: 'VERY_HIGH', pending: true,
+        expected: spend('GENERAL_MERCHANDISE_ELECTRONICS'),
+      })
+      addCase('pending-large-purchase', 'pending', 'easy',
+        'a large purchase still pending: counted and marked Pending everywhere it shows, ' +
+        'but no large-purchase alert until it posts', [big])
     }
   }
 
