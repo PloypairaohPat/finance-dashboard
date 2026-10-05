@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────
 //  tests/savings-rate-floor.test.ts — the floor under the savings rate (M7.3)
 //
-//  Plan §7 recorded a savings rate of -8431.6%, which is what you get when a
+//  Plan §7 recorded a savings rate of minus several thousand percent: what you get when a
 //  period with almost no income is divided into a normal month of spending. The
 //  floor suppresses the figure instead of clamping it: a real -40% period must
 //  still read -40%, but a period with $12 of income says nothing at all.
