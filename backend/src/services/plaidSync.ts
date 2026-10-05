@@ -11,6 +11,7 @@ import { decrypt }   from '../utils/encrypt'
 import { cleanTransactions } from './cleaner'
 import { captureBalanceSnapshots } from "./networth.service"
 import { runDetectors } from "./alerts/dispatcher"
+import { entityColumns } from '../lib/entityColumns'
 
 async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
   const item = await prisma.plaidItem.findUnique({
@@ -57,6 +58,7 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
         merchantName:     txn.merchant_name                       ?? null,
         categoryPrimary:  txn.personal_finance_category?.primary  ?? null,
         categoryDetailed: txn.personal_finance_category?.detailed ?? null,
+        ...entityColumns(txn),
       },
       create: {
         userId:             item.userId,
@@ -70,6 +72,7 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
         categoryPrimary:    txn.personal_finance_category?.primary  ?? null,
         categoryDetailed:   txn.personal_finance_category?.detailed ?? null,
         pending:            txn.pending,
+        ...entityColumns(txn),
         rawJson:            txn,
       },
     });
@@ -85,6 +88,9 @@ async function syncTransactions(plaidClient: PlaidApi, plaidItemId: string) {
         merchantName:     txn.merchant_name                       ?? null,
         categoryPrimary:  txn.personal_finance_category?.primary  ?? null,
         categoryDetailed: txn.personal_finance_category?.detailed ?? null,
+        // From the modified payload: rawJson keeps the payload the row was
+        // created from, so these columns are the only current copy of the ids.
+        ...entityColumns(txn),
       },
     });
   }
