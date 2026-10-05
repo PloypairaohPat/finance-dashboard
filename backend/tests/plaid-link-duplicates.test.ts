@@ -87,7 +87,20 @@ async function cleanup() {
 
 beforeEach(async () => {
   await cleanup()
-  for (const name of ['itemPublicTokenExchange', 'itemGet', 'accountsGet', 'itemRemove'] as const) mock(name).mockClear()
+  // Reset, not just clear: a test that fails part-way leaves queued
+  // once-values behind, which the next test would consume. Defaults match
+  // tests/setup.ts.
+  const defaults = {
+    itemPublicTokenExchange: { data: { access_token: 'test-access-token', item_id: 'test-item-id' } },
+    itemGet: { data: { item: { institution_id: null } } },
+    accountsGet: { data: { accounts: [] } },
+    accountsBalanceGet: { data: { accounts: [] } },
+    itemRemove: { data: {} },
+  } as const
+  for (const [name, value] of Object.entries(defaults)) {
+    mock(name as keyof typeof plaidClient).mockReset()
+    mock(name as keyof typeof plaidClient).mockResolvedValue(value)
+  }
   sentry.captureMessage.mockClear()
   for (const id of [USER, OTHER]) await prisma.user.create({ data: { id, email: `${id}@link-dup-test.local` } })
 })
@@ -186,7 +199,6 @@ describe('after exchange (the real guarantee)', () => {
     expect(res.status).toBe(500)
     expect(mock('itemRemove').mock.calls.map((c) => c[0])).toEqual([{ access_token: fresh.token }])
     expect(await items()).toHaveLength(0)
-    mock('itemGet').mockResolvedValue({ data: { item: { institution_id: null } } })
   })
 
   it('when that removal fails too, keeps the row and reports the item_id, never the token', async () => {
@@ -201,7 +213,6 @@ describe('after exchange (the real guarantee)', () => {
     const reported = JSON.stringify(sentry.captureMessage.mock.calls)
     expect(reported).toContain(fresh.itemId)
     expect(reported).not.toContain(fresh.token)
-    mock('itemGet').mockResolvedValue({ data: { item: { institution_id: null } } })
   })
 
   it('two links of the same accounts at once leave one Item', async () => {
@@ -229,7 +240,7 @@ describe('the "same login, other accounts" path', () => {
 
   it('sync adds an account the user shared through it', async () => {
     const old = await existing(USER, INST, CHECKING)
-    mock('accountsBalanceGet').mockResolvedValueOnce({
+    mock('accountsGet').mockResolvedValueOnce({
       data: {
         accounts: [
           { account_id: old.account.plaidAccountId, name: CHECKING.name, official_name: null, mask: CHECKING.mask, type: 'depository', subtype: 'checking', balances: { current: 2, available: 2, iso_currency_code: 'USD' } },
@@ -241,5 +252,25 @@ describe('the "same login, other accounts" path', () => {
     expect(res.status).toBe(200)
     expect(await prisma.account.findUnique({ where: { plaidAccountId: `${USER}-added-acct` } }))
       .toMatchObject({ userId: USER, plaidItemId: old.item.id, mask: '4321', subtype: 'savings' })
+  })
+})
+
+describe('balances have one source', () => {
+  it('sync takes balances from /accounts/get and never calls Balance', async () => {
+    const old = await existing(USER, INST, CHECKING)
+    mock('accountsBalanceGet').mockClear()
+    mock('accountsGet').mockResolvedValueOnce({
+      data: {
+        accounts: [
+          { account_id: old.account.plaidAccountId, name: CHECKING.name, official_name: null, mask: CHECKING.mask, type: 'depository', subtype: 'checking', balances: { current: 42.5, available: 40, iso_currency_code: 'USD' } },
+        ],
+      },
+    })
+    const res = await request(app).post('/sync').set('X-Test-User', USER)
+    expect(res.status).toBe(200)
+    expect(mock('accountsBalanceGet')).not.toHaveBeenCalled()
+    const acct = await prisma.account.findUniqueOrThrow({ where: { id: old.account.id } })
+    expect(Number(acct.currentBalance)).toBe(42.5)
+    expect(Number(acct.availableBalance)).toBe(40)
   })
 })
