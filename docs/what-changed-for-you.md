@@ -250,6 +250,16 @@ money?", subscription marks) went with it. It no longer does:
   one you have. If it's the same login, you can add those accounts to your existing
   connection instead.
 
+## You can delete your account and all your data
+
+**Settings → Delete account and all data.** Type *delete my data* to confirm. It disconnects
+every bank you've linked (so Plaid loses access), deletes everything Ledger stored about you,
+then deletes your sign-in account and signs you out. It can't be undone.
+
+What it can't reach: database backups and server logs keep data only until they expire on their
+own, and Plaid keeps its own records under its own policy. The Settings screen says exactly how
+long. If you'd rather ask by message, the same deletion can be run for you.
+
 ## A category can now show a negative number
 
 If you got more back in refunds in a category than you spent in it, that category shows
