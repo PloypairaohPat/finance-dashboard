@@ -128,6 +128,14 @@ vi.mock('@clerk/express', () => ({
   clerkMiddleware: () => (_req: any, _res: any, next: any) => next(),
   requireAuth: () => (_req: any, _res: any, next: any) => next(),
   getAuth: (req: any) => ({ userId: req.header('X-Test-User') || null }),
+  // Account deletion bans, unbans and deletes Clerk users. Never a real call.
+  clerkClient: {
+    users: {
+      banUser: vi.fn().mockResolvedValue({}),
+      unbanUser: vi.fn().mockResolvedValue({}),
+      deleteUser: vi.fn().mockResolvedValue({}),
+    },
+  },
 }))
 
 // ── 6. Plaid stub — NOT part of the isolation logic under test ─────────
