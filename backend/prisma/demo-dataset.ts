@@ -57,6 +57,8 @@ export type CounterpartyType =
 export interface Counterparty {
   name: string
   type: CounterpartyType
+  /** Plaid's entity id, when the fixture needs merchant identity to see one. */
+  entityId?: string
 }
 
 export type ItemKey = 'demoBank' | 'northwind'
@@ -124,6 +126,8 @@ export interface DemoTransaction {
   pending: boolean
   expected: Expected
   decisions: DecisionId[]
+  /** Plaid's merchant_entity_id, when the fixture needs one. */
+  merchantEntityId?: string
 }
 
 export type CaseBranch =
@@ -138,6 +142,7 @@ export type CaseBranch =
   | 'unclassified-inflow'
   | 'pending'
   | 'subscription-price'
+  | 'subscription-mark'
 
 export type CaseRole = 'easy' | 'near-miss-inside' | 'near-miss-outside' | 'wrong-claim'
 
@@ -178,6 +183,8 @@ export interface DemoDataset {
   transactions: DemoTransaction[]
   cases: DemoCase[]
   paymentApp: PaymentAppExpectation[]
+  /** Charges the seed marks as subscriptions, by plaidTransactionId (demo visitors can't mark). */
+  marks: string[]
 }
 
 // ── fixed structure ───────────────────────────────────────────────
@@ -1373,6 +1380,61 @@ export function buildDemoDataset(now: Date): DemoDataset {
     })
   }
 
+  // ── marked subscription: one gym, four names, a price rise and a one-off ──
+  //
+  // What "Mark as subscription" is for. The four monthly charges carry four
+  // merchant strings that normalise apart, so detection by name never groups
+  // them; Plaid ties them to one entity, so merchant identity does. Even then
+  // detection can't hold the gym: the one-off purchase mid-cycle breaks its
+  // cadence test and the +40% rise its ±20% amount test. The seed marks the
+  // first charge. The mark follows the schedule, takes the rise as the new
+  // price (so the bell shows price-up), and leaves the one-off out: it lands
+  // outside every slot's window.
+  const marks: string[] = []
+  {
+    const DAY = 86_400_000
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    const gym = 'demo-entity-ironline'
+    const charges = [
+      { ago: 91, amount: 40, name: 'IRONLINE FITNESS' },
+      { ago: 61, amount: 40, name: 'IRONLINE CLUB 0423' },
+      { ago: 46, amount: 25, name: 'IRONLINE PRO SHOP' }, // the one-off
+      { ago: 31, amount: 40, name: 'SQ *IRONLINE' },
+      { ago: 1, amount: 56, name: 'IRONLINE FITNESS LLC' }, // +40%
+    ]
+    const ids = charges.map(({ ago, amount, name }, i) => {
+      const id = `demo-ironline-${i + 1}`
+      transactions.push({
+        plaidTransactionId: id,
+        accountKey: 'card',
+        date: new Date(today - ago * DAY).toISOString().slice(0, 10),
+        amount,
+        name,
+        // No merchant name: the app shows each raw string, as it would for a
+        // merchant Plaid recognises by entity but doesn't name consistently.
+        merchantName: null,
+        primary: 'PERSONAL_CARE',
+        detailed: 'PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS',
+        confidence: 'VERY_HIGH',
+        counterparties: [{ ...CP.merchant('Ironline Fitness'), entityId: gym }],
+        merchantEntityId: gym,
+        pending: false,
+        expected: spend('PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS'),
+        decisions: [],
+      })
+      return id
+    })
+    marks.push(ids[0])
+    cases.push({
+      id: 'subscription-mark-follows-price',
+      branch: 'subscription-mark',
+      role: 'easy',
+      note: 'a gym under four merchant strings that detection never groups, marked on its first charge: ' +
+        'the mark follows it to a 40% higher price (the bell shows price-up) and leaves a mid-cycle one-off out',
+      txIds: ids,
+    })
+  }
+
   return {
     now,
     startDay: DEMO_PERIOD_START_DAY,
@@ -1381,6 +1443,7 @@ export function buildDemoDataset(now: Date): DemoDataset {
     transactions,
     cases,
     paymentApp,
+    marks,
   }
 }
 
@@ -1395,10 +1458,11 @@ export function toRawJson(tx: DemoTransaction, plaidAccountId: string): Record<s
     date: tx.date,
     name: tx.name,
     merchant_name: tx.merchantName,
+    merchant_entity_id: tx.merchantEntityId ?? null,
     pending: tx.pending,
     pending_transaction_id: null,
     personal_finance_category: pfc,
-    counterparties: tx.counterparties.map((c) => ({ name: c.name, type: c.type })),
+    counterparties: tx.counterparties.map((c) => ({ name: c.name, type: c.type, ...(c.entityId ? { entity_id: c.entityId } : {}) })),
   }
 }
 
