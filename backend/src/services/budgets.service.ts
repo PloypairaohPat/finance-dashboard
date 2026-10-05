@@ -13,6 +13,7 @@ import {
   type Period,
 } from "../lib/period"
 import { classifyWindow, spendByBucketForRows } from "./classification.service"
+import { ensureUser } from "./user.service"
 
 export type BudgetStatus =
   | "on_track"
@@ -45,6 +46,9 @@ export async function upsertBudget(
     throw new Error("Invalid category")
   }
 
+  // Budget has a foreign key to User, and a signed-in user has no User row
+  // until they link a bank or save settings.
+  await ensureUser(userId)
   await prisma.budget.upsert({
     where: {
       userId_category: { userId, category },

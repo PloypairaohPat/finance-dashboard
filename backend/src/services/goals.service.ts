@@ -1,7 +1,7 @@
 import prisma from "../lib/prisma"
 import { fromDateKey, recentPeriods } from "../lib/period"
 import { classifyWindow, spendForPeriod } from "./classification.service"
-import { getPeriodStartDay } from "./user.service"
+import { ensureUser, getPeriodStartDay } from "./user.service"
 
 // How many money periods of spending the emergency-fund target averages over.
 const EXPENSE_PERIODS = 3
@@ -235,6 +235,9 @@ export async function createGoal(userId: string, input: GoalInput) {
     startAmount = Math.abs(Number(acc?.currentBalance ?? 0))
   }
 
+  // Goal has a foreign key to User, and a signed-in user has no User row
+  // until they link a bank or save settings.
+  await ensureUser(userId)
   return prisma.goal.create({
     data: {
       userId,

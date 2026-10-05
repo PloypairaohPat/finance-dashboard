@@ -3,8 +3,11 @@ import { DEMO_USER_ID } from '../middleware/auth'
 import { DEFAULT_PERIOD_START_DAY } from '../lib/period'
 
 // Clerk authenticates users but never creates a row in our own User table.
-// Call this before any write with a FK to User (PlaidItem, Account, Transaction)
-// so the first such write for a brand-new user doesn't hit the FK constraint.
+// Call this before any write with a FK to User — PlaidItem, Account, Transaction,
+// and since the user_foreign_keys migration Budget, Goal, Alert and
+// BalanceSnapshot too — so the first such write for a brand-new user doesn't hit
+// the FK constraint. (Alert and BalanceSnapshot rows only come from data that
+// already needs the User row, so only budget and goal creation call it.)
 // Idempotent — safe to call on every request.
 export async function ensureUser(userId: string): Promise<void> {
   if (userId === DEMO_USER_ID) return
