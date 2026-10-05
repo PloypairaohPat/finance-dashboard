@@ -61,7 +61,7 @@ async function main() {
       .map((b) => `${b.category} $${b.monthlyLimit.toString()}`),
   }
 
-  // ── §7.1 income $50 vs $550 ───────────────────────────────────
+  // ── §7.1 income differing about tenfold between two cards ─────
   const insights = await fetchInsights(DEMO, 1, now)
   const cash = await fetchCashFlow(DEMO, 6, 1, now)
   out.s7_income = {
@@ -69,7 +69,7 @@ async function main() {
     cashflowByMonth: cash.cashflow.map((c) => ({ month: c.label, income: c.income, expenses: c.expenses, inProgress: c.inProgress })),
   }
 
-  // ── §7.2 Food & Dining $288 (budget) vs $313 (alert) vs $313.33 (MoM) ──
+  // ── §7.2 Food & Dining: budget card vs alert vs Month over month ──
   const comparison = await fetchCategoryComparison(DEMO, 3, 1, now)
   const breakdown = await fetchCategorySpend(DEMO)
   const budgets = await fetchBudgetsWithSpend(DEMO)
@@ -90,13 +90,13 @@ async function main() {
     seededAlerts: (await prisma.alert.findMany({ where: { userId: DEMO, fingerprint: { startsWith: 'demo-' } }, select: { title: true, body: true } })),
   }
 
-  // ── §7.3 savings rate -8431.6% ────────────────────────────────
+  // ── §7.3 savings rate of minus several thousand percent ───────
   out.s7_savingsRate = {
     thisMonth: insights.summary.savingsRate,
     note: 'savingsRate = netSaved / income * 100, with income = |sum of negative amounts| this month',
   }
 
-  // ── §7.4 Monthly Spending climbing to ~$16k ───────────────────
+  // ── §7.4 Monthly Spending climbing to several times normal ────
   const trends = await fetchMonthlyTotals(DEMO, 12, 1, now)
   // The pre-M7.2 query, reproduced exactly: cutoff = now minus 12 months,
   // grouped by toISOString().slice(0, 7), months without data omitted.

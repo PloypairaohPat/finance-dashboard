@@ -7,8 +7,8 @@ import type { Severity } from "./types"
 // ─────────────────────────────────────────────────────────────────
 //  AlertsBell — the notification bell in the app header, and its slide-out.
 //
-//  Replaces the Overview "Alerts" wall (plan §7: "91 active" / "Show 89
-//  more"). The panel shows the top TOP_COUNT alerts by severity plus the
+//  Replaces the Overview "Alerts" wall (plan §7: about ninety active, most
+//  hidden behind "Show more"). The panel shows the top TOP_COUNT alerts by severity plus the
 //  total; dismissing one lets the next slide up. Reads everything from
 //  AlertsProvider and fetches nothing itself.
 //

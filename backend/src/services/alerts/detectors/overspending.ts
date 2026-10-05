@@ -9,7 +9,7 @@ const PRIOR_PERIODS = 3
 
 // M7.3: category spending now comes from the classifier, so a month whose
 // "spending" was a card payment or a transfer no longer looks like a spike. This
-// is the detector behind plan §7's "$313" alert.
+// is the detector behind plan §7's dining alert.
 export const detectOverspending: Detector = (ctx) => {
   const period = currentPeriod(ctx)
   const priors = priorPeriods(ctx, PRIOR_PERIODS)

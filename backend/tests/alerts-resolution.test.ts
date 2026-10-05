@@ -3,7 +3,7 @@
 //
 //  Until now nothing ever set an alert down. A detector fired, the row stayed
 //  active until the user dismissed it, and the bell counted conditions that had
-//  stopped being true weeks earlier ("91 active" in plan §7).
+//  stopped being true weeks earlier (plan §7's wall of about ninety).
 //
 //  The four rules this pins:
 //    1. a condition that stops being true resolves itself

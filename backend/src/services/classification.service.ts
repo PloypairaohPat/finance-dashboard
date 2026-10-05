@@ -326,7 +326,7 @@ export interface SavingsRate {
 
 /**
  * Savings rate, with the floor that stops a period with almost no income
- * producing a headline like -8431.6%.
+ * producing a headline of minus several thousand percent.
  *
  * The floor is 25% of the median income of the last three COMPLETED periods
  * that had any income. The rate itself is never clamped: a real -40% period
