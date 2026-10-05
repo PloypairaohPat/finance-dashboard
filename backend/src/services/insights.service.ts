@@ -38,10 +38,13 @@ export interface InsightsResponse {
     /** The period these figures cover, including whether it's still in progress. */
     period: Period
   }
-  topMerchants: Array<{ merchant: string; total: number; count: number }>
+  /** pendingCount: how many of `count` haven't posted yet (counted, like every pending row). */
+  topMerchants: Array<{ merchant: string; total: number; count: number; pendingCount: number }>
   largestPurchases: Array<{
     id: string; merchant: string; amount: number;
     date: string; category: string; color: string
+    /** Not posted yet: counted in the totals, so marked where it's shown. */
+    pending: boolean
   }>
   runway: {
     months: number | null          // null if not enough data
@@ -116,15 +119,16 @@ export async function fetchInsights(
       !isPaymentAppOutflow(r.verdict),
   )
 
-  const merchantMap = new Map<string, { total: number; count: number }>()
+  const merchantMap = new Map<string, { total: number; count: number; pendingCount: number }>()
   for (const r of thisPeriodSpend) {
-    const m = merchantMap.get(r.merchantLabel) ?? { total: 0, count: 0 }
+    const m = merchantMap.get(r.merchantLabel) ?? { total: 0, count: 0, pendingCount: 0 }
     m.total += r.amount
     m.count += 1
+    if (r.pending) m.pendingCount += 1
     merchantMap.set(r.merchantLabel, m)
   }
   const topMerchants = [...merchantMap.entries()]
-    .map(([merchant, v]) => ({ merchant, total: round2(v.total), count: v.count }))
+    .map(([merchant, v]) => ({ merchant, total: round2(v.total), count: v.count, pendingCount: v.pendingCount }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 5)
 
@@ -138,6 +142,7 @@ export async function fetchInsights(
         merchant: r.merchantLabel,
         amount: round2(r.amount),
         date: r.date.toISOString().slice(0, 10),
+        pending: r.pending,
         category: display,
         color: CATEGORY_COLORS[display as keyof typeof CATEGORY_COLORS] ?? "#5a7a5a",
       }
