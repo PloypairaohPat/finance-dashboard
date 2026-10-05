@@ -100,8 +100,9 @@ async function main() {
   console.log('Counts and Plaid enum codes only.\n')
 
   const { classifyWindow, spendForPeriod } = await import('../src/services/classification.service')
+  const { fetchCashFlow } = await import('../src/services/cashflow.service')
   const { getPeriodStartDay } = await import('../src/services/user.service')
-  const { recentPeriods, periodKeyOf } = await import('../src/lib/period')
+  const { fromDateKey, periodKeyOf } = await import('../src/lib/period')
   const referenced = codesReferencedInSrc()
 
   const users = await db.prisma.user.findMany({
@@ -121,7 +122,9 @@ async function main() {
     if (rows.length === 0) continue
     const startDay = await getPeriodStartDay(userId)
     const now = new Date()
-    const { rows: classified, paymentAppByPeriod } = await classifyWindow(userId, {
+    // All-time verdicts, for items 2 and 4. Verdicts don't depend on the window;
+    // the payment-app cap does, so item 3 takes spend from /cashflow instead.
+    const { rows: classified } = await classifyWindow(userId, {
       since: rows[0].date, until: new Date(now.getTime() + DAY_MS), startDay,
     })
     const verdict = new Map(classified.map((c) => [c.id, c.verdict]))
@@ -158,19 +161,34 @@ async function main() {
     table('3. Transfers OUT (detailed TRANSFER_OUT_*), by code and verdict:',
       tally(transferOuts.map((r) => `${(r.categoryDetailed ?? '').toUpperCase()} → ${verdict.get(r.id)?.kind ?? '?'} (${verdict.get(r.id)?.mechanism ?? '?'})`))
         .map(([k, n]) => ({ code_and_verdict: k, rows: n })))
-    const counted = transferOuts.filter((r) => verdict.get(r.id)?.kind === 'spend')
-    const periods = recentPeriods(now, startDay, 6)
-    table('   …those counted as SPENDING, as a share of each period\'s spend (period 0 = current):',
-      periods.slice().reverse().map((p, i) => {
-        const total = spendForPeriod(classified, p.key, startDay, paymentAppByPeriod)
-        const mine = counted.filter((r) => periodKeyOf(r.date, startDay) === p.key)
-        const sum = mine.reduce((s, r) => s + Number(r.amount), 0)
-        return {
-          period: String(-i),
-          rows: mine.length,
-          share_of_spend: total > 0 ? `${((sum / total) * 100).toFixed(1)}%` : '—',
-        }
-      }))
+    // Spend per period is the endpoint's own figure (GET /cashflow), and the
+    // payment-app cap comes from a classification over /cashflow's own window,
+    // whole periods. An earlier version divided by spend from a "first row to
+    // now" window, which drops Payments to people from the first and current
+    // periods, and counted payment-app sends row by row in the numerator, so
+    // shares over 100% followed. Payment-app sends are now reported apart, after
+    // the cap, and every row says whether the parts add back to the endpoint.
+    const { cashflow } = await fetchCashFlow(userId, 6, startDay, now)
+    const ordinaryTransfers = transferOuts.filter((r) => verdict.get(r.id)?.mechanism === 'ordinary-spend')
+    if (cashflow.length > 0) {
+      const { rows: windowRows, paymentAppByPeriod } = await classifyWindow(userId, {
+        since: fromDateKey(cashflow[0].start), until: fromDateKey(cashflow[cashflow.length - 1].end), startDay,
+      })
+      table('   Share of each period\'s spend (GET /cashflow), period 0 = current:',
+        cashflow.slice().reverse().map((p, i) => {
+          const mine = ordinaryTransfers.filter((r) => periodKeyOf(r.date, startDay) === p.key)
+          const sum = mine.reduce((s, r) => s + Number(r.amount), 0)
+          const ptp = paymentAppByPeriod.get(p.key) ?? 0
+          const ordinary = spendForPeriod(windowRows, p.key, startDay, new Map())
+          return {
+            period: String(-i),
+            transfers_out_counted_as_ordinary_spend: mine.length,
+            their_share: p.expenses > 0 ? `${((sum / p.expenses) * 100).toFixed(1)}%` : '—',
+            payments_to_people_after_cap_share: p.expenses > 0 ? `${((ptp / p.expenses) * 100).toFixed(1)}%` : '—',
+            reconciles_with_endpoint: Math.abs(ordinary + ptp - p.expenses) < 0.01 ? 'yes' : 'NO',
+          }
+        }))
+    }
 
     // ── 4. payer identity ──────────────────────────────────────────
     const isIncome = (r: (typeof rows)[number]) => verdict.get(r.id)?.kind === 'income'

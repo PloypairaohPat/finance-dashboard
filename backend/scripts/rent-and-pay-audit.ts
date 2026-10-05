@@ -83,8 +83,9 @@ async function main() {
 
   const db = await connectReadOnly(SCRIPT)
   const { classifyWindow, spendForPeriod, paymentAppFlowsForRows } = await import('../src/services/classification.service')
+  const { fetchCashFlow } = await import('../src/services/cashflow.service')
   const { getPeriodStartDay } = await import('../src/services/user.service')
-  const { periodKeyOf, recentPeriods } = await import('../src/lib/period')
+  const { fromDateKey, periodKeyOf, recentPeriods } = await import('../src/lib/period')
 
   const user = await db.prisma.user.findUnique({ where: { id: userId }, select: { paymentAppInflowsAreIncome: true } })
   if (!user) refuse(`no user "${userId}" in this database.`)
@@ -97,8 +98,20 @@ async function main() {
   if (rows.length === 0) refuse('this user has no transactions.')
   const startDay = await getPeriodStartDay(userId)
   const now = new Date()
+
+  // Spend comes from the endpoint's own code, not a re-implementation: this is
+  // what GET /cashflow returns. An earlier version classified "first row to
+  // now", and classifyWindow — correctly — refuses to report the payment-app cap
+  // for a period it didn't cover end to end, so Payments to people silently fell
+  // out of spend in the first and current periods. The classification below uses
+  // /cashflow's own window, whole periods, for the same reason.
+  const { cashflow } = await fetchCashFlow(userId, 24, startDay, now)
+  if (cashflow.length === 0) refuse('no periods with activity.')
+  const endpointSpend = new Map(cashflow.map((p) => [p.key, p.expenses]))
   const { rows: classified, paymentAppByPeriod } = await classifyWindow(userId, {
-    since: rows[0].date, until: new Date(now.getTime() + DAY_MS), startDay,
+    since: fromDateKey(cashflow[0].start),
+    until: fromDateKey(cashflow[cashflow.length - 1].end),
+    startDay,
   })
   const byId = new Map(classified.map((c) => [c.id, c]))
   const raw = new Map(rows.map((r) => [r.id, (r.rawJson ?? {}) as Record<string, any>]))
@@ -148,11 +161,18 @@ async function main() {
 
     const inPeriod = classified.filter((c) => periodKeyOf(c.date, startDay) === key)
     const flows = paymentAppFlowsForRows(inPeriod)
+    const spend = endpointSpend.get(key)
+    // ordinary spend + payments to people after the cap must BE the endpoint's figure.
+    const ordinary = spendForPeriod(classified, key, startDay, new Map())
+    const ptp = paymentAppByPeriod.get(key) ?? 0
+    const reconciles = spend !== undefined && Math.abs(ordinary + ptp - spend) < 0.01
     table('   That period, as multiples of the transfer:', [{
-      spend: x(spendForPeriod(classified, key, startDay, paymentAppByPeriod) / anchor.amount),
+      spend_per_cashflow_endpoint: spend === undefined ? '(older than /cashflow covers)' : x(spend / anchor.amount),
+      ordinary_spend: x(ordinary / anchor.amount),
+      payments_to_people_after_cap: x(ptp / anchor.amount),
+      reconciles: reconciles ? 'yes: ordinary + capped = endpoint' : 'NO',
       payment_app_out: x(flows.out / anchor.amount),
       payment_app_in: x(flows.in / anchor.amount),
-      payments_to_people_after_cap: x((paymentAppByPeriod.get(key) ?? 0) / anchor.amount),
       outflows_at_least_0_8x_counted_as_spend: inPeriod.filter((c) => c.amount >= 0.8 * anchor.amount && c.verdict.kind === 'spend' && !pairIds.has(c.id)).length,
       outflows_at_least_0_8x_NOT_counted: inPeriod.filter((c) => c.amount >= 0.8 * anchor.amount && c.verdict.kind !== 'spend' && !pairIds.has(c.id)).length,
     }])
