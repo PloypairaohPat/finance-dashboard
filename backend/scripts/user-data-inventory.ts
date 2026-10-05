@@ -5,9 +5,10 @@
 //
 //  Per table, per user: rows, including soft-deleted ones (Transaction,
 //  Alert and Goal keep deleted rows, and deletion must remove those too).
-//  Then orphans: rows in Budget, BalanceSnapshot, Alert and Goal whose
-//  userId has no User row. Those four tables have no foreign key to User, so
-//  nothing stops an orphan; adding the key needs there to be none.
+//  Then orphans: rows in Budget, BalanceSnapshot, Alert, Goal and
+//  RecurringStream whose userId has no User row. All five have a foreign key to
+//  User now (user_foreign_keys, recurring_streams), so these should read 0; a
+//  non-zero count means a key is missing or was bypassed.
 //
 //    railway run npx tsx scripts/user-data-inventory.ts --allow-remote <db host>
 // ─────────────────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ import { connectReadOnly, redact } from './lib/read-only-db'
 import { NON_DEMO_TABLES } from './lib/non-demo-baseline'
 
 const SOFT_DELETING = new Set(['Transaction', 'Alert', 'Goal'])
-const NO_FOREIGN_KEY = ['Budget', 'BalanceSnapshot', 'Alert', 'Goal']
+const ORPHAN_CHECKED = ['Budget', 'BalanceSnapshot', 'Alert', 'Goal', 'RecurringStream']
 
 async function main() {
   const db = await connectReadOnly('user-data-inventory')
@@ -40,7 +41,7 @@ async function main() {
   }
 
   console.log('\nOrphans (no User row for their userId):')
-  for (const table of NO_FOREIGN_KEY) {
+  for (const table of ORPHAN_CHECKED) {
     const [r] = await db.prisma.$queryRawUnsafe<Array<{ n: number }>>(
       `SELECT count(*)::int AS n FROM "${table}" t WHERE NOT EXISTS (SELECT 1 FROM "User" u WHERE u.id = t."userId")`,
     )

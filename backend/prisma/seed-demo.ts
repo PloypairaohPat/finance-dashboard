@@ -66,6 +66,7 @@ import {
   type DemoTransaction,
 } from './demo-dataset'
 import { entityColumns } from '../src/lib/entityColumns'
+import { CREATE_ORDER, WIPE_ORDER } from './demo-tables'
 import { connectReadOnly, hasFlag, makeRefuse, redact, resolveConnection } from '../scripts/lib/read-only-db'
 import {
   NON_DEMO_TABLES, diffBaselines, summariseBaseline, takeBaseline, type BaselineEntry, type RawQuerier,
@@ -100,10 +101,7 @@ const TX_TIMEOUT_MS = 60_000
 /** How long to wait for a connection to start the transaction on. */
 const TX_MAX_WAIT_MS = 15_000
 
-/** The tables the wipe clears, in foreign-key-safe order. */
-const WIPE_ORDER = ['subscriptionMark', 'transaction', 'account', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const
-/** The tables the rebuild fills, each with one createMany. Marks after the transactions they anchor on. */
-const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction', 'subscriptionMark'] as const
+// WIPE_ORDER and CREATE_ORDER live in demo-tables.ts, where a test checks them.
 
 /**
  * Round trips inside the transaction. An interactive transaction pays one per
@@ -279,6 +277,8 @@ function plannedCounts(plan: Plan): Record<string, number> {
     Alert: 0,
     Goal: plan.goal.length,
     SubscriptionMark: plan.subscriptionMark.length,
+    // The demo seeds no recurring streams until M7.6 PR 5; the wipe clears any.
+    RecurringStream: 0,
   }
 }
 

@@ -5,7 +5,7 @@ import { encrypt, decrypt } from '../utils/encrypt'
 import { syncTransactions } from './plaidSync'
 import { captureBalanceSnapshots } from './networth.service'
 import { ensureUser } from './user.service'
-import { removeItemAtPlaid } from './plaidItems.service'
+import { removeItemAtPlaid, removePlaidItemRows } from './plaidItems.service'
 import { classifyPlaidError } from '../utils/plaidErrors'
 
 function sanitizeAccountName(name: string): string {
@@ -246,8 +246,8 @@ export async function exchangePublicToken(
 /** Remove a just-exchanged Item at Plaid, then its row. If Plaid refuses, keep the row and report the id. */
 async function discardNewItem(plaidClient: PlaidApi, rowId: string, encryptedToken: string, itemId: string) {
   if (await removeOrReport(plaidClient, encryptedToken, itemId)) {
-    await prisma.account.deleteMany({ where: { plaidItemId: rowId } })
-    await prisma.plaidItem.delete({ where: { id: rowId } })
+    // The same list of an Item's dependents unlink uses.
+    await removePlaidItemRows(rowId)
   } else {
     await prisma.plaidItem.update({ where: { id: rowId }, data: { status: 'error', lastErrorAt: new Date() } })
   }
