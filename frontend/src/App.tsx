@@ -181,7 +181,7 @@ export default function App() {
   // The money period `categories` covers (M7.2), from /categories.
   const [categoriesPeriod, setCategoriesPeriod] = useState<PeriodInfo | null>(null);
   // Bumped whenever synced bank data changes — after a successful Sync (button,
-  // auto-sync, Live Balances) and after linking a bank. SyncProvider hands it
+  // auto-sync, Reconnect) and after linking a bank. SyncProvider hands it
   // to every view that shows synced data so each re-fetches (M7.1 stage 4).
   const [syncVersion, setSyncVersion] = useState(0);
   // Shown next to the Sync button on every route, e.g. a demo-mode refusal.
@@ -198,7 +198,6 @@ export default function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [syncing,        setSyncing]        = useState(false)
   const [updateLinkToken, setUpdateLinkToken] = useState<string | null>(null)
-  const [updatingBalance, setUpdatingBalance] = useState(false)
   const hasAutoSynced = useRef(false)
 
   const isMobile = useMediaQuery("(max-width: 640px)")
@@ -470,12 +469,11 @@ export default function App() {
     },
   });
 
-  // ── Update mode — adds balance product to existing Item ──────────
+  // ── Update mode for one Item: Reconnect, or adding accounts to it ──
   const onUpdateSuccess = useCallback(
     async (_publicToken: string, _metadata: PlaidLinkOnSuccessMetadata) => {
       // In update mode the access_token is unchanged — no token exchange needed.
       setUpdateLinkToken(null)
-      setUpdatingBalance(false)
       await triggerRefresh()
     },
     [triggerRefresh]
@@ -486,41 +484,12 @@ export default function App() {
     onSuccess: onUpdateSuccess,
     onExit: () => {
       setUpdateLinkToken(null)
-      setUpdatingBalance(false)
     },
   })
 
   useEffect(() => {
     if (updateLinkToken && readyUpdate) openUpdate()
   }, [updateLinkToken, readyUpdate, openUpdate])
-
-  const startBalanceUpdate = useCallback(async () => {
-    setUpdatingBalance(true)
-    try {
-      setSyncNotice(null)
-      const res  = await authFetch(`${API_URL}/create-update-link-token`, { method: 'POST' })
-      // Not data.error alone: a blocked demo write is HTTP 200 { demo: true, ok: false }
-      // with no link_token, which used to leave the button stuck on "opening…".
-      const result = await readWriteResult(res)
-      if (!result.ok) {
-        if (result.demo) {
-          setSyncNotice(result.message)
-          setUpdatingBalance(false)
-          return
-        }
-        throw new Error(result.message)
-      }
-      const linkToken = (result.data as { link_token?: string } | null)?.link_token
-      if (!linkToken) throw new Error('No link token returned')
-      setUpdateLinkToken(linkToken)
-    } catch (e: any) {
-      console.error('Balance update failed:', e.message)
-      // Next to the header buttons, which are on every route — the connect
-      // panel's error slot only exists on Overview.
-      setSyncNotice(`Live Balances failed: ${e.message}`)
-      setUpdatingBalance(false)
-    }
-  }, [authFetch])
 
   // Update mode for one Item: Reconnect (a duplicate link), or add accounts
   // to it (the "same login" answer). Reuses the update flow above, whose
@@ -617,24 +586,6 @@ export default function App() {
               }}
             >
               {syncing ? "syncing…" : "↻ Sync"}
-            </button>
-          )}
-          {connected && (
-            <button
-              onClick={startBalanceUpdate}
-              disabled={updatingBalance}
-              title="Re-authenticate with your bank to enable real-time balance fetching"
-              style={{
-                background: "transparent",
-                border: `1px solid ${updatingBalance ? "#f59e0b40" : "#333"}`,
-                color: updatingBalance ? "#f59e0b" : "#666",
-                padding: "4px 12px", borderRadius: "4px",
-                cursor: updatingBalance ? "not-allowed" : "pointer",
-                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace",
-                transition: "color 0.2s, border-color 0.2s",
-              }}
-            >
-              {updatingBalance ? "opening…" : "⚡ Live Balances"}
             </button>
           )}
           {/* Sync's outcome when it didn't simply work: a demo-mode refusal or a

@@ -6,7 +6,7 @@ import useMediaQuery from "./useMediaQuery"
 //
 //  Deliberately minimal for now: background, width, and a titled header.
 //  The app header (AppHeader: word-mark, alerts bell, Exit demo / UserButton)
-//  renders above <Routes> since stage 3; its Link/Sync/Live Balances buttons
+//  renders above <Routes> since stage 3; its Link/Sync buttons
 //  show on Overview only. Stage 4 replaces it with the responsive nav.
 // ─────────────────────────────────────────────────────────────────
 

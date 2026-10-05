@@ -4,7 +4,7 @@ import { createContext, ReactNode, useContext } from "react"
 //  SyncProvider — tells every view when bank data has changed.
 //
 //  App owns a counter and bumps it after anything that pulls new data from
-//  the bank: the Sync button, the auto-sync, Live Balances (which ends in a
+//  the bank: the Sync button, the auto-sync, Reconnect (which ends in a
 //  sync), and linking a bank. This provider, mounted above <Routes>, hands
 //  that number to every view.
 //

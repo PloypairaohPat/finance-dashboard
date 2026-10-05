@@ -8,7 +8,7 @@ import { TABS } from "./tabs"
 // ─────────────────────────────────────────────────────────────────
 //  AppHeader — the app-level header and nav, rendered above <Routes>.
 //
-//  On every route: the word-mark, `syncActions` (Sync, Live Balances), the
+//  On every route: the word-mark, `syncActions` (Sync), the
 //  alerts bell, the account control (Exit demo or the Clerk user menu), and
 //  AppNav (a tab bar under the header on desktop, a bottom bar on mobile).
 //
