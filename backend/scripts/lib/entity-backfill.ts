@@ -84,8 +84,9 @@ export async function runBackfill(
       const plan = await planBackfill(tx)
       if (plan.rows.length !== expect) {
         throw new BackfillRefused(
-          `the dry run projected ${expect} row(s), but ${plan.rows.length} now need filling. ` +
-          'Something wrote in between: dry-run again and pass the new figure.',
+          `--expect ${expect}, but ${plan.rows.length} row(s) need filling. ` +
+          "Either the figure passed is not the dry run's, or rows changed since it ran " +
+          '(a sync may have written in between). Dry-run again and pass its "rows to fill" figure.',
         )
       }
       let updated = 0

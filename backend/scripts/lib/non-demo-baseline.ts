@@ -30,6 +30,7 @@ export const NON_DEMO_TABLES: ReadonlyArray<readonly [string, string]> = [
   ['BalanceSnapshot', 'userId'],
   ['Alert', 'userId'],
   ['Goal', 'userId'],
+  ['SubscriptionMark', 'userId'],
 ] as const
 
 export interface BaselineEntry {

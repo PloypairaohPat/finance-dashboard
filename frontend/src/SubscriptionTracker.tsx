@@ -13,7 +13,9 @@ const fmtInt = (n: number) =>
 
 const FREQ_LABEL: Record<Frequency, string> = {
   WEEKLY: "weekly", BIWEEKLY: "biweekly", SEMI_MONTHLY: "semi-monthly",
-  MONTHLY: "monthly", ANNUALLY: "annually", UNKNOWN: "—",
+  MONTHLY: "monthly", ANNUALLY: "annually",
+  // A marked subscription with one charge so far: no schedule, so no monthly cost yet.
+  UNKNOWN: "schedule unknown",
 }
 
 const card: React.CSSProperties = {
@@ -65,6 +67,27 @@ function StreamRow({ s }: { s: EnrichedStream }) {
             textTransform: "uppercase", letterSpacing: ".06em",
             flexShrink: 0,
           }}>dup</span>
+        )}
+        {/* Chips never shrink: the name ellipsizes first, so they stay readable at phone width. */}
+        {s.mark && (
+          <span title="You marked this as a subscription" style={{
+            fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
+            padding: "2px 6px", borderRadius: 3,
+            background: "rgba(74,158,255,.12)", color: "#4a9eff",
+            border: "1px solid rgba(74,158,255,.3)",
+            textTransform: "uppercase", letterSpacing: ".06em",
+            flexShrink: 0, whiteSpace: "nowrap",
+          }}>Marked by you</span>
+        )}
+        {s.status === "ended" && (
+          <span title="No charge for two billing periods: not counted in the totals" style={{
+            fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
+            padding: "2px 6px", borderRadius: 3,
+            background: "rgba(90,122,90,.15)", color: "#8ab88a",
+            border: "1px solid #253325",
+            textTransform: "uppercase", letterSpacing: ".06em",
+            flexShrink: 0, whiteSpace: "nowrap",
+          }}>Ended</span>
         )}
       </div>
       <div style={{ textAlign: "right" }}>
@@ -185,7 +208,7 @@ export default function SubscriptionTracker() {
         </div>
         {subscriptions.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No subscriptions detected yet.</div>
-        ) : subscriptions.map(s => <StreamRow key={s.merchant + s.lastDate} s={s} />)}
+        ) : subscriptions.map(s => <StreamRow key={s.key + (s.mark?.id ?? "")} s={s} />)}
       </div>
 
       {/* Bills */}
@@ -196,7 +219,7 @@ export default function SubscriptionTracker() {
         </div>
         {bills.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No bills detected yet.</div>
-        ) : bills.map(s => <StreamRow key={s.merchant + s.lastDate} s={s} />)}
+        ) : bills.map(s => <StreamRow key={s.key + (s.mark?.id ?? "")} s={s} />)}
       </div>
 
       {/* Upcoming */}
@@ -207,7 +230,7 @@ export default function SubscriptionTracker() {
         </div>
         {upcoming.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>Nothing due in the next two weeks.</div>
-        ) : upcoming.map(s => <UpcomingRow key={s.merchant + s.nextChargeDate} s={s} />)}
+        ) : upcoming.map(s => <UpcomingRow key={s.key + (s.mark?.id ?? "")} s={s} />)}
       </div>
     </div>
   )

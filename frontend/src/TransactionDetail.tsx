@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { readWriteResult } from "./lib/writeResult"
-import type { EnrichedTransaction, CategoryOption } from "./types"
+import type { EnrichedTransaction, CategoryOption, MarkMembership } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
 import { treatmentFor } from "./rowTreatment"
 
@@ -52,6 +52,48 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
       setSaveError(e.message)
     } finally {
       setSavingOverride(false)
+    }
+  }
+
+  // "Mark as subscription": where this row stands, from the server, which
+  // knows the series a mark covers. Null until loaded, or if it can't be
+  // read, which hides the block rather than offering a button that may be wrong.
+  const [membership, setMembership] = useState<MarkMembership | null>(null)
+  const [savingMark, setSavingMark] = useState(false)
+  const [markError, setMarkError] = useState<string | null>(null)
+
+  const loadMembership = React.useCallback(async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/subscriptions/marks/membership/${transaction.id}`)
+      setMembership(res.ok ? await res.json() : null)
+    } catch {
+      setMembership(null)
+    }
+  }, [apiFetch, transaction.id])
+
+  useEffect(() => { loadMembership() }, [loadMembership])
+
+  const saveMark = async (action: "mark" | "unmark") => {
+    if (!membership) return
+    setSavingMark(true)
+    try {
+      const res = action === "mark"
+        ? await apiFetch(`${API_URL}/subscriptions/marks`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ transactionId: transaction.id }),
+          })
+        : await apiFetch(`${API_URL}/subscriptions/marks/${(membership as { markId: string }).markId}`, {
+            method: "DELETE",
+          })
+      const result = await readWriteResult(res)
+      if (!result.ok) { setMarkError(result.message); return }
+      setMarkError(null)
+      await loadMembership()
+    } catch (e: any) {
+      setMarkError(e.message)
+    } finally {
+      setSavingMark(false)
     }
   }
 
@@ -220,6 +262,55 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
                 ? `You set this. Without it, we'd count it as ${(transaction.verdictBeforeOverride?.label ?? "").toLowerCase()} — tap again to go back to that.`
                 : `Counted as ${transaction.meaning.label.toLowerCase()}. Money you keep counts as income; money coming back reduces what you paid out.`}
             </div>
+          </div>
+        )}
+
+        {/* Mark as subscription. Only on settled spending (the server says which):
+            a pending row gets a new id when it posts, so a mark on it would be lost. */}
+        {membership && membership.state !== "unavailable" && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{
+              fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
+              color: "#5a7a5a", textTransform: "uppercase", letterSpacing: ".08em",
+              marginBottom: 6,
+            }}>
+              Subscription
+            </div>
+            {membership.state === "detected" ? (
+              <div style={{ fontSize: 12.5, color: "#8ab88a", lineHeight: 1.45 }}>
+                Detected automatically — it's on the Subscriptions tab.
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  aria-pressed={membership.state === "marked"}
+                  onClick={() => saveMark(membership.state === "marked" ? "unmark" : "mark")}
+                  disabled={savingMark}
+                  style={{
+                    width: "100%",
+                    background: membership.state === "marked" ? "rgba(74,158,255,.10)" : "#0d1510",
+                    border: `1px solid ${membership.state === "marked" ? "rgba(74,158,255,.35)" : "#253325"}`,
+                    color: membership.state === "marked" ? "#4a9eff" : "#8ab88a",
+                    padding: "8px 10px", borderRadius: 6,
+                    fontFamily: "inherit", fontSize: 12.5,
+                    cursor: savingMark ? "wait" : "pointer",
+                  }}
+                >
+                  {membership.state === "marked" ? "Marked as a subscription · Unmark" : "Mark as subscription"}
+                </button>
+                <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 6, lineHeight: 1.45 }}>
+                  {membership.state === "marked"
+                    ? "Tracked on the Subscriptions tab, through name changes and price changes. Unmarking removes only the mark."
+                    : "Track this charge on the Subscriptions tab, even when the merchant's name or price changes."}
+                </div>
+              </>
+            )}
+            {markError && (
+              <div style={{ fontSize: 11.5, color: "#e85555", marginTop: 6, lineHeight: 1.45 }}>
+                {membership.state === "marked" ? "Not unmarked: " : "Not marked: "}{markError}
+              </div>
+            )}
           </div>
         )}
 

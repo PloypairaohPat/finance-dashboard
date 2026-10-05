@@ -142,6 +142,8 @@ export type Frequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "SEMI_MONTHLY" | "AN
 export interface EnrichedStream {
   merchant: string
   cleanMerchant: string
+  /** Which merchant this is (merchantIdentity on the backend): stable across name variants. */
+  key: string
   kind: StreamKind
   category: string
   frequency: Frequency
@@ -153,7 +155,19 @@ export interface EnrichedStream {
   isDuplicate: boolean
   nextChargeDate: string | null
   daysUntilNextCharge: number | null
+  txIds: string[]
+  /** Set when the user marked it as a subscription. */
+  mark: { id: string } | null
+  /** "ended": a marked subscription whose charges stopped. Shown, but out of the totals. */
+  status: "active" | "ended"
 }
+
+/** Where one transaction stands with "Mark as subscription" (GET /subscriptions/marks/membership/:id). */
+export type MarkMembership =
+  | { state: "marked"; markId: string }
+  | { state: "detected" }
+  | { state: "markable" }
+  | { state: "unavailable"; reason: string }
 
 export interface SubscriptionAnalysis {
   subscriptions: EnrichedStream[]

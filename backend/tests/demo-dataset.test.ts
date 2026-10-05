@@ -40,6 +40,8 @@ import {
   type DemoTransaction,
 } from '../prisma/demo-dataset'
 import { mapPlaidCategory } from '../src/lib/categoryMap'
+import { normalizeMerchant } from '../src/lib/merchantIdentity'
+import { PRICE_UP_LOOKBACK_DAYS } from '../src/services/alerts/detectors/subscriptionPriceUp'
 
 const NOW = new Date('2026-09-15T12:00:00.000Z')
 const ds = buildDemoDataset(NOW)
@@ -559,6 +561,28 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     }
     const [, , prev, last] = charges.map((t) => t.amount)
     expect((last - prev) / prev).toBeGreaterThan(0.05)
+  },
+  'subscription-mark-follows-price': (rows) => {
+    // Four monthly charges and a one-off, one merchant entity throughout.
+    expect(rows).toHaveLength(5)
+    const [g1, g2, oneOff, g3, g4] = rows
+    for (const t of rows) {
+      expect(t.merchantEntityId).toBe('demo-entity-ironline')
+      expect(t.counterparties).toEqual([expect.objectContaining({ type: 'merchant', entityId: 'demo-entity-ironline' })])
+      expect(t.expected).toEqual(expect.objectContaining({ kind: 'spend', rule: 7 }))
+    }
+    // Names detection by name keeps apart.
+    expect(new Set([g1, g2, g3, g4].map((t) => normalizeMerchant(t.name))).size).toBe(4)
+    // Monthly, give or take a day; the one-off halfway between two charges.
+    const day = (t: { date: string }) => Date.parse(`${t.date}T00:00:00Z`) / 86_400_000
+    expect([day(g2) - day(g1), day(g3) - day(g2), day(g4) - day(g3)]).toEqual([30, 30, 30])
+    expect(day(oneOff) - day(g2)).toBe(15)
+    // A rise beyond detection's ±20% amount tolerance, and recent enough for the bell.
+    expect((g4.amount - g3.amount) / g3.amount).toBeGreaterThan(0.2)
+    const built = Date.UTC(ds.now.getUTCFullYear(), ds.now.getUTCMonth(), ds.now.getUTCDate()) / 86_400_000
+    expect(built - day(g4)).toBeLessThan(PRICE_UP_LOOKBACK_DAYS)
+    // The seed marks the first charge.
+    expect(ds.marks).toEqual([g1.plaidTransactionId])
   },
   'd1-memo-rent-same-day': ([out, inflow]) => {
     expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')

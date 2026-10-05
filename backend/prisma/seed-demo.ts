@@ -31,10 +31,19 @@
  *     runs it first.
  *
  * Every delete is `where: { userId: DEMO_USER_ID }`, where DEMO_USER_ID is the
- * literal 'demo-user' (an undefined here would mean NO filter). No foreign key
- * cascades: all five are ON DELETE RESTRICT, so a delete can only ever fail,
- * never spread. Every write is a create, never an upsert or update of anyone
- * else's row; the one upsert is the demo User row itself.
+ * literal 'demo-user' (an undefined here would mean NO filter). One foreign key
+ * cascades: SubscriptionMark -> Transaction is ON DELETE CASCADE, so deleting the
+ * demo user's transactions would delete marks on them. It can't reach another
+ * user: that key is (transactionId, userId) -> Transaction(id, userId), so the
+ * database refuses any mark whose user isn't its transaction's user, and every
+ * mark on a demo transaction is the demo user's own. (POST /subscriptions/marks
+ * also checks ownership before writing; the key is what makes this hold even if
+ * that check were wrong.) The wipe deletes the demo user's marks explicitly
+ * first anyway, so the cascade has nothing left to do. Every other foreign key
+ * is ON DELETE RESTRICT, so a delete can only ever fail, never spread. Every
+ * write is a create, never an upsert or update of anyone else's row; the one
+ * upsert is the demo User row itself. The non-demo baseline, checked inside
+ * the transaction, would catch a cascade that reached anyone else.
  *
  * No alerts are seeded. The detectors produce real ones from this data on the
  * first bell open. The old seed inserted kinds no detector owns, which nothing
@@ -92,9 +101,9 @@ const TX_TIMEOUT_MS = 60_000
 const TX_MAX_WAIT_MS = 15_000
 
 /** The tables the wipe clears, in foreign-key-safe order. */
-const WIPE_ORDER = ['transaction', 'account', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const
-/** The tables the rebuild fills, each with one createMany. Transactions last: the largest. */
-const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction'] as const
+const WIPE_ORDER = ['subscriptionMark', 'transaction', 'account', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const
+/** The tables the rebuild fills, each with one createMany. Marks after the transactions they anchor on. */
+const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction', 'subscriptionMark'] as const
 
 /**
  * Round trips inside the transaction. An interactive transaction pays one per
@@ -134,6 +143,7 @@ interface Plan {
   balanceSnapshot: Prisma.BalanceSnapshotCreateManyInput[]
   goal: Prisma.GoalCreateManyInput[]
   transaction: Prisma.TransactionCreateManyInput[]
+  subscriptionMark: Prisma.SubscriptionMarkCreateManyInput[]
 }
 
 /**
@@ -183,9 +193,13 @@ function buildPlan(now: Date): Plan {
     }
   })
 
+  const transactionId = new Map<string, string>()
   const transaction = dataset.transactions.map((t: DemoTransaction) => {
     const raw = toRawJson(t, plaidAccountId.get(t.accountKey)!)
+    const id = randomUUID()
+    transactionId.set(t.plaidTransactionId, id)
     return {
+      id,
       userId: DEMO_USER_ID,
       accountId: accountId.get(t.accountKey)!,
       plaidTransactionId: t.plaidTransactionId,
@@ -243,7 +257,14 @@ function buildPlan(now: Date): Plan {
     },
   ]
 
-  return { dataset, plaidItem, account, budget, balanceSnapshot, goal, transaction }
+  // Demo visitors can't mark (demo mode is read-only), so the seed does.
+  const subscriptionMark = dataset.marks.map((plaidTransactionId) => {
+    const anchor = transactionId.get(plaidTransactionId)
+    if (!anchor) throw new Error(`the demo marks ${plaidTransactionId}, which the dataset doesn't contain`)
+    return { userId: DEMO_USER_ID, transactionId: anchor }
+  })
+
+  return { dataset, plaidItem, account, budget, balanceSnapshot, goal, transaction, subscriptionMark }
 }
 
 /** Rows the plan creates, per table, in the same shape as demoCounts(). */
@@ -257,6 +278,7 @@ function plannedCounts(plan: Plan): Record<string, number> {
     BalanceSnapshot: plan.balanceSnapshot.length,
     Alert: 0,
     Goal: plan.goal.length,
+    SubscriptionMark: plan.subscriptionMark.length,
   }
 }
 
