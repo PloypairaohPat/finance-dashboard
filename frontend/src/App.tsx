@@ -408,15 +408,41 @@ export default function App() {
     }
   }, [demoMode, lastSyncedAt, connected, triggerRefresh])
 
-  const onSuccess = useCallback(
-    async (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => {
-      console.log("✅ Plaid Link success!", metadata.institution);
+  // A link the server stopped before (or right after) exchange: the bank is
+  // already connected. "duplicate" — the same accounts: Reconnect instead.
+  // "same-institution" — other accounts at that bank: ask whether it's a
+  // different login. The public token is kept for the "yes" answer; it stays
+  // valid for 30 minutes and nothing is billed until it's exchanged.
+  const [linkPrompt, setLinkPrompt] = useState<
+    | { kind: "duplicate"; itemId: string; institutionName: string | null }
+    | { kind: "same-institution"; itemId: string; institutionName: string | null; publicToken: string; metadata: PlaidLinkOnSuccessMetadata }
+    | null
+  >(null);
+
+  const exchange = useCallback(
+    async (public_token: string, metadata: PlaidLinkOnSuccessMetadata, confirmedNewLogin = false) => {
+      setLinkPrompt(null);
       try {
         const res  = await authFetch(`${API_URL}/exchange_public_token`, {
           method: "POST",
-          body: JSON.stringify({ public_token }),
+          // Link's metadata lets the server refuse a duplicate before anything
+          // is billed. Names, masks and subtypes only.
+          body: JSON.stringify({
+            public_token,
+            institution_id: metadata.institution?.institution_id ?? null,
+            accounts: metadata.accounts.map((a) => ({ name: a.name, mask: a.mask, subtype: a.subtype })),
+            confirmedNewLogin,
+          }),
         });
-        const data = await res.json() as { error?: string };
+        const data = await res.json() as { error?: string; code?: string; itemId?: string; institutionName?: string | null };
+        if (res.status === 409 && data.itemId && data.code === "DUPLICATE_ITEM") {
+          setLinkPrompt({ kind: "duplicate", itemId: data.itemId, institutionName: data.institutionName ?? null });
+          return;
+        }
+        if (res.status === 409 && data.itemId && data.code === "SAME_INSTITUTION") {
+          setLinkPrompt({ kind: "same-institution", itemId: data.itemId, institutionName: data.institutionName ?? null, publicToken: public_token, metadata });
+          return;
+        }
         if (data.error) throw new Error(data.error);
         setConnected(true);
         fetchData();
@@ -429,6 +455,11 @@ export default function App() {
       }
     },
     [authFetch, fetchData]
+  );
+
+  const onSuccess = useCallback(
+    (public_token: string, metadata: PlaidLinkOnSuccessMetadata) => exchange(public_token, metadata),
+    [exchange]
   );
 
   const { open, ready } = usePlaidLink({
@@ -488,6 +519,26 @@ export default function App() {
       // panel's error slot only exists on Overview.
       setSyncNotice(`Live Balances failed: ${e.message}`)
       setUpdatingBalance(false)
+    }
+  }, [authFetch])
+
+  // Update mode for one Item: Reconnect (a duplicate link), or add accounts
+  // to it (the "same login" answer). Reuses the update flow above, whose
+  // success re-syncs; sync creates any account the user added.
+  const startItemUpdate = useCallback(async (itemId: string, accountSelection: boolean) => {
+    setLinkPrompt(null)
+    try {
+      const res = await authFetch(`${API_URL}/create-update-link-token`, {
+        method: 'POST',
+        body: JSON.stringify({ itemId, accountSelection }),
+      })
+      const result = await readWriteResult(res)
+      if (!result.ok) throw new Error(result.message)
+      const token = (result.data as { link_token?: string } | null)?.link_token
+      if (!token) throw new Error('No link token returned')
+      setUpdateLinkToken(token)
+    } catch (e: any) {
+      setError(`Couldn't open your bank's connection: ${e.message}`)
     }
   }, [authFetch])
 
@@ -692,6 +743,39 @@ export default function App() {
             }} onClick={fetchData}>
               ↻ Refresh Data
             </button>
+          )}
+
+          {linkPrompt && (
+            <div role="alert" data-testid="link-prompt" style={{
+              marginTop: 16, padding: "12px 14px", borderRadius: 8,
+              background: "#0d1510", border: "1px solid #253325", color: "#d4e8d4",
+              fontSize: 13, lineHeight: 1.5,
+            }}>
+              {linkPrompt.kind === "duplicate" ? (
+                <>
+                  <div>{linkPrompt.institutionName ?? "This bank"} is already connected, with these accounts. Reconnect it instead of linking it again.</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                    <button type="button" style={styles.connectBtn as CSSProperties}
+                      onClick={() => startItemUpdate(linkPrompt.itemId, false)}>Reconnect</button>
+                    <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
+                      onClick={() => setLinkPrompt(null)}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>You already have {linkPrompt.institutionName ?? "this bank"} connected. Is this a different login?</div>
+                  <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 4 }}>
+                    If it's the same login with other accounts, we'll add them to the connection you have.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                    <button type="button" style={styles.connectBtn as CSSProperties}
+                      onClick={() => exchange(linkPrompt.publicToken, linkPrompt.metadata, true)}>Yes, a different login</button>
+                    <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
+                      onClick={() => startItemUpdate(linkPrompt.itemId, true)}>No, same login</button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {error && <div style={styles.error as CSSProperties}>⚠ {error}</div>}

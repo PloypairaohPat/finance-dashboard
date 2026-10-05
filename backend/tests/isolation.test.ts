@@ -756,16 +756,16 @@ describe('E. Unlink — /item/remove must actually reach Plaid', () => {
     expect(itemRemove().mock.calls.length).toBe(1)
   })
 
-  it('re-linking an institution removes the superseded Item at Plaid', async () => {
-    // Re-link is a second path that drops a PlaidItem. Before M7.0 it deleted
-    // the old row locally and never called /item/remove, so every reconnect
-    // silently orphaned a billable Item — the same financial bug as above.
+  it('linking an institution again never removes the existing Item', async () => {
+    // Until this change a new link at a known institution removed the old Item
+    // at Plaid and deleted its rows (and everything the user set on them). Now
+    // a duplicate is refused or the NEW Item removed (plaid-link-duplicates
+    // test); an existing Item is never touched by a link.
     const institutionId = 'ins_relink_regression'
-    const oldRawToken = 'old-token-superseded-by-relink'
+    const oldRawToken = 'old-token-kept-by-relink'
     const { item, account, tx } = await seedThrowaway(USER_A, oldRawToken, institutionId)
     const ids = { item: item.id, account: account.id, tx: tx.id }
 
-    // The re-link branch keys off institutionId, which comes from itemGet.
     itemGet().mockResolvedValueOnce({ data: { item: { institution_id: institutionId } } })
     withFreshExchangedItem('relink-regression-item')
 
@@ -775,16 +775,8 @@ describe('E. Unlink — /item/remove must actually reach Plaid', () => {
       .send({ public_token: 'public-test-relink' })
 
     expect(res.status).toBe(200)
-    expect(itemRemove().mock.calls.length).toBe(1)
-    expect(itemRemove().mock.calls[0][0]).toEqual({ access_token: oldRawToken })
-    expect(await rowsExist(ids)).toEqual({ item: false, account: false, tx: false })
-
-    // The replacement item exists and belongs to the same user.
-    const replacement = await prisma.plaidItem.findFirst({
-      where: { userId: USER_A, institutionId },
-    })
-    expect(replacement).not.toBeNull()
-    expect(replacement!.id).not.toBe(item.id)
+    expect(itemRemove().mock.calls.length).toBe(0)
+    expect(await rowsExist(ids)).toEqual({ item: true, account: true, tx: true })
   })
 
   it('does not remove another user’s Item at Plaid when re-linking', async () => {

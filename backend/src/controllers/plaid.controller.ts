@@ -6,6 +6,8 @@ import {
   createUpdateLinkToken,
   exchangePublicToken,
   triggerSync,
+  LinkRefused,
+  type LinkAccount,
 } from '../services/plaid.service'
 import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
@@ -60,6 +62,15 @@ function logPlaidWebhook({ outcome, webhook_type, webhook_code, item_id, reason 
   else console.log(line)
 }
 
+/** Link's onSuccess metadata, as the browser sent it. Untrusted: a cost and UX guard only. */
+function linkMetadata(body: any) {
+  const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
+  const accounts: LinkAccount[] = Array.isArray(body?.accounts)
+    ? body.accounts.slice(0, 50).map((a: any) => ({ name: str(a?.name), mask: str(a?.mask), subtype: str(a?.subtype) }))
+    : []
+  return { institutionId: str(body?.institution_id), accounts, confirmedNewLogin: body?.confirmedNewLogin === true }
+}
+
 export function makePlaidController(
   plaidClient:  PlaidApi,
   products:     Products[],
@@ -82,7 +93,10 @@ export function makePlaidController(
       try {
         const userId = getUserId(req)
         const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : undefined
-        const link_token = await createUpdateLinkToken(plaidClient, userId, countryCodes, itemId)
+        // Account selection: the "same login, other accounts" answer to a
+        // second link at a bank the user already has.
+        const accountSelection = req.body?.accountSelection === true
+        const link_token = await createUpdateLinkToken(plaidClient, userId, countryCodes, itemId, { accountSelection })
         console.log(`✅ update link_token created for user: ${userId}`)
         res.json({ link_token })
       } catch (err: any) {
@@ -95,9 +109,13 @@ export function makePlaidController(
     async exchangeToken(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const result = await exchangePublicToken(plaidClient, req.body.public_token, userId)
+        const result = await exchangePublicToken(plaidClient, req.body.public_token, userId, linkMetadata(req.body))
         res.json({ success: true, institutionName: result.institutionName })
       } catch (err: any) {
+        if (err instanceof LinkRefused) {
+          res.status(409).json({ error: err.message, code: err.code, itemId: err.itemId, institutionName: err.institutionName })
+          return
+        }
         console.error('❌ exchangeToken:', err.response?.data || err.message)
         res.status(500).json({ error: 'Failed to exchange token' })
       }
