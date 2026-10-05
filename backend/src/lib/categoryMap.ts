@@ -24,7 +24,6 @@ export const CATEGORY_COLORS: Record<DisplayCategory, string> = {
 
 // Prefix-matching map — order matters (more specific prefixes first)
 const PREFIX_MAP: Array<[string, DisplayCategory]> = [
-  ["RENT_AND_UTILITIES_UTILITIES",  "Bills & Utilities"],
   ["RENT_AND_UTILITIES",            "Bills & Utilities"],
   ["HOME_IMPROVEMENT",              "Housing"],
   ["FOOD_AND_DRINK",                "Food & Dining"],

@@ -567,7 +567,7 @@ export function buildDemoDataset(now: Date): DemoDataset {
     // the pair must be found structurally, not by category.
     const outDetailed = back === 3 ? 'TRANSFER_OUT_ACCOUNT_TRANSFER' : 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
     const inDetailed =
-      back === 4 ? 'INCOME_OTHER_INCOME'
+      back === 4 ? 'INCOME_OTHER'
       : back === 3 ? 'OTHER_OTHER'
       : back === 2 ? 'TRANSFER_IN_ACCOUNT_TRANSFER'
       : 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
@@ -739,7 +739,7 @@ export function buildDemoDataset(now: Date): DemoDataset {
 
       const e = add({
         slug: 'r3-cashback', day: 6, account: 'card', amount: -25,
-        name: 'CASHBACK REWARD', detailed: 'INCOME_OTHER_INCOME', cps: [CP.demoBank],
+        name: 'CASHBACK REWARD', detailed: 'INCOME_OTHER', cps: [CP.demoBank],
         confidence: 'MEDIUM', expected: { kind: 'credit_inflow_not_income', rule: 3 },
       })
       addCase('refund-bank-counterparty-not-income', 'refund', 'near-miss-outside',
