@@ -43,7 +43,7 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 ## Features
 
 ### Banking & sync
-- **Plaid Production** integration with Wells Fargo — `/transactions/sync`, Recurring Transactions product, cached balances from `/accounts/get`
+- **Plaid Production** integration with Wells Fargo — `/transactions/sync` and cached balances from `/accounts/get`; Recurring Transactions is enabled, and no page load calls it
 - **Daily cron sync** via `node-cron` — runs at 06:00 UTC, syncs transactions, snapshots balances
 - **Cursor pagination** on transactions — handles unbounded history without re-fetching
 - **Incremental updates only** — persisted Plaid sync cursor per item
@@ -51,7 +51,7 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 
 ### Intelligence
 - **7-detector Smart Alerts engine** — large transactions, new merchants, monthly pace, budget exceeded, low balance, missed paycheck, subscription price-up
-- **Subscription detection** from Plaid recurring streams + heuristic confirmation
+- **Subscription detection** from your own transactions, plus "Mark as subscription"; Plaid's recurring streams arrive as stored data in M7.6 (`docs/m7.6-audit.md`)
 - **Composite Financial Health Score** (0–100) weighted across savings rate, spend control, debt load, growth trend
 - **Goal tracking** — 4 types (savings, emergency fund, vacation/purchase, debt payoff)
 - **Monthly insights** — summary, runway, top merchants, largest purchases
@@ -74,7 +74,6 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
                                   │  (Wells Fargo)  │
                                   └────────┬────────┘
                                            │ /transactions/sync
-                                           │ /transactions/recurring/get
                                            │ /accounts/get
                                            ▼
 ┌──────────────┐   HTTPS    ┌──────────────────────────────┐    SQL    ┌──────────────┐
@@ -255,8 +254,7 @@ GET    /cashflow                 income vs expenses by month
 GET    /net-worth                assets / liabilities / net by month
 GET    /insights                 summary, runway, top merchants, largest
 
-# Recurring + subscriptions
-GET    /recurring                Plaid recurring streams
+# Subscriptions
 GET    /subscriptions            detected subscriptions + upcoming bills
 
 # Budgets

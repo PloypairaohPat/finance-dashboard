@@ -19,18 +19,16 @@
 //  deposits, and more days since the last than the longest recent gap plus a
 //  3-day grace.
 //
-//  Price rises. The existing subscription analysis is run with Plaid's stream
-//  call STUBBED to return nothing, i.e. from stored data alone, which is all a
-//  detector may read (detectors run when the bell opens; no Plaid calls). Pass
-//  --with-plaid to also run it with the real Plaid client, for comparison;
-//  that decrypts each Item's token in memory, so it needs `railway run`.
+//  Price rises. The subscription analysis, from stored data alone, which is all
+//  a detector may read. (It took a Plaid client until M7.6 PR 0, which removed
+//  the never-productive Plaid half; so did this script's old --with-plaid.)
 //
 //  Also counted: alerts of either kind already stored (expected: none).
 //
-//    railway run npx tsx scripts/dead-detectors-exposure.ts --allow-remote <db host> [--with-plaid]
+//    railway run npx tsx scripts/dead-detectors-exposure.ts --allow-remote <db host>
 // ─────────────────────────────────────────────────────────────────
 
-import { connectReadOnly, hasFlag, redact } from './lib/read-only-db'
+import { connectReadOnly, redact } from './lib/read-only-db'
 
 const DAY_MS = 86_400_000
 const GRACE_DAYS = 3
@@ -58,16 +56,10 @@ function cadence(gaps: number[]): string {
   return spread <= 6 ? shape : `${shape}, irregular`
 }
 
-/** Plaid's recurring call, answering with no streams: the analysis from stored data alone. */
-const storedOnlyClient = {
-  transactionsRecurringGet: async () => ({ data: { outflow_streams: [], inflow_streams: [] } }),
-}
-
 async function main() {
-  const withPlaid = hasFlag('with-plaid')
   const db = await connectReadOnly('dead-detectors-exposure')
   console.log(`\nReading ${db.database} on ${db.host} via ${db.envName} — read-only (${db.writeRefusedWith}).`)
-  console.log(`Counts and labels only.${withPlaid ? ' --with-plaid: also calling Plaid read-only, per Item.' : ''}\n`)
+  console.log('Counts and labels only.\n')
 
   const { classifyWindow } = await import('../src/services/classification.service')
   const { getPeriodStartDay } = await import('../src/services/user.service')
@@ -131,9 +123,9 @@ async function main() {
     perPayer(['INCOME_CONTRACTOR'], 'Contractor income (classifier income AND INCOME_CONTRACTOR), per payer:')
 
     // ── price rises, from stored data alone ───────────────────────
-    const report = async (name: string, client: any) => {
+    const report = async (name: string) => {
       try {
-        const a = await fetchSubscriptionAnalysis(userId, client)
+        const a = await fetchSubscriptionAnalysis(userId)
         const streams = [...a.subscriptions, ...a.bills]
         return {
           source: name,
@@ -147,8 +139,7 @@ async function main() {
         return { source: name, subscriptions: '—', bills: '—', with_price_change: '—', rises: `failed: ${redact(String(e?.response?.data?.error_code ?? e?.code ?? 'error'))}`, rises_among_subscriptions_only: '—' }
       }
     }
-    const sources = [await report('stored data only', storedOnlyClient)]
-    if (withPlaid) sources.push(await report('with Plaid streams', (await import('../src/lib/plaidClient')).plaidClient))
+    const sources = [await report('stored data only')]
     table('Recurring streams and price rises (subscriptionPriceUp\'s input):', sources)
   }
 

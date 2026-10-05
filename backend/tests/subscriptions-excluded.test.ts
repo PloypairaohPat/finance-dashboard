@@ -15,7 +15,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
-import { plaidClient } from '../src/lib/plaidClient'
 import { fetchSubscriptionAnalysis } from '../src/services/subscriptions.service'
 
 /**
@@ -25,7 +24,7 @@ import { fetchSubscriptionAnalysis } from '../src/services/subscriptions.service
  * bill-sized amount, so `bills` is precisely where the bug lived.
  */
 async function detectedMerchants(): Promise<string[]> {
-  const analysis = await fetchSubscriptionAnalysis(USER, plaidClient)
+  const analysis = await fetchSubscriptionAnalysis(USER)
   return [...analysis.subscriptions, ...analysis.bills].map((s) => s.merchant.toUpperCase())
 }
 

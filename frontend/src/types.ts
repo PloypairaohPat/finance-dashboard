@@ -31,22 +31,6 @@ export interface CategorySpend {
   total: number
 }
 
-export interface RecurringStream {
-  merchantName: string
-  frequency: string
-  lastAmount: number
-  averageAmount: number
-  lastDate: string | null
-  status: string
-  category: string | null
-}
-
-export interface RecurringData {
-  outflow: RecurringStream[]
-  inflow: RecurringStream[]
-  monthlyOutflow: number
-}
-
 // M7.2 — one money period, as returned by the backend (src/lib/period.ts).
 export interface PeriodInfo {
   /** Start date, YYYY-MM-DD. */
