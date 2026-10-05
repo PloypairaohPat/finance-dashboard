@@ -9,7 +9,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
-import { PlaidApi } from 'plaid'
 import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
@@ -196,7 +195,7 @@ describe('a marked subscription', () => {
   it('stays in the tab whenever it is in the bell', async () => {
     for (const userId of [gymUser, bothUser, anchorOnlyUser, endedUser, lookUser]) {
       const bell = await analyseStoredSubscriptions(userId)
-      const tab = await fetchSubscriptionAnalysis(userId, new PlaidApi() as PlaidApi)
+      const tab = await fetchSubscriptionAnalysis(userId)
       const tabKeys = new Set([...tab.subscriptions, ...tab.bills].map((s) => `${s.key}|${s.mark?.id ?? ''}`))
       for (const s of [...bell.subscriptions, ...bell.bills]) expect(tabKeys.has(`${s.key}|${s.mark?.id ?? ''}`), userId).toBe(true)
     }

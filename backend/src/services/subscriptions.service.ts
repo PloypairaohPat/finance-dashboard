@@ -1,10 +1,8 @@
-import type { PlaidApi } from "plaid"
 import prisma from "../lib/prisma"
-import { fetchRecurring } from "./recurring.service"
 import { mapPlaidCategory } from "../lib/categoryMap"
 import { classifyWindow } from "./classification.service"
 import { getPeriodStartDay } from "./user.service"
-import { merchantIdentity, normalizeMerchant } from "../lib/merchantIdentity"
+import { merchantIdentity } from "../lib/merchantIdentity"
 import { walkSeries, type Period } from "../lib/subscriptionSeries"
 
 export type StreamKind = "subscription" | "bill" | "income"
@@ -206,23 +204,19 @@ function predictNextCharge(stream: EnrichedStream, today: Date) {
 
 // — — — Main entry — — —
 //
-// Two analyses, one composed from the other (M7.3):
-//
 //   analyseStoredSubscriptions  — stored data only. What the bell reads: alert
 //     detectors run when the bell opens and must not call Plaid.
-//   fetchSubscriptionAnalysis   — the Subscriptions tab: the SAME stored
-//     streams, plus any Plaid stream whose grouping key isn't already among
-//     them. A stored stream is never dropped or renamed by the merge, so every
-//     stream the bell can alert on is in the tab by construction.
+//   fetchSubscriptionAnalysis   — the Subscriptions tab. Today the same stored
+//     analysis, so every stream the bell can alert on is in the tab.
 //
 // Stored streams are detected ones and marked ones ("Mark as subscription").
 // A mark and a detected stream that share a charge are one subscription, shown
 // as marked.
 //
-// The Plaid half has never produced a stream: fetchRecurring returns streams
-// already mapped (merchantName, lastAmount, lastDate…), while the code below
-// reads the raw Plaid fields (is_active, merchant_name, …), and `is_active` is
-// always undefined. Recorded for M7.6, which replaces it.
+// Neither calls Plaid (M7.6 PR 0). The tab used to add a "Plaid half" from
+// /transactions/recurring/get on every load; it read renamed fields and never
+// produced a stream (docs/m7.6-audit.md). Recurring streams come back in M7.6
+// as STORED data, fetched on a webhook or a schedule, composed in here.
 
 const DAY_MS = 86_400_000
 /** What detection reads. */
@@ -355,35 +349,6 @@ async function storedStreams(userId: string, now: Date) {
   return { streams: [...marked, ...detected], recent }
 }
 
-/** Plaid's recurring streams for the user. See the note above: today it returns none. */
-async function plaidStreamsFor(userId: string, plaidClient: PlaidApi, now: Date): Promise<EnrichedStream[]> {
-  const plaidData = await fetchRecurring(plaidClient, userId)
-  const plaidStreams: EnrichedStream[] = []
-
-  for (const s of plaidData.outflow ?? []) {
-    if (!s.is_active) continue
-    const merchant = s.merchant_name ?? s.description ?? "Unknown"
-    const category = mapPlaidCategory(
-      s.personal_finance_category?.primary ?? null
-    )
-    const freq = (s.frequency as Frequency) ?? "MONTHLY"
-    const lastAmount = Math.abs(Number(s.last_amount?.amount ?? 0))
-    const lastDate = s.last_date ?? now.toISOString().slice(0, 10)
-
-    plaidStreams.push({
-      merchant, cleanMerchant: merchant, key: normalizeMerchant(merchant),
-      kind: classifyStream(lastAmount, category),
-      category, frequency: freq, lastAmount, lastDate, lastChargePending: false,
-      monthlyAmount: normalizeMonthly(lastAmount, freq),
-      source: "plaid",
-      priceChange: null, isDuplicate: false,
-      nextChargeDate: null, daysUntilNextCharge: null,
-      txIds: [], mark: null, status: "active",
-    })
-  }
-  return plaidStreams
-}
-
 /** The bell's input: stored data only. No Plaid call, for real users or the demo. */
 export async function analyseStoredSubscriptions(
   userId: string,
@@ -393,16 +358,9 @@ export async function analyseStoredSubscriptions(
   return analyse(streams, recent, now)
 }
 
-/** The Subscriptions tab: the stored analysis's streams, with Plaid's merged in. */
-export async function fetchSubscriptionAnalysis(
-  userId: string,
-  plaidClient: PlaidApi,
-): Promise<SubscriptionAnalysis> {
-  const now = new Date()
-  const { streams, recent } = await storedStreams(userId, now)
-  const storedKeys = new Set(streams.map(s => s.key))
-  const plaid = (await plaidStreamsFor(userId, plaidClient, now)).filter(p => !storedKeys.has(p.key))
-  return analyse([...streams, ...plaid], recent, now)
+/** The Subscriptions tab. The stored analysis; never a Plaid call on a page load. */
+export async function fetchSubscriptionAnalysis(userId: string): Promise<SubscriptionAnalysis> {
+  return analyseStoredSubscriptions(userId)
 }
 
 /** What counts toward totals and upcoming: running, on a known schedule. */

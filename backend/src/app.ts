@@ -31,7 +31,6 @@ import rateLimit from 'express-rate-limit'
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid'
 import accountsRouter from './routes/accounts.routes'
 import transactionsRouter from './routes/transactions.routes'
-import { makeRecurringRouter } from './routes/recurring.routes'
 import { makePlaidRouter } from './routes/plaid.routes'
 import { makePlaidItemsRouter } from './routes/plaidItems.routes'
 import { getCategories, getCategoryComparison} from './controllers/transactions.controller'
@@ -182,7 +181,6 @@ const plaidLimiter = rateLimit({
 // ── Routes ────────────────────────────────────────────────────────
 app.use('/accounts', requireSession, accountsRouter)
 app.use('/transactions', requireSession, transactionsRouter)
-app.use('/recurring', requireSession, makeRecurringRouter(plaidClient))
 app.use('/plaid-items', makePlaidItemsRouter(plaidClient))
 app.use('/budgets', requireSession, budgetsRouter)
 app.use('/alerts', requireSession, alertsRouter)

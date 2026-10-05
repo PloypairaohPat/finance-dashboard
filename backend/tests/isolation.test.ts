@@ -212,7 +212,6 @@ const READ_ENDPOINTS = [
   '/score',
   '/cashflow',
   '/subscriptions',
-  '/recurring',
   '/transactions/search',
   '/transactions/trends',
   '/transactions/categories',

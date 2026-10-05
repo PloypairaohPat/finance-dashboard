@@ -139,9 +139,9 @@ vi.mock('@clerk/express', () => ({
 }))
 
 // ── 6. Plaid stub — NOT part of the isolation logic under test ─────────
-// Several endpoints (/recurring, /subscriptions, /transactions/categories,
-// GET /alerts) call plaidClient.transactionsRecurringGet() for every user
-// that has a PlaidItem. Left unmocked, that's a real network call to
+// Sync, linking, unlinking and account deletion call Plaid for users with a
+// PlaidItem (page loads no longer do: M7.6 PR 0 removed the per-load
+// /transactions/recurring/get). Left unmocked, any of those is a real call to
 // Plaid's API using placeholder credentials — slow/flaky at best, and a
 // suite that seeds fixtures with fake PlaidItems should never depend on
 // external network reachability. Only the Plaid SDK's HTTP methods are

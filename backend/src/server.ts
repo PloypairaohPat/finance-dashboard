@@ -18,7 +18,6 @@ app.listen(PORT, () => {
   console.log(`   GET  /accounts`)
   console.log(`   GET  /transactions`)
   console.log(`   GET  /categories`)
-  console.log(`   GET  /recurring`)
   console.log(`   POST /webhook`)
   console.log(`   GET  /health\n`)
 
