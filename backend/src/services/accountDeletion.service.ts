@@ -29,6 +29,7 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import defaultPrisma from '../lib/prisma'
 import { DEMO_USER_ID } from '../middleware/auth'
 import { removeItemAtPlaid } from './plaidItems.service'
+import { lockUserRows } from '../lib/userLock'
 import { NON_DEMO_TABLES, diffBaselines, takeBaseline } from '../lib/userFingerprint'
 
 /** What the user types to confirm. Compared ignoring case and surrounding spaces. */
@@ -155,6 +156,9 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
   let rowsDeleted: Record<string, number>
   try {
     rowsDeleted = await db.$transaction(async (tx) => {
+      // The per-user lock: no link, unlink or streams refresh for this user
+      // can write between the fingerprints.
+      await lockUserRows(tx, userId)
       const before = await takeBaseline(tx, userId)
       const deleted = await deleteAll(tx, userId)
       if (deps.hooks?.insideTransaction) await deps.hooks.insideTransaction(tx)

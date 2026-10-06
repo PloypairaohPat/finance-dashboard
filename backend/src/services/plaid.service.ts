@@ -6,6 +6,7 @@ import { syncTransactions } from './plaidSync'
 import { captureBalanceSnapshots } from './networth.service'
 import { ensureUser } from './user.service'
 import { removeItemAtPlaid, removePlaidItemRows } from './plaidItems.service'
+import { lockUserRows } from '../lib/userLock'
 import { classifyPlaidError } from '../utils/plaidErrors'
 
 function sanitizeAccountName(name: string): string {
@@ -195,7 +196,7 @@ export async function exchangePublicToken(
     // ── After exchange: the real check, serialised per user ───────────
     const newId = stored.id
     const duplicateOf = await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plaid-link'), hashtext(${userId}))`
+      await lockUserRows(tx, userId)
       const verdict = judgeLink(
         institutionId,
         plaidAccounts.map((a) => ({ name: a.name, mask: a.mask ?? null, subtype: a.subtype ?? null })),

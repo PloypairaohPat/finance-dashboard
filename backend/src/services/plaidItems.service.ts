@@ -2,6 +2,7 @@ import { PlaidApi } from 'plaid'
 import * as Sentry from '@sentry/node'
 import prisma from '../lib/prisma'
 import { decrypt } from '../utils/encrypt'
+import { lockUserRows } from '../lib/userLock'
 
 export interface PlaidItemSummary {
   id:              string
@@ -98,7 +99,12 @@ export async function unlinkPlaidItem(
  * of its accounts keeps existing, unlinked from it.
  */
 export async function removePlaidItemRows(plaidItemRowId: string): Promise<void> {
+  const owner = await prisma.plaidItem.findUnique({ where: { id: plaidItemRowId }, select: { userId: true } })
+  if (!owner) return
   await prisma.$transaction(async (tx) => {
+    // The per-user lock the streams refresh takes, so a stream can't be
+    // inserted on this Item while it's being removed. Re-read under it.
+    await lockUserRows(tx, owner.userId)
     const item = await tx.plaidItem.findUnique({ where: { id: plaidItemRowId }, select: { id: true, userId: true } })
     if (!item) return
     const accounts = await tx.account.findMany({
