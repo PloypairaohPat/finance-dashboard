@@ -9,13 +9,19 @@
 //       user's own requests can't write while this runs. (A token issued just
 //       before can still verify for about a minute; step 5 covers it.)
 //    2. /item/remove at Plaid for every Item: Plaid stops billing and loses
-//       our access. A failure stops everything here, unbans the user, and
-//       sends the item_id — never the token — to Sentry. "Already gone"
-//       counts as removed.
+//       our access. "Already gone" counts as removed. The item_id, never the
+//       token, goes to Sentry on a failure.
 //    3. Every row, in one transaction: every other user's fingerprint is
 //       taken before and after and must be identical, and the user must have
-//       nothing left in any table, or the whole transaction rolls back (and
-//       the user is unbanned).
+//       nothing left in any table, or the whole transaction rolls back. A
+//       serialization failure or deadlock reruns only this transaction, a
+//       few times, each attempt with a fresh lock and fresh fingerprints.
+//
+//    Whether a failure unbans depends on whether anything irreversible has
+//    happened, not on the error. Before any Item is removed at Plaid: unban,
+//    "try again". Once any Item is removed: the user stays banned, Sentry gets
+//    DELETION_INCOMPLETE, and the user is told the deletion is underway.
+//    delete-user.ts finishes it (after a fix, if a check failed).
 //    4. Delete the Clerk account. If that fails, the data is already gone and
 //       the user stays banned: Sentry gets the Clerk user id, and running the
 //       deletion again finishes it (steps 2 and 3 find nothing to do).
@@ -58,6 +64,38 @@ export class DeletionError extends Error {
   }
 }
 
+/** The Sentry title for a deletion left part-done. An alert rule notifies on it. */
+export const DELETION_INCOMPLETE = 'account deletion: incomplete, user still banned, finish with delete-user.ts'
+
+/** What the user is told then. Kept by hand: DELETION_INCOMPLETE is the reminder. */
+export const DELETION_UNDERWAY_MESSAGE =
+  "Your deletion is underway and will be completed. Your bank connections are already disconnected and you've been signed out."
+
+/** Something irreversible happened and the rest didn't: banned, reported, to finish by hand. */
+export class DeletionUnderway extends Error {
+  constructor() {
+    super('Deletion incomplete: the user is still banned. Rerun delete-user.ts to finish it, after a fix if a check failed (see Sentry).')
+  }
+}
+
+/** One of the transaction's own checks refused to commit. Never retried. */
+class CheckFailed extends Error {
+  constructor(public readonly reason: 'other users changed' | 'rows remained', message: string) {
+    super(message)
+  }
+}
+
+/** Backoff before the second and third attempts of the row transaction. */
+export const ROW_RETRY_DELAYS_MS = [100, 300]
+export const ROW_ATTEMPTS = ROW_RETRY_DELAYS_MS.length + 1
+
+/** Prisma's write-conflict-or-deadlock, or Postgres's serialization failure or deadlock. */
+export function isConflict(err: any): boolean {
+  if (err?.code === 'P2034') return true
+  const pg = err?.meta?.code ?? err?.cause?.code
+  return pg === '40001' || pg === '40P01'
+}
+
 /** The demo user is never deletable, through any path. */
 export function assertDeletable(userId: string): void {
   if (!userId) throw new DeletionError(400, 'No user to delete.')
@@ -78,6 +116,8 @@ export interface DeletionDeps {
   db?: PrismaClient
   /** Test seams: run inside the transaction, and between it and the Clerk deletion. */
   hooks?: {
+    /** Each attempt, after the fingerprint and before any row is deleted. */
+    beforeDelete?: (attempt: number) => Promise<unknown>
     insideTransaction?: (tx: Prisma.TransactionClient) => Promise<unknown>
     beforeClerkDelete?: () => Promise<unknown>
   }
@@ -115,6 +155,34 @@ async function deleteAll(db: PrismaClient | Prisma.TransactionClient, userId: st
   return out
 }
 
+/** Step 3, one attempt: its own transaction, lock and fingerprints. */
+async function deleteRowsOnce(
+  db: PrismaClient, userId: string, attempt: number, hooks: DeletionDeps['hooks'],
+): Promise<Record<string, number>> {
+  return db.$transaction(async (tx) => {
+    // The per-user lock: no link, unlink or streams refresh for this user
+    // can write between the fingerprints.
+    await lockUserRows(tx, userId)
+    const before = await takeBaseline(tx, userId)
+    if (hooks?.beforeDelete) await hooks.beforeDelete(attempt)
+    const deleted = await deleteAll(tx, userId)
+    if (hooks?.insideTransaction) await hooks.insideTransaction(tx)
+    const damage = diffBaselines(before, await takeBaseline(tx, userId))
+    if (damage.length > 0) throw new CheckFailed('other users changed', `other users' rows changed, so nothing was deleted:\n  ${damage.join('\n  ')}`)
+    const left = await countRows(tx, userId)
+    if (left !== 0) throw new CheckFailed('rows remained', `${left} row(s) of the user remained, so nothing was deleted`)
+    return deleted
+  }, {
+    // One snapshot for both fingerprints. Under READ COMMITTED another user's
+    // sync committing between them looked like damage, and rolled the
+    // deletion back. The price: a concurrent write to a row this deletes
+    // fails it with a serialization error, which the caller retries.
+    isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    timeout: 120_000,
+    maxWait: 15_000,
+  })
+}
+
 export async function deleteUserData(userId: string, deps: DeletionDeps): Promise<DeletionReport> {
   assertDeletable(userId)
   const db = deps.db ?? defaultPrisma
@@ -138,14 +206,24 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
     }
   }
 
+  // Part-done: stay banned, report what finishing it needs, tell the user it's underway.
+  const incomplete = (extra: Record<string, unknown>): never => {
+    Sentry.captureMessage(DELETION_INCOMPLETE, { level: 'error', extra: { clerkUserId: userId, ...extra } })
+    throw new DeletionUnderway()
+  }
+
   // 2. Plaid: every Item, before any row goes.
   const items = await db.plaidItem.findMany({ where: { userId }, select: { itemId: true, accessToken: true } })
+  let removedAtPlaid = 0
   for (const item of items) {
     try {
       await removeItemAtPlaid(deps.plaidClient, item.accessToken)
+      removedAtPlaid++
     } catch (err: any) {
+      const errorCode = err?.response?.data?.error_code ?? null
+      if (removedAtPlaid > 0) incomplete({ stage: 'plaid', itemId: item.itemId, errorCode })
       Sentry.captureMessage('account deletion: stopped, an Item could not be removed at Plaid', {
-        level: 'error', extra: { itemId: item.itemId, errorCode: err?.response?.data?.error_code ?? null },
+        level: 'error', extra: { itemId: item.itemId, errorCode },
       })
       await unban()
       throw new DeletionError(500, 'Your bank connection could not be removed, so nothing was deleted. Please try again.')
@@ -153,31 +231,30 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
   }
 
   // 3. Every row, in one transaction, everyone else provably untouched.
-  let rowsDeleted: Record<string, number>
-  try {
-    rowsDeleted = await db.$transaction(async (tx) => {
-      // The per-user lock: no link, unlink or streams refresh for this user
-      // can write between the fingerprints.
-      await lockUserRows(tx, userId)
-      const before = await takeBaseline(tx, userId)
-      const deleted = await deleteAll(tx, userId)
-      if (deps.hooks?.insideTransaction) await deps.hooks.insideTransaction(tx)
-      const damage = diffBaselines(before, await takeBaseline(tx, userId))
-      if (damage.length > 0) throw new Error(`other users' rows changed, so nothing was deleted:\n  ${damage.join('\n  ')}`)
-      const left = await countRows(tx, userId)
-      if (left !== 0) throw new Error(`${left} row(s) of the user remained, so nothing was deleted`)
-      return deleted
-    }, {
-      // One snapshot for both fingerprints. Under READ COMMITTED (the default,
-      // and what this ran under until now) another user's sync committing
-      // between them looked like damage, and rolled the deletion back.
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-      timeout: 120_000,
-      maxWait: 15_000,
-    })
-  } catch (err) {
-    await unban()
-    throw err
+  let rowsDeleted: Record<string, number> | undefined
+  for (let attempt = 1; !rowsDeleted; attempt++) {
+    try {
+      rowsDeleted = await deleteRowsOnce(db, userId, attempt, deps.hooks)
+    } catch (err: any) {
+      if (isConflict(err) && attempt < ROW_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, ROW_RETRY_DELAYS_MS[attempt - 1]))
+        continue
+      }
+      // The reason, never the message: a check's message names other users' row counts.
+      const failure = {
+        stage: 'rows',
+        reason: err instanceof CheckFailed ? err.reason : isConflict(err) ? 'conflict' : 'error',
+        attempts: attempt,
+        prismaCode: err?.code ?? null,
+        pgCode: err?.meta?.code ?? err?.cause?.code ?? null,
+      }
+      if (removedAtPlaid > 0) incomplete(failure)
+      Sentry.captureMessage('account deletion: stopped before anything irreversible, user unbanned', {
+        level: 'error', extra: { clerkUserId: userId, ...failure },
+      })
+      await unban()
+      throw new DeletionError(500, "Deletion didn't finish, and nothing was deleted. Please try again.")
+    }
   }
 
   if (deps.hooks?.beforeClerkDelete) await deps.hooks.beforeClerkDelete()
@@ -209,5 +286,5 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
     })
   }
 
-  return { itemsRemoved: items.length, rowsDeleted, clerkDeleted, sweptAfter }
+  return { itemsRemoved: items.length, rowsDeleted: rowsDeleted!, clerkDeleted, sweptAfter }
 }

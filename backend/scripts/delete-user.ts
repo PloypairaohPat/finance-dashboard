@@ -23,7 +23,7 @@
 import { PrismaClient } from '@prisma/client'
 import { connectReadOnly, flag, hasFlag, makeRefuse, redact, resolveConnection } from './lib/read-only-db'
 import { NON_DEMO_TABLES } from '../src/lib/userFingerprint'
-import { assertDeletable, DeletionError } from '../src/services/accountDeletion.service'
+import { assertDeletable, DeletionError, DeletionUnderway } from '../src/services/accountDeletion.service'
 
 const SCRIPT = 'delete-user'
 const refuse: (message: string) => never = makeRefuse(SCRIPT)
@@ -91,7 +91,7 @@ async function main() {
     }
     console.log(CHECKLIST)
   } catch (e: any) {
-    console.error(`\n✗ ${SCRIPT}: ${e instanceof DeletionError ? e.message : 'stopped'}`)
+    console.error(`\n✗ ${SCRIPT}: ${e instanceof DeletionError || e instanceof DeletionUnderway ? e.message : 'stopped'}`)
     console.error(`  ${redact(String(e?.message ?? e)).split('\n').join('\n  ')}\n`)
     process.exitCode = 1
   } finally {
