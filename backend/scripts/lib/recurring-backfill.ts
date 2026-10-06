@@ -6,7 +6,7 @@
 //  outside RecurringStream is unchanged.
 // ─────────────────────────────────────────────────────────────────
 
-import type { Prisma, PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { NON_DEMO_TABLES } from '../../src/lib/userFingerprint'
 import { applyItemStreams, type FetchedStreams } from '../../src/services/recurringStreams.service'
 
@@ -14,13 +14,17 @@ const DEMO_USER_IDS = ['demo-user']
 
 export class RecurringBackfillRefused extends Error {}
 
-/** Full-row fingerprint of every non-demo row in every user table except RecurringStream. */
+/**
+ * Full-row fingerprint of every non-demo row in every user table except
+ * RecurringStream, leaving out PlaidItem.streamsRefreshedAt: the refresh
+ * stamps it on every Item it applies, so a rerun would otherwise abort.
+ */
 export async function fingerprintOutsideStreams(db: Prisma.TransactionClient | PrismaClient): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const [table, owner] of NON_DEMO_TABLES) {
     if (table === 'RecurringStream') continue
     const [r] = await db.$queryRawUnsafe<Array<{ n: number; h: string | null }>>(
-      `SELECT count(*)::int AS n, md5(string_agg(md5(to_jsonb(t)::text), '' ORDER BY t.id)) AS h
+      `SELECT count(*)::int AS n, md5(string_agg(md5((to_jsonb(t) - 'streamsRefreshedAt')::text), '' ORDER BY t.id)) AS h
        FROM "${table}" t WHERE t."${owner}" <> ALL($1::text[])`,
       DEMO_USER_IDS,
     )
@@ -52,5 +56,11 @@ export async function runRecurringBackfill(
     const changed = Object.keys(before).filter((t) => before[t] !== after[t])
     if (changed.length > 0) throw new RecurringBackfillRefused(`rows outside RecurringStream changed (${changed.join(', ')}), so nothing was written`)
     return { written, removed }
-  }, { timeout: options.timeoutMs ?? 120_000, maxWait: 15_000 })
+  }, {
+    // One snapshot for both fingerprints, so a write another user commits
+    // mid-run (their sync, an alert) can't look like a change this run made.
+    isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    timeout: options.timeoutMs ?? 120_000,
+    maxWait: 15_000,
+  })
 }

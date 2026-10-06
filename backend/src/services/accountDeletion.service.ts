@@ -25,7 +25,7 @@
 
 import * as Sentry from '@sentry/node'
 import type { PlaidApi } from 'plaid'
-import type { Prisma, PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import defaultPrisma from '../lib/prisma'
 import { DEMO_USER_ID } from '../middleware/auth'
 import { removeItemAtPlaid } from './plaidItems.service'
@@ -167,7 +167,14 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
       const left = await countRows(tx, userId)
       if (left !== 0) throw new Error(`${left} row(s) of the user remained, so nothing was deleted`)
       return deleted
-    }, { timeout: 120_000, maxWait: 15_000 })
+    }, {
+      // One snapshot for both fingerprints. Under READ COMMITTED (the default,
+      // and what this ran under until now) another user's sync committing
+      // between them looked like damage, and rolled the deletion back.
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      timeout: 120_000,
+      maxWait: 15_000,
+    })
   } catch (err) {
     await unban()
     throw err

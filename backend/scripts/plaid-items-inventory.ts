@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { connectReadOnly, redact } from './lib/read-only-db'
+import { relativeAge } from './lib/relativeAge'
 
 const DEMO_USER_IDS = new Set(['demo-user'])
 const REMOVE_FIX = new Date('2026-09-09T00:00:00Z')
@@ -34,7 +35,7 @@ async function main() {
 
   const items = await db.prisma.plaidItem.findMany({
     select: {
-      id: true, itemId: true, userId: true, institutionId: true, status: true, createdAt: true,
+      id: true, itemId: true, userId: true, institutionId: true, status: true, createdAt: true, streamsRefreshedAt: true,
       accounts: { select: { id: true, name: true, mask: true, _count: { select: { transactions: { where: { deletedAt: null } } } } } },
       _count: { select: { recurringStreams: true } },
     },
@@ -47,7 +48,7 @@ async function main() {
   const userNo = new Map<string, number>()
   for (const i of real) if (!userNo.has(i.userId)) userNo.set(i.userId, userNo.size + 1)
 
-  console.log('item_id…  | user   | created    | institution id | status         | accounts | live transactions | recurring streams')
+  console.log('item_id…  | user   | created    | institution id | status         | accounts | live transactions | recurring streams | streams refreshed')
   for (const i of real) {
     const tx = i.accounts.reduce((s, a) => s + a._count.transactions, 0)
     console.log([
@@ -58,7 +59,9 @@ async function main() {
       i.status.padEnd(14),
       String(i.accounts.length).padEnd(8),
       String(tx).padEnd(17),
-      String(i._count.recurringStreams),
+      String(i._count.recurringStreams).padEnd(17),
+      // An age, never a date. "never" until the first successful refresh.
+      relativeAge(i.streamsRefreshedAt),
     ].join(' | '))
   }
 

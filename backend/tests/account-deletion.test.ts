@@ -115,6 +115,18 @@ describe('deleteUserData', () => {
     expect(clerk.deleteUser).toHaveBeenCalledTimes(1) // only the first, successful deletion
   })
 
+  it("2b. another user's write committed during the deletion doesn't abort it (one snapshot)", async () => {
+    const res = await deleteUserData(A, deps({
+      hooks: {
+        // Committed by another connection while the deletion's transaction is open.
+        insideTransaction: () => prisma.budget.create({ data: { userId: B, category: 'Travel', monthlyLimit: '5.00' } }),
+      },
+    }))
+    expect(res.clerkDeleted).toBe(true)
+    expect(await countsOf(A)).toEqual(empty)
+    expect((await countsOf(B)).Budget).toBe(2)
+  })
+
   it('3. refuses the demo user, through the service and the guard the script uses', async () => {
     await expect(deleteUserData('demo-user', deps())).rejects.toBeInstanceOf(DeletionError)
     expect(() => assertDeletable('demo-user')).toThrow(DeletionError)

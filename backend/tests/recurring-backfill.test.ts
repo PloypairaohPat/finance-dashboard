@@ -70,4 +70,27 @@ describe('runRecurringBackfill', () => {
     expect(await streamCount()).toBe(0)
     expect(Number((await prisma.budget.findFirstOrThrow({ where: { userId: USERS[1] } })).monthlyLimit)).toBe(100)
   })
+
+  it("a rerun isn't aborted by the refresh stamping its Items", async () => {
+    await runRecurringBackfill(prisma, all(), 3)
+    // Same streams again: each Item's streamsRefreshedAt moves, nothing else does.
+    expect(await runRecurringBackfill(prisma, all(), 3)).toEqual({ written: 3, removed: 0 })
+  })
+
+  it("another user's write committed during the run doesn't abort it (one snapshot)", async () => {
+    const bystander = 'rbf-test-bystander'
+    await prisma.user.deleteMany({ where: { id: bystander } }).catch(() => {})
+    await prisma.user.create({ data: { id: bystander, email: `${bystander}@rbf-test.local` } })
+    try {
+      const res = await runRecurringBackfill(prisma, all(), 3, {
+        // Committed by another connection while the backfill's transaction is open.
+        insideTransaction: () => prisma.budget.create({ data: { userId: bystander, category: 'Travel', monthlyLimit: '5.00' } }),
+      })
+      expect(res.written).toBe(3)
+      expect(await prisma.budget.count({ where: { userId: bystander } })).toBe(1)
+    } finally {
+      await prisma.budget.deleteMany({ where: { userId: bystander } })
+      await prisma.user.deleteMany({ where: { id: bystander } })
+    }
+  })
 })
