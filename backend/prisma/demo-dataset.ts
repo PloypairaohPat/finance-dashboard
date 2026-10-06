@@ -175,6 +175,48 @@ export interface PaymentAppExpectation {
   surplus: number
 }
 
+/**
+ * What the Subscriptions tab must show for a stream or a marked series, once it
+ * reads streams (composeSubscriptions, M7.6 PR 5): the composed result, stated
+ * the way each transaction states its expected verdict.
+ */
+export type ExpectedComposed =
+  | { list: 'subscriptions' | 'bills'; status: 'active' | 'ended'; marked: boolean; priceUp?: true }
+  | { list: 'suggested'; isNew: boolean; confirmsAs: 'subscription' | 'bill' }
+  | { list: 'dismissed' }
+
+/** A Plaid recurring stream over the demo's own charges. */
+export interface DemoStream {
+  /** Carries the FAKE marker: no real stream id looks like it. */
+  streamId: string
+  accountKey: AccountKey
+  description: string
+  merchantName: string
+  detailed: string
+  frequency: 'MONTHLY'
+  status: 'MATURE' | 'EARLY_DETECTION'
+  isActive: boolean
+  /** YYYY-MM-DD, or null for an inactive stream. */
+  predictedNextDate: string | null
+  /** Its charges, by plaidTransactionId, oldest first. */
+  txIds: string[]
+  note: string
+  expected: ExpectedComposed
+}
+
+/** A verdict the seed records, since demo visitors can't write. */
+export interface DemoVerdict {
+  plaidTransactionId: string
+  kind: 'confirmed' | 'dismissed'
+}
+
+/** A confirmation on a charge in no stream: followed as a series from its anchor. */
+export interface DemoMarkedSeries {
+  anchor: string
+  note: string
+  expected: ExpectedComposed
+}
+
 export interface DemoDataset {
   now: Date
   startDay: number
@@ -183,8 +225,10 @@ export interface DemoDataset {
   transactions: DemoTransaction[]
   cases: DemoCase[]
   paymentApp: PaymentAppExpectation[]
-  /** Charges the seed marks as subscriptions, by plaidTransactionId (demo visitors can't mark). */
-  marks: string[]
+  streams: DemoStream[]
+  /** Confirmations and dismissals, by plaidTransactionId. */
+  verdicts: DemoVerdict[]
+  markedSeries: DemoMarkedSeries[]
 }
 
 // ── fixed structure ───────────────────────────────────────────────
@@ -300,6 +344,8 @@ export function buildDemoDataset(now: Date): DemoDataset {
   const transactions: DemoTransaction[] = []
   const cases: DemoCase[] = []
   const paymentApp: PaymentAppExpectation[] = []
+  /** Every month's id for a slug, oldest first: what a monthly stream is made of. */
+  const slugIds = new Map<string, string[]>()
 
   const groceryMerchants = ['WHOLE FOODS', "TRADER JOE'S", 'SAFEWAY', 'COSTCO']
   const diningMerchants = ['CHIPOTLE', 'SWEETGREEN', 'SHAKE SHACK', 'LOCAL THAI', 'MOMOFUKU']
@@ -339,6 +385,7 @@ export function buildDemoDataset(now: Date): DemoDataset {
         expected: input.expected,
         decisions: input.decisions ?? [],
       })
+      slugIds.set(input.slug, [...(slugIds.get(input.slug) ?? []), id])
       return id
     }
 
@@ -414,7 +461,7 @@ export function buildDemoDataset(now: Date): DemoDataset {
       expected: spend('GENERAL_SERVICES_INSURANCE'),
     })
 
-    // ── background: subscriptions (recurring.service.ts mirrors these) ──
+    // ── background: subscriptions (each is a demo stream below) ──
     add({
       slug: 'sub-icloud', day: 2, account: 'card', amount: 2.99, name: 'ICLOUD+',
       detailed: 'GENERAL_SERVICES_OTHER_GENERAL_SERVICES', merchant: 'Apple iCloud',
@@ -548,6 +595,26 @@ export function buildDemoDataset(now: Date): DemoDataset {
         detailed: 'PERSONAL_CARE_HAIR_AND_BEAUTY', merchant: 'Shearwater Salon',
         cps: [CP.merchant('Shearwater Salon')], confidence: 'HIGH',
         expected: spend('PERSONAL_CARE_HAIR_AND_BEAUTY'),
+      })
+    }
+
+    // ── background: recurring states the demo's streams need (M7.6) ──
+    // Fixed amounts and no rnd(), so every other row is unchanged.
+    // A monthly payment to a person, by bank transfer: no counterparty and no
+    // pair, so the classifier counts it as spending. Plaid codes it
+    // TRANSFER_OUT, so the sorting suggests it; the seed confirms it into Bills.
+    add({
+      slug: 'tutoring', day: 25, account: 'checking', amount: 215,
+      name: 'ONLINE TRANSFER TO R OKAFOR', detailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER',
+      confidence: 'HIGH', expected: spend('TRANSFER_OUT_ACCOUNT_TRANSFER'),
+    })
+    // A language course, cancelled three months ago: an inactive stream the seed confirmed.
+    if (back >= 3) {
+      add({
+        slug: 'language-course', day: 22, account: 'card', amount: 89,
+        name: 'LINGOHALL', detailed: 'GENERAL_SERVICES_EDUCATION', merchant: 'Lingohall',
+        cps: [CP.merchant('Lingohall')], confidence: 'VERY_HIGH',
+        expected: spend('GENERAL_SERVICES_EDUCATION'),
       })
     }
 
@@ -1393,6 +1460,28 @@ export function buildDemoDataset(now: Date): DemoDataset {
     })
   }
 
+  // ── a streaming service started nine days ago: Plaid's EARLY_DETECTION ──
+  const brightbox = 'demo-brightbox-1'
+  {
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    transactions.push({
+      plaidTransactionId: brightbox,
+      accountKey: 'card',
+      date: new Date(today - 9 * 86_400_000).toISOString().slice(0, 10),
+      amount: 8.99,
+      name: 'BRIGHTBOX',
+      merchantName: 'Brightbox',
+      primary: 'ENTERTAINMENT',
+      detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+      confidence: 'VERY_HIGH',
+      counterparties: [CP.merchant('Brightbox')],
+      pending: false,
+      expected: spend('ENTERTAINMENT_TV_AND_MOVIES'),
+      decisions: [],
+    })
+  }
+  const priceRiseIds = cases.find((c) => c.id === 'subscription-price-rise')!.txIds
+
   // ── marked subscription: one gym, four names, a price rise and a one-off ──
   //
   // What "Mark as subscription" is for. The four monthly charges carry four
@@ -1448,6 +1537,72 @@ export function buildDemoDataset(now: Date): DemoDataset {
     })
   }
 
+  // ── the demo's recurring streams (M7.6 PR 5) ──
+  //
+  // What Plaid would send for the demo's own charges, with one of each state a
+  // visitor would otherwise never see, since demo mode can't confirm or
+  // dismiss. Each states what the tab must show (tests/demo-streams.test.ts).
+  const txOf = new Map(transactions.map((t) => [t.plaidTransactionId, t]))
+  const DAY = 86_400_000
+  const streams: DemoStream[] = []
+  const stream = (
+    slug: string, txIds: string[], note: string, expected: ExpectedComposed,
+    o: { status?: DemoStream['status']; isActive?: boolean } = {},
+  ) => {
+    const first = txOf.get(txIds[0])!
+    const last = txOf.get(txIds[txIds.length - 1])!
+    const isActive = o.isActive ?? true
+    streams.push({
+      streamId: `FAKE-demo-stream-${slug}`,
+      accountKey: first.accountKey,
+      description: first.name,
+      merchantName: first.merchantName ?? first.name,
+      detailed: first.detailed,
+      frequency: 'MONTHLY',
+      status: o.status ?? 'MATURE',
+      isActive,
+      predictedNextDate: isActive ? new Date(Date.parse(`${last.date}T00:00:00Z`) + 30 * DAY).toISOString().slice(0, 10) : null,
+      txIds,
+      note,
+      expected,
+    })
+  }
+  const monthly = (slug: string) => slugIds.get(slug)!
+  const latest = (slug: string) => monthly(slug)[monthly(slug).length - 1]
+  const bill: ExpectedComposed = { list: 'bills', status: 'active', marked: false }
+  const subscription: ExpectedComposed = { list: 'subscriptions', status: 'active', marked: false }
+
+  for (const slug of ['rent', 'electric', 'internet', 'phone', 'insurance', 'car-loan']) {
+    stream(slug, monthly(slug), 'a bill by category', bill)
+  }
+  for (const slug of ['sub-netflix', 'sub-spotify', 'sub-gym']) {
+    stream(slug, monthly(slug), 'a subscription by category', subscription)
+  }
+  stream('sub-icloud', monthly('sub-icloud'),
+    'a plain suggestion: GENERAL_SERVICES_OTHER_GENERAL_SERVICES is on neither list',
+    { list: 'suggested', isNew: false, confirmsAs: 'subscription' })
+  stream('brightbox', [brightbox], 'just started: EARLY_DETECTION, suggested and flagged new',
+    { list: 'suggested', isNew: true, confirmsAs: 'subscription' }, { status: 'EARLY_DETECTION' })
+  stream('haircut', monthly('haircut'), 'a suggestion the seed dismissed: what Restore brings back', { list: 'dismissed' })
+  stream('tutoring', monthly('tutoring'), 'a payment to a person, suggested as TRANSFER_OUT, confirmed into Bills',
+    { list: 'bills', status: 'active', marked: true })
+  stream('language-course', monthly('language-course'), 'confirmed, then cancelled: shown as ended, out of the totals',
+    { list: 'subscriptions', status: 'ended', marked: true }, { isActive: false })
+  stream('price-rise', priceRiseIds, 'the price rise, as a stream: the bell shows price-up',
+    { ...subscription, priceUp: true })
+
+  const verdicts: DemoVerdict[] = [
+    { plaidTransactionId: marks[0], kind: 'confirmed' },
+    { plaidTransactionId: monthly('tutoring')[0], kind: 'confirmed' },
+    { plaidTransactionId: latest('language-course'), kind: 'confirmed' },
+    { plaidTransactionId: latest('haircut'), kind: 'dismissed' },
+  ]
+  const markedSeries: DemoMarkedSeries[] = [{
+    anchor: marks[0],
+    note: 'the gym under four names, kept as a mark: in no stream, followed from its first charge',
+    expected: { list: 'subscriptions', status: 'active', marked: true, priceUp: true },
+  }]
+
   return {
     now,
     startDay: DEMO_PERIOD_START_DAY,
@@ -1456,7 +1611,9 @@ export function buildDemoDataset(now: Date): DemoDataset {
     transactions,
     cases,
     paymentApp,
-    marks,
+    streams,
+    verdicts,
+    markedSeries,
   }
 }
 

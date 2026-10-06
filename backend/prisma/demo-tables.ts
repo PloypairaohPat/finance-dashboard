@@ -14,5 +14,5 @@ export const WIPE_ORDER = [
   'budget', 'balanceSnapshot', 'alert', 'goal',
 ] as const
 
-/** The tables the rebuild fills, each with one createMany. Marks after the transactions they anchor on. */
-export const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction', 'subscriptionMark'] as const
+/** The tables the rebuild fills, each with one createMany. Streams after their Items; marks after the transactions they anchor on. */
+export const CREATE_ORDER = ['plaidItem', 'account', 'budget', 'balanceSnapshot', 'goal', 'transaction', 'recurringStream', 'subscriptionMark'] as const

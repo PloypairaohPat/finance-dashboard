@@ -54,18 +54,9 @@
  *   production:  railway run npx tsx prisma/seed-demo.ts --allow-remote <db host> --dry-run
  *                then the same without --dry-run
  */
-import { randomUUID } from 'node:crypto'
 import { PrismaClient, Prisma } from '@prisma/client'
-import {
-  DEMO_BUDGETS,
-  DEMO_USER_ID,
-  MONTHS_OF_HISTORY,
-  buildDemoDataset,
-  toRawJson,
-  type DemoDataset,
-  type DemoTransaction,
-} from './demo-dataset'
-import { entityColumns } from '../src/lib/entityColumns'
+import { DEMO_USER_ID, buildDemoDataset } from './demo-dataset'
+import { SENTINEL_TOKEN, buildPlan, type Plan } from './demo-plan'
 import { CREATE_ORDER, WIPE_ORDER } from './demo-tables'
 import { connectReadOnly, hasFlag, makeRefuse, redact, resolveConnection } from '../scripts/lib/read-only-db'
 import {
@@ -117,154 +108,6 @@ const TX_MAX_WAIT_MS = 15_000
 const TX_STATEMENTS =
   NON_DEMO_TABLES.length * 2 + WIPE_ORDER.length + 1 + CREATE_ORDER.length + NON_DEMO_TABLES.length + 3
 
-const CURRENCY = 'USD'
-const money = (n: number) => n.toFixed(2)
-const SENTINEL_TOKEN = 'DEMO-NO-TOKEN'
-
-function mulberry32(seed: number) {
-  return function () {
-    seed |= 0
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-// ── the plan: every row the rebuild will create, built before connecting ──
-
-interface Plan {
-  dataset: DemoDataset
-  plaidItem: Prisma.PlaidItemCreateManyInput[]
-  account: Prisma.AccountCreateManyInput[]
-  budget: Prisma.BudgetCreateManyInput[]
-  balanceSnapshot: Prisma.BalanceSnapshotCreateManyInput[]
-  goal: Prisma.GoalCreateManyInput[]
-  transaction: Prisma.TransactionCreateManyInput[]
-  subscriptionMark: Prisma.SubscriptionMarkCreateManyInput[]
-}
-
-/**
- * Ids are generated here rather than by the database, so every table can be
- * written with ONE createMany: an account needs its item's id, a transaction
- * its account's, and createMany returns no ids.
- */
-function buildPlan(now: Date): Plan {
-  const dataset = buildDemoDataset(now)
-
-  const itemId = new Map<string, string>()
-  const plaidItem = dataset.items.map((item) => {
-    const id = randomUUID()
-    itemId.set(item.key, id)
-    return {
-      id,
-      userId: DEMO_USER_ID,
-      itemId: item.itemId,
-      // Plaintext sentinel, deliberately: the demo path never syncs, and an
-      // encrypted value would break local seeding, whose ENCRYPTION_KEY is an
-      // invalid placeholder on purpose.
-      accessToken: SENTINEL_TOKEN,
-      institutionId: item.institutionId,
-      institutionName: item.institutionName,
-    }
-  })
-
-  const accountId = new Map<string, string>()
-  const plaidAccountId = new Map<string, string>()
-  const account = dataset.accounts.map((a) => {
-    const id = randomUUID()
-    accountId.set(a.key, id)
-    plaidAccountId.set(a.key, a.plaidAccountId)
-    return {
-      id,
-      userId: DEMO_USER_ID,
-      plaidItemId: itemId.get(a.itemKey)!,
-      plaidAccountId: a.plaidAccountId,
-      name: a.name,
-      officialName: a.officialName,
-      type: a.type,
-      subtype: a.subtype,
-      mask: a.mask,
-      currentBalance: a.currentBalance,
-      availableBalance: a.availableBalance,
-      isoCurrencyCode: CURRENCY,
-    }
-  })
-
-  const transactionId = new Map<string, string>()
-  const transaction = dataset.transactions.map((t: DemoTransaction) => {
-    const raw = toRawJson(t, plaidAccountId.get(t.accountKey)!)
-    const id = randomUUID()
-    transactionId.set(t.plaidTransactionId, id)
-    return {
-      id,
-      userId: DEMO_USER_ID,
-      accountId: accountId.get(t.accountKey)!,
-      plaidTransactionId: t.plaidTransactionId,
-      date: new Date(`${t.date}T00:00:00.000Z`),
-      amount: money(t.amount),
-      name: t.name,
-      cleanName: t.merchantName ?? t.name,
-      merchantName: t.merchantName,
-      categoryPrimary: t.primary,
-      categoryDetailed: t.detailed,
-      isoCurrencyCode: CURRENCY,
-      pending: t.pending,
-      // Through the same function plaidSync uses, so demo rows can't disagree with their rawJson.
-      ...entityColumns(raw),
-      rawJson: raw as Prisma.InputJsonValue,
-    }
-  })
-
-  // Budgets are stored under DISPLAY names, which is what fetchBudgetsWithSpend looks up.
-  const budget = DEMO_BUDGETS.map((b) => ({ userId: DEMO_USER_ID, category: b.category, monthlyLimit: b.monthlyLimit }))
-
-  // Monthly balance snapshots (the net-worth trend), UTC month ends.
-  const rnd = mulberry32(20260825)
-  const between = (min: number, max: number) => min + rnd() * (max - min)
-  const balanceSnapshot: Prisma.BalanceSnapshotCreateManyInput[] = []
-  for (let back = MONTHS_OF_HISTORY; back >= 0; back--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back + 1, 0))
-    const step = MONTHS_OF_HISTORY - back
-    const mk = (key: string, name: string, type: string, bal: number) =>
-      balanceSnapshot.push({
-        userId: DEMO_USER_ID,
-        accountId: accountId.get(key)!,
-        accountName: name,
-        accountType: type,
-        currentBalance: money(bal),
-        availableBalance: null,
-        isoCurrencyCode: CURRENCY,
-        date: d,
-      })
-    mk('checking', 'Everyday Checking', 'depository', between(3600, 4600))
-    mk('savings', 'High-Yield Savings', 'depository', 9000 + step * 1240)
-    mk('card', 'Rewards Card', 'credit', between(1000, 1850))
-    mk('nwChecking', 'Northwind Checking', 'depository', between(2200, 2900))
-  }
-
-  const goal: Prisma.GoalCreateManyInput[] = [
-    {
-      userId: DEMO_USER_ID, type: 'savings', name: 'Emergency Fund',
-      targetAmount: '20000.00', startAmount: '9000.00',
-      deadline: new Date(Date.UTC(now.getUTCFullYear(), 11, 31)),
-    },
-    {
-      userId: DEMO_USER_ID, type: 'debt_payoff', name: 'Pay off Rewards Card',
-      targetAmount: '0.00', startAmount: '1850.00', accountId: accountId.get('card')!,
-    },
-  ]
-
-  // Demo visitors can't mark (demo mode is read-only), so the seed does.
-  const subscriptionMark = dataset.marks.map((plaidTransactionId) => {
-    const anchor = transactionId.get(plaidTransactionId)
-    if (!anchor) throw new Error(`the demo marks ${plaidTransactionId}, which the dataset doesn't contain`)
-    return { userId: DEMO_USER_ID, transactionId: anchor }
-  })
-
-  return { dataset, plaidItem, account, budget, balanceSnapshot, goal, transaction, subscriptionMark }
-}
-
 /** Rows the plan creates, per table, in the same shape as demoCounts(). */
 function plannedCounts(plan: Plan): Record<string, number> {
   return {
@@ -277,8 +120,7 @@ function plannedCounts(plan: Plan): Record<string, number> {
     Alert: 0,
     Goal: plan.goal.length,
     SubscriptionMark: plan.subscriptionMark.length,
-    // The demo seeds no recurring streams until M7.6 PR 5; the wipe clears any.
-    RecurringStream: 0,
+    RecurringStream: plan.recurringStream.length,
   }
 }
 
@@ -471,7 +313,7 @@ async function write(plan: Plan): Promise<void> {
 }
 
 async function main() {
-  const plan = buildPlan(new Date())
+  const plan = buildPlan(buildDemoDataset(new Date()))
   if (hasFlag('dry-run')) await dryRun(plan)
   else await write(plan)
 }
