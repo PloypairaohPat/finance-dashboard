@@ -12,6 +12,7 @@ import {
 import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
 import { classifyPlaidError } from '../utils/plaidErrors'
+import { firstRefreshIfNeeded, refreshOnRecurringUpdate } from '../services/recurringStreams.service'
 
 // ── Webhook observability ────────────────────────────────────────────
 // One JSON object per line, so Railway's log search can filter on
@@ -138,6 +139,7 @@ export function makePlaidController(
         webhook_code?: string
         item_id?:      string
         error?:        unknown
+        historical_update_complete?: boolean
       }>,
       res: Response
     ) {
@@ -182,12 +184,29 @@ export function makePlaidController(
               where: { itemId: item_id },
             })
             if (plaidItem) {
-              triggerSync(plaidClient, plaidItem.userId).catch((err: any) => {
-                Sentry.captureException(err)
-                console.error('❌ Webhook sync error:', err.message)
-              })
+              // A new link's history is complete: its first recurring-streams
+              // refresh runs AFTER this sync, so the streams' transactions are
+              // already in our rows. firstRefreshIfNeeded fires only while the
+              // Item has never been refreshed (Plaid keeps sending this flag).
+              const historyComplete =
+                webhook_code === 'SYNC_UPDATES_AVAILABLE' && req.body.historical_update_complete === true
+              triggerSync(plaidClient, plaidItem.userId)
+                .then(async () => {
+                  if (historyComplete) await firstRefreshIfNeeded(plaidClient, plaidItem.id)
+                })
+                .catch((err: any) => {
+                  Sentry.captureException(err)
+                  console.error('❌ Webhook sync error:', err.message)
+                })
             }
           }
+        }
+
+        // Plaid's recurring streams changed for this Item: refresh it, and
+        // only it. Never throws; an unknown item id is a quiet no-op, and
+        // failures go to Sentry inside the refresh.
+        if (webhook_code === 'RECURRING_TRANSACTIONS_UPDATE' && item_id) {
+          void refreshOnRecurringUpdate(plaidClient, item_id)
         }
       }
 

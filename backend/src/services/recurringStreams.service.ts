@@ -176,3 +176,91 @@ export async function refreshItemStreams(
   const fetched = await fetchItemStreams(plaidClient, item)
   return db.$transaction((tx) => applyItemStreams(tx, fetched))
 }
+
+// ── Triggers (M7.6 PR 2b-2) ───────────────────────────────────────
+//
+// The only callers of refreshItemStreams in the app: Plaid's webhooks and the
+// daily backstop. Never a page load or a user action. Each handles its own
+// errors and never throws, so a webhook handler or the scheduler can call it
+// and move on: a Plaid error was already reported by fetchItemStreams, the
+// demo is skipped quietly, and anything else goes to Sentry.
+
+/** An Item not refreshed for this long is due for the daily backstop. */
+export const STREAMS_STALE_HOURS = 20
+
+export type TriggerOutcome = 'refreshed' | 'unknown' | 'not due' | 'skipped' | 'failed'
+
+function reportRefreshFailure(err: unknown, plaidItemId: string, during: string): TriggerOutcome {
+  if (err instanceof RefreshRefused) return 'skipped'
+  if (!(err instanceof StreamFetchError)) {
+    Sentry.captureException(err, { extra: { plaidItemId, during } })
+  }
+  return 'failed'
+}
+
+async function refreshAndReport(plaidClient: PlaidApi, plaidItemRowId: string, during: string, db: PrismaClient): Promise<TriggerOutcome> {
+  try {
+    const r = await refreshItemStreams(plaidClient, plaidItemRowId, db)
+    return r.skipped ? 'unknown' : 'refreshed'
+  } catch (err) {
+    return reportRefreshFailure(err, plaidItemRowId, during)
+  }
+}
+
+/** RECURRING_TRANSACTIONS_UPDATE: refresh the Item Plaid named, and only it. An unknown id is a quiet no-op. */
+export async function refreshOnRecurringUpdate(
+  plaidClient: PlaidApi,
+  plaidItemId: string,
+  db: PrismaClient = defaultPrisma,
+): Promise<TriggerOutcome> {
+  const item = await db.plaidItem.findUnique({ where: { itemId: plaidItemId }, select: { id: true } })
+  if (!item) return 'unknown'
+  return refreshAndReport(plaidClient, item.id, 'RECURRING_TRANSACTIONS_UPDATE', db)
+}
+
+/**
+ * A new link's first refresh. Called after the sync that a SYNC_UPDATES_AVAILABLE
+ * webhook with historical_update_complete started has finished, so the
+ * streams' transactions are already in our rows. Only while the Item has
+ * never been refreshed: Plaid keeps sending historical_update_complete: true
+ * on later webhooks, and streamsRefreshedAt makes this fire once.
+ */
+export async function firstRefreshIfNeeded(
+  plaidClient: PlaidApi,
+  plaidItemRowId: string,
+  db: PrismaClient = defaultPrisma,
+): Promise<TriggerOutcome> {
+  const item = await db.plaidItem.findUnique({ where: { id: plaidItemRowId }, select: { streamsRefreshedAt: true } })
+  if (!item) return 'unknown'
+  if (item.streamsRefreshedAt) return 'not due'
+  return refreshAndReport(plaidClient, plaidItemRowId, 'first refresh', db)
+}
+
+/**
+ * The daily backstop: every non-demo Item never refreshed, or not refreshed in
+ * STREAMS_STALE_HOURS, in case a webhook was missed (our Items have pointed at
+ * a dead webhook URL before). One Item's failure is reported and the rest carry on.
+ */
+export async function refreshStaleItems(
+  plaidClient: PlaidApi,
+  now: Date = new Date(),
+  db: PrismaClient = defaultPrisma,
+): Promise<{ due: number; refreshed: number; failed: number }> {
+  const cutoff = new Date(now.getTime() - STREAMS_STALE_HOURS * 3_600_000)
+  const due = await db.plaidItem.findMany({
+    where: {
+      userId: { not: DEMO_USER_ID },
+      accessToken: { not: DEMO_ITEM_TOKEN },
+      OR: [{ streamsRefreshedAt: null }, { streamsRefreshedAt: { lt: cutoff } }],
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  let refreshed = 0, failed = 0
+  for (const item of due) {
+    const outcome = await refreshAndReport(plaidClient, item.id, 'daily backstop', db)
+    if (outcome === 'refreshed') refreshed++
+    else if (outcome === 'failed') failed++
+  }
+  return { due: due.length, refreshed, failed }
+}
