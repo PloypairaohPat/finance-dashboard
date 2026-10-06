@@ -85,7 +85,7 @@ export async function createMark(
   const membership = await membershipOf(userId, tx.id)
   if (membership.state === "marked") {
     const mark = await prisma.subscriptionMark.findFirstOrThrow({
-      where: { id: membership.markId, userId },
+      where: { id: membership.markId, userId, kind: "confirmed" },
       select: { id: true, transactionId: true, createdAt: true },
     })
     return { mark, created: false }
@@ -94,7 +94,7 @@ export async function createMark(
 
   try {
     const mark = await prisma.subscriptionMark.create({
-      data: { userId, transactionId: tx.id },
+      data: { userId, transactionId: tx.id, kind: "confirmed" },
       select: { id: true, transactionId: true, createdAt: true },
     })
     return { mark, created: true }
@@ -102,7 +102,7 @@ export async function createMark(
     // Two requests marking the same charge at once: the second finds the first's.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const mark = await prisma.subscriptionMark.findFirstOrThrow({
-        where: { userId, transactionId: tx.id },
+        where: { userId, transactionId: tx.id, kind: "confirmed" },
         select: { id: true, transactionId: true, createdAt: true },
       })
       return { mark, created: false }
@@ -111,8 +111,8 @@ export async function createMark(
   }
 }
 
-/** Un-mark: remove the mark and nothing else. 404 for another user's mark. */
+/** Un-mark: remove the mark and nothing else. 404 for another user's mark, or a dismissal. */
 export async function deleteMark(userId: string, markId: string): Promise<void> {
-  const { count } = await prisma.subscriptionMark.deleteMany({ where: { id: markId, userId } })
+  const { count } = await prisma.subscriptionMark.deleteMany({ where: { id: markId, userId, kind: "confirmed" } })
   if (count === 0) throw new MarkError(404, "Mark not found")
 }

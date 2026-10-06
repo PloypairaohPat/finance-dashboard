@@ -237,8 +237,17 @@ model Goal {
 // The foreign key is (transactionId, userId) -> Transaction(id, userId): the
 // database refuses a mark whose user is not its transaction's user. Deleting a
 // transaction (unlinking or re-linking a bank) deletes its marks.
+//
+// kind (M7.6 PR 4): a mark is the user's answer about the series its anchor
+// starts. "confirmed" is yes — today's "Mark as subscription", and confirming a
+// suggested stream; "dismissed" is no — declining one. An enum, so the
+// database refuses anything else; one row per charge, so a charge is never
+// both. Existing marks default to confirmed. Where a confirmed one lands
+// (Subscriptions or Bills) is not stored: it follows the stream's category
+// under the sorting definition on every read (src/lib/streamSorting.ts).
 model SubscriptionMark {
   id            String      @id @default(cuid())
+  kind          MarkKind    @default(confirmed)
   userId        String
   user          User        @relation(fields: [userId], references: [id])
   transactionId String
@@ -271,6 +280,11 @@ model SubscriptionMark {
 // deletes its streams first (removePlaidItemRows, account deletion, the demo
 // wipe). The (plaidItemId, userId) key means a stream's user is always its
 // Item's owner.
+enum MarkKind {
+  confirmed
+  dismissed
+}
+
 enum StreamDirection {
   inflow
   outflow
