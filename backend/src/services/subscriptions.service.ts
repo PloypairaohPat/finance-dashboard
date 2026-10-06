@@ -36,6 +36,12 @@ export interface EnrichedStream {
   daysUntilNextCharge: number | null
   /** The charges this stream is made of: what a mark and a detected stream are merged on. */
   txIds: string[]
+  /**
+   * For a Plaid stream: the charge Confirm and Dismiss anchor on — its newest
+   * posted, live one, which stays with the part still running when Plaid
+   * regroups or splits it. null when none has posted yet.
+   */
+  anchorTxId?: string | null
   /** Set when the user marked or confirmed it; the id un-marks it. */
   mark: { id: string } | null
   /**

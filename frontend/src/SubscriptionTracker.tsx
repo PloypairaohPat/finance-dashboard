@@ -232,11 +232,15 @@ export default function SubscriptionTracker() {
       setBusy(false)
     }
   }
-  // Anchored on the stream's oldest charge in our rows: posted, so the answer sticks.
+  // Anchored on the stream's newest posted charge: a verdict applies while its
+  // anchor is in the stream, and when Plaid regroups or splits one, the newest
+  // charge stays with the part still running. With nothing posted yet, the
+  // newest charge: the server refuses it with its "still pending" message.
+  const anchorOf = (s: EnrichedStream) => s.anchorTxId ?? s.txIds[s.txIds.length - 1]
   const answer = (s: EnrichedStream, verdict: Verdict["kind"]) => write(() => apiFetch(`${API_URL}/subscriptions/verdicts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ transactionId: s.txIds[0], verdict }),
+    body: JSON.stringify({ transactionId: anchorOf(s), verdict }),
   }))
   const removeVerdict = (id: string) => write(() => apiFetch(`${API_URL}/subscriptions/verdicts/${id}`, { method: "DELETE" }))
 

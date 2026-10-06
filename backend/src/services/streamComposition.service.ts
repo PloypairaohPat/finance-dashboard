@@ -107,6 +107,8 @@ function fromStream(
     nextChargeDate: null,
     daysUntilNextCharge: null,
     txIds: charges.map((c) => c.id),
+    // charges are live rows only (resolveStreamRows), so this skips pending ones.
+    anchorTxId: [...charges].reverse().find((c) => !c.pending)?.id ?? null,
     mark: verdict ? { id: verdict.id } : null,
     status,
   }

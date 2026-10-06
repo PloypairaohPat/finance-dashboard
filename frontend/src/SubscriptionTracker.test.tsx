@@ -21,10 +21,13 @@ const row = (merchant: string, o: Partial<EnrichedStream> = {}): EnrichedStream 
   merchant, cleanMerchant: merchant, key: merchant.toLowerCase(), kind: "subscription", category: "Entertainment",
   frequency: "MONTHLY", lastAmount: 10, lastDate: "2026-01-01", lastChargePending: false, monthlyAmount: 10,
   source: "custom", priceChange: null, isDuplicate: false, nextChargeDate: null, daysUntilNextCharge: null,
-  txIds: [`${merchant}-tx-1`, `${merchant}-tx-2`], mark: null, status: "active", ...o,
+  txIds: [`${merchant}-tx-1`, `${merchant}-tx-2`, `${merchant}-tx-3`], mark: null, status: "active", ...o,
 })
+/** A Plaid stream row: its newest charge pending, so the anchor is the one before. */
+const stream = (merchant: string, o: Partial<EnrichedStream> = {}) =>
+  row(merchant, { source: "plaid", anchorTxId: `${merchant}-tx-2`, lastChargePending: true, ...o })
 const suggestion = (merchant: string, o: Partial<SuggestedStream> = {}): SuggestedStream => ({
-  ...row(merchant, { source: "plaid" }), confirmsAs: "subscription", isNew: false, reason: "category-unlisted", ...o,
+  ...stream(merchant), confirmsAs: "subscription", isNew: false, reason: "category-unlisted", ...o,
 })
 
 /** Today's response: the old detector and marks only. */
@@ -36,8 +39,8 @@ const today: SubscriptionAnalysis = {
 }
 /** PR 5e's response: streams, suggestions and dismissals. */
 const onStreams: SubscriptionAnalysis = {
-  subscriptions: [row("Streamco", { source: "plaid" }), row("Markgym", { mark: { id: "mark-1" } })],
-  bills: [row("Powerco", { kind: "bill", source: "plaid", monthlyAmount: 80 })],
+  subscriptions: [stream("Streamco"), row("Markgym", { mark: { id: "mark-1" } })],
+  bills: [stream("Powerco", { kind: "bill", monthlyAmount: 80 })],
   upcoming: [], alerts: [],
   totals: { monthlySubscriptions: 20, monthlyBills: 80, monthlyAll: 100 },
   suggested: [suggestion("Clinic"), suggestion("Newbox", { isNew: true }), suggestion("Tutor", { confirmsAs: "bill" })],
@@ -113,14 +116,14 @@ describe("SubscriptionTracker", () => {
     expect(button("Powerco is not recurring")).not.toBeNull()
     expect(button("Markgym is not recurring")).toBeNull()
     await click("Powerco is not recurring")
-    expect(writes()).toEqual([{ method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Powerco-tx-1", verdict: "dismissed" } }])
+    expect(writes()).toEqual([{ method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Powerco-tx-2", verdict: "dismissed" } }])
   })
 
-  it("Confirm records a confirmation on the stream's oldest charge and reads the tab again", async () => {
+  it("Confirm anchors on the stream's newest posted charge, not a pending one, and reads the tab again", async () => {
     await mount(onStreams)
     const before = gets()
     await click("Confirm Clinic")
-    expect(writes()).toEqual([{ method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Clinic-tx-1", verdict: "confirmed" } }])
+    expect(writes()).toEqual([{ method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Clinic-tx-2", verdict: "confirmed" } }])
     expect(gets()).toBe(before + 1)
   })
 
@@ -130,7 +133,7 @@ describe("SubscriptionTracker", () => {
     expect(text()).toContain("Dismissed Clinic.")
     await click("Undo dismissing Clinic")
     expect(writes()).toEqual([
-      { method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Clinic-tx-1", verdict: "dismissed" } },
+      { method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Clinic-tx-2", verdict: "dismissed" } },
       { method: "DELETE", path: "/subscriptions/verdicts/verdict-9", body: null },
     ])
     expect(text()).not.toContain("Dismissed Clinic.")
@@ -156,6 +159,14 @@ describe("SubscriptionTracker", () => {
     expect(text()).not.toContain("Dismissed Clinic.")
     expect(button("Confirm Clinic")).not.toBeNull()
     expect(gets()).toBe(before)
+  })
+
+  it("with nothing posted yet, it sends the newest charge and shows the server's pending message", async () => {
+    await mount({ ...onStreams, suggested: [suggestion("Fresh", { anchorTxId: null })] })
+    writeReply = () => reply({ error: "This charge is still pending. A pending row is replaced by a new one when it posts." }, 409)
+    await click("Confirm Fresh")
+    expect(writes()).toEqual([{ method: "POST", path: "/subscriptions/verdicts", body: { transactionId: "Fresh-tx-3", verdict: "confirmed" } }])
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("still pending")
   })
 
   it("a refused write says why", async () => {
