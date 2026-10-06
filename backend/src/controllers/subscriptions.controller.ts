@@ -2,6 +2,7 @@ import { Request, Response } from "express"
 import { getUserId } from "../middleware/auth"
 import { fetchSubscriptionAnalysis } from "../services/subscriptions.service"
 import { MarkError, createMark, deleteMark, membershipOf } from "../services/subscriptionMarks.service"
+import { deleteVerdict, writeVerdict } from "../services/streamVerdicts.service"
 
 export async function getSubscriptions(req: Request, res: Response) {
   try {
@@ -44,5 +45,27 @@ export async function removeMark(req: Request, res: Response) {
     res.json({ ok: true })
   } catch (err: any) {
     sendMarkError(res, err, "remove subscription mark")
+  }
+}
+
+// ── Confirm and Dismiss (M7.6 PR 5c) ──────────────────────────────
+
+// POST /subscriptions/verdicts  { transactionId, verdict: "confirmed" | "dismissed" }
+export async function postVerdict(req: Request, res: Response) {
+  try {
+    const verdict = await writeVerdict(getUserId(req), req.body?.transactionId, req.body?.verdict)
+    res.status(201).json({ verdict })
+  } catch (err: any) {
+    sendMarkError(res, err, "record verdict")
+  }
+}
+
+// DELETE /subscriptions/verdicts/:id — undo a confirmation, or Restore a dismissal.
+export async function removeVerdict(req: Request, res: Response) {
+  try {
+    await deleteVerdict(getUserId(req), req.params.id as string)
+    res.json({ ok: true })
+  } catch (err: any) {
+    sendMarkError(res, err, "remove verdict")
   }
 }

@@ -48,7 +48,7 @@ async function ownTransaction(userId: string, transactionId: unknown) {
 }
 
 /** Whether the classifier counts this one row as spending. */
-async function isSpend(userId: string, tx: { id: string; date: Date }): Promise<{ spend: boolean; label: string }> {
+export async function isSpend(userId: string, tx: { id: string; date: Date }): Promise<{ spend: boolean; label: string }> {
   const startDay = await getPeriodStartDay(userId)
   const { rows } = await classifyWindow(userId, {
     since: tx.date, until: new Date(tx.date.getTime() + DAY_MS), startDay,
