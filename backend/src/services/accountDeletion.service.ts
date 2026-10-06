@@ -213,7 +213,13 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
   }
 
   // 2. Plaid: every Item, before any row goes.
-  const items = await db.plaidItem.findMany({ where: { userId }, select: { itemId: true, accessToken: true } })
+  // In link order, so a partial failure always stops at the same Item: the
+  // item_id reported to Sentry, and the tests, don't depend on row order.
+  const items = await db.plaidItem.findMany({
+    where: { userId },
+    select: { itemId: true, accessToken: true },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  })
   let removedAtPlaid = 0
   for (const item of items) {
     try {

@@ -131,6 +131,8 @@ describe('composeSubscriptions', () => {
     expect(r.subscriptions).toHaveLength(1)
     expect(r.subscriptions[0]).toMatchObject({ merchant: 'StreamCo', kind: 'subscription', monthlyAmount: 12, source: 'plaid', status: 'active', mark: null })
     expect(r.subscriptions[0].priceChange).toEqual({ previousAmount: 10, pctChange: 20 })
+    // The newest posted charge: the one that stays with the running part if Plaid splits it.
+    expect(r.subscriptions[0].anchorTxId).toBe(r.subscriptions[0].txIds[2])
     expect(r.totals.monthlySubscriptions).toBe(12)
     expect(r.suggested).toEqual([])
   })
@@ -148,6 +150,8 @@ describe('composeSubscriptions', () => {
     await stream(w, await series(w, [10, 10, 12], 'STREAMCO', CAT.tv, { lastPending: true }), 'StreamCo', CAT.tv)
     const [s] = (await compose(w)).subscriptions
     expect(s).toMatchObject({ lastAmount: 12, lastChargePending: true, monthlyAmount: 10, priceChange: null })
+    // Confirm and Dismiss anchor on the newest POSTED charge, skipping the pending one.
+    expect(s.anchorTxId).toBe(s.txIds[1])
   })
 
   it('an UNKNOWN frequency is listed but adds nothing; an inactive stream shows as ended, uncounted', async () => {
@@ -173,6 +177,7 @@ describe('composeSubscriptions', () => {
       ['Newflix', true, 'subscription', 'early-detection'],
     ])
     expect(r.suggested.every((s) => s.nextChargeDate === null)).toBe(true)
+    expect(r.suggested.every((s) => s.anchorTxId === s.txIds[s.txIds.length - 1])).toBe(true)
   })
 
   it('a confirmed suggestion lands where confirmsAs says, counted', async () => {

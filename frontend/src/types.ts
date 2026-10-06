@@ -145,6 +145,11 @@ export interface EnrichedStream {
   daysUntilNextCharge: number | null
   txIds: string[]
   /**
+   * For a Plaid stream: the charge Confirm and Dismiss anchor on, its newest
+   * posted one. null when none has posted yet. Absent on other rows.
+   */
+  anchorTxId?: string | null
+  /**
    * Set when the user confirmed it (a mark). On a dismissed stream, the
    * dismissal: the id Restore deletes.
    */
