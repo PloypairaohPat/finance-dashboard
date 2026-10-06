@@ -109,6 +109,12 @@ jobs:
 
       - run: npm run typecheck
 
+      # Component tests: react-scripts' bundled Jest and jsdom, no extra dependencies.
+      - name: Component tests
+        run: npm test
+        env:
+          CI: "true"
+
       # CI=true makes react-scripts treat ESLint warnings (including the
       # no-restricted-imports rule on useSearchParams) as build errors.
       - name: Build (CI=true)
