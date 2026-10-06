@@ -134,6 +134,22 @@ describe('sortStream', () => {
     })
   })
 
+  describe('6. suggested but inactive', () => {
+    it.each<[string, Partial<SortInput>]>([
+      ['an unlisted category', { pfcPrimary: 'MEDICAL', pfcDetailed: 'MEDICAL_PRIMARY_CARE' }],
+      ['TRANSFER_OUT', { pfcPrimary: 'TRANSFER_OUT', pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER' }],
+      ['an old detector false positive', { pfcPrimary: 'FOOD_AND_DRINK', pfcDetailed: 'FOOD_AND_DRINK_COFFEE' }],
+      ['no category', { pfcPrimary: null, pfcDetailed: null }],
+      ['UNKNOWN status', { status: 'UNKNOWN' }],
+    ])('%s that has stopped is hidden, not suggested', (_, over) => {
+      expect(sort({ ...over, isActive: false })).toEqual({ bucket: 'hidden', reason: 'ended-unconfirmed', counts: false })
+      expect(sort({ ...over, isActive: true }).bucket).toBe('suggested')
+    })
+    it('an inactive subscription or bill by category still shows, as ended', () => {
+      expect(sort({ isActive: false }).bucket).toBe('subscription')
+    })
+  })
+
   describe('counts toward totals', () => {
     it('an inactive subscription or bill is listed (as ended) but does not count', () => {
       expect(sort({ isActive: false })).toEqual({ bucket: 'subscription', reason: 'subscription-category', counts: false })

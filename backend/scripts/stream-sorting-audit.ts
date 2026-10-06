@@ -44,17 +44,17 @@ async function main() {
     const byReason: Counter = new Map()
     const counting: Counter = new Map()
     const confirmsAs: Counter = new Map()
-    for (const { sort } of sorted) {
+    for (const { stream, sort } of sorted) {
       bump(byBucket, sort.bucket)
       bump(byReason, `${sort.bucket} / ${sort.reason}`)
       if (sort.counts) bump(counting, sort.bucket)
-      if (sort.confirmsAs) bump(confirmsAs, sort.confirmsAs)
+      if (sort.confirmsAs) bump(confirmsAs, `${stream.isActive ? 'active' : 'inactive'} / ${sort.confirmsAs}`)
     }
     console.log(`user ${i + 1}: ${sorted.length} stream(s)`)
     show('by bucket', byBucket)
     show('by bucket / reason', byReason)
     show('counting toward totals', counting)
-    show('suggested, would land in once confirmed', confirmsAs)
+    show('suggested, by is_active / would land in once confirmed', confirmsAs)
     console.log()
   }
   await db.prisma.$disconnect()

@@ -247,10 +247,10 @@ async function loadSpendRows(userId: string, now: Date, since: Date) {
 
 type SpendRow = Awaited<ReturnType<typeof loadSpendRows>>[number]
 
-/** The user's marks, oldest first, each with its anchor's identity fields. */
+/** The user's marks, oldest first, each with its anchor's identity fields. Confirmations only. */
 function loadMarks(userId: string) {
   return prisma.subscriptionMark.findMany({
-    where: { userId },
+    where: { userId, kind: "confirmed" },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {
       id: true,
