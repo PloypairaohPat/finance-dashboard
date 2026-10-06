@@ -4,8 +4,21 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { useDemo } from "./lib/DemoContext"
 import { useSyncVersion } from "./SyncProvider"
-import type { SubscriptionAnalysis, EnrichedStream, Frequency } from "./types"
+import type { SubscriptionAnalysis, EnrichedStream, Frequency, SuggestedStream, Verdict } from "./types"
 import PendingChip from "./PendingChip"
+import { readWriteResult } from "./lib/writeResult"
+
+// ─────────────────────────────────────────────────────────────────
+//  SubscriptionTracker — the Subscriptions & Bills tab.
+//
+//  M7.6 PR 5d: Suggested (outside every total, Confirm and Dismiss), "Not
+//  recurring" on every row that is a Plaid stream, Undo after a dismiss, and
+//  a collapsed "Dismissed (n)" with Restore. All of it renders only when the
+//  response carries it: `suggested` and `dismissed` arrive with PR 5e, and
+//  only streams (source "plaid") can be dismissed, so until then the tab
+//  looks exactly as before. Writes go through readWriteResult, so demo mode
+//  shows its message and nothing claims to have saved.
+// ─────────────────────────────────────────────────────────────────
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n)
@@ -36,7 +49,34 @@ const cardTotal: React.CSSProperties = {
   color: "#5a7a5a", textTransform: "uppercase", letterSpacing: ".06em",
 }
 
-function StreamRow({ s }: { s: EnrichedStream }) {
+const chip = (color: string, bg: string, border: string): React.CSSProperties => ({
+  fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
+  padding: "2px 6px", borderRadius: 3, background: bg, color, border: `1px solid ${border}`,
+  textTransform: "uppercase", letterSpacing: ".06em", flexShrink: 0, whiteSpace: "nowrap",
+})
+
+function ActionButton({ onClick, disabled, label, children }: {
+  onClick: () => void; disabled: boolean; label: string; children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      style={{
+        fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "4px 10px", borderRadius: 4,
+        background: "transparent", color: disabled ? "#3a4a3a" : "#8ab88a",
+        border: "1px solid #253325", cursor: disabled ? "default" : "pointer",
+      }}
+    >{children}</button>
+  )
+}
+
+function StreamRow({ s, chips, actions, showMark = true }: {
+  s: EnrichedStream; chips?: React.ReactNode; actions?: React.ReactNode
+  /** Off where `mark` isn't a confirmation: on a dismissed stream it's the dismissal. */
+  showMark?: boolean
+}) {
   return (
     <div style={{
       display: "grid",
@@ -44,6 +84,7 @@ function StreamRow({ s }: { s: EnrichedStream }) {
       gap: 12, padding: "10px 0",
       borderBottom: "1px solid #1e2b1e",
     }}>
+      <div style={{ minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
         <span style={{
           fontSize: 13.5, color: "#d4e8d4",
@@ -70,15 +111,9 @@ function StreamRow({ s }: { s: EnrichedStream }) {
           }}>dup</span>
         )}
         {/* Chips never shrink: the name ellipsizes first, so they stay readable at phone width. */}
-        {s.mark && (
-          <span title="You marked this as a subscription" style={{
-            fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
-            padding: "2px 6px", borderRadius: 3,
-            background: "rgba(74,158,255,.12)", color: "#4a9eff",
-            border: "1px solid rgba(74,158,255,.3)",
-            textTransform: "uppercase", letterSpacing: ".06em",
-            flexShrink: 0, whiteSpace: "nowrap",
-          }}>Marked by you</span>
+        {chips}
+        {showMark && s.mark && (
+          <span title="You confirmed this one" style={chip("#4a9eff", "rgba(74,158,255,.12)", "rgba(74,158,255,.3)")}>Confirmed by you</span>
         )}
         {s.status === "ended" && (
           <span title="No charge for two billing periods: not counted in the totals" style={{
@@ -90,6 +125,8 @@ function StreamRow({ s }: { s: EnrichedStream }) {
             flexShrink: 0, whiteSpace: "nowrap",
           }}>Ended</span>
         )}
+      </div>
+      {actions && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 6 }}>{actions}</div>}
       </div>
       <div style={{ textAlign: "right" }}>
         <div style={{
@@ -142,6 +179,13 @@ export default function SubscriptionTracker() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const syncVersion = useSyncVersion()
+  // Bumped after a write, to read the tab again.
+  const [reloads, setReloads] = useState(0)
+  const [busy, setBusy] = useState(false)
+  /** What a write said instead of saving: an error, or demo mode's message. */
+  const [notice, setNotice] = useState<{ tone: "error" | "demo"; text: string } | null>(null)
+  /** The dismissal just made, for Undo. */
+  const [undo, setUndo] = useState<{ merchant: string; verdictId: string } | null>(null)
 
   // Re-runs after every sync; the current list stays on screen meanwhile, and a
   // superseded run's response is ignored.
@@ -167,7 +211,48 @@ export default function SubscriptionTracker() {
       }
     })()
     return () => { cancelled = true }
-  }, [demoMode, isSignedIn, apiFetch, syncVersion])
+  }, [demoMode, isSignedIn, apiFetch, syncVersion, reloads])
+
+  /** One write. Returns its body when it saved, null when it didn't (and says why). */
+  const write = async (send: () => Promise<Response>): Promise<unknown | null> => {
+    setBusy(true)
+    try {
+      const result = await readWriteResult(await send())
+      if (!result.ok) {
+        setNotice({ tone: result.demo ? "demo" : "error", text: result.message })
+        return null
+      }
+      setNotice(null)
+      setReloads((n) => n + 1)
+      return result.data ?? {}
+    } catch (e: any) {
+      setNotice({ tone: "error", text: e.message })
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+  // Anchored on the stream's oldest charge in our rows: posted, so the answer sticks.
+  const answer = (s: EnrichedStream, verdict: Verdict["kind"]) => write(() => apiFetch(`${API_URL}/subscriptions/verdicts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transactionId: s.txIds[0], verdict }),
+  }))
+  const removeVerdict = (id: string) => write(() => apiFetch(`${API_URL}/subscriptions/verdicts/${id}`, { method: "DELETE" }))
+
+  const confirm = async (s: EnrichedStream) => {
+    setUndo(null)
+    await answer(s, "confirmed")
+  }
+  const dismiss = async (s: EnrichedStream) => {
+    setUndo(null)
+    const body = (await answer(s, "dismissed")) as { verdict?: Verdict } | null
+    if (body?.verdict) setUndo({ merchant: s.merchant, verdictId: body.verdict.id })
+  }
+  const undoDismiss = async () => {
+    if (!undo) return
+    if ((await removeVerdict(undo.verdictId)) !== null) setUndo(null)
+  }
 
   if (loading) {
     return <div style={{ color: "#5a7a5a", fontSize: 13, padding: 20 }}>Loading subscriptions…</div>
@@ -177,10 +262,34 @@ export default function SubscriptionTracker() {
     return <div style={{ color: "#ff6b6b", fontSize: 13, padding: 20 }}>⚠ {error ?? "Couldn't load subscriptions."}</div>
   }
 
-  const { subscriptions, bills, upcoming, alerts, totals } = data
+  const { subscriptions, bills, upcoming, alerts, totals, suggested, dismissed } = data
+  const rowKey = (s: EnrichedStream) => `${s.key}:${s.txIds[0] ?? ""}:${s.mark?.id ?? ""}`
+  // Only a Plaid stream can be dismissed; a marked series is undone from its charge.
+  const notRecurring = (s: EnrichedStream) => s.source === "plaid" ? (
+    <ActionButton onClick={() => dismiss(s)} disabled={busy} label={`${s.merchant} is not recurring`}>Not recurring</ActionButton>
+  ) : undefined
 
   return (
     <div>
+      {notice && (
+        <div role={notice.tone === "error" ? "alert" : "status"} style={{
+          marginBottom: 14, padding: "10px 14px", borderRadius: 6, fontSize: 12.5,
+          background: notice.tone === "error" ? "rgba(232,85,85,.07)" : "rgba(74,158,255,.07)",
+          border: `1px solid ${notice.tone === "error" ? "rgba(232,85,85,.25)" : "rgba(74,158,255,.25)"}`,
+          color: notice.tone === "error" ? "#e88a8a" : "#9cc4ef",
+        }}>{notice.tone === "error" ? "⚠ " : ""}{notice.text}</div>
+      )}
+      {undo && (
+        <div role="status" style={{
+          marginBottom: 14, padding: "8px 14px", borderRadius: 6, fontSize: 12.5,
+          background: "#161e14", border: "1px solid #253325", color: "#d4e8d4",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+        }}>
+          <span>Dismissed {undo.merchant}.</span>
+          <ActionButton onClick={undoDismiss} disabled={busy} label={`Undo dismissing ${undo.merchant}`}>Undo</ActionButton>
+        </div>
+      )}
+
       {/* Alerts at the top — most actionable */}
       {alerts.length > 0 && (
         <div style={{ marginBottom: 20 }}>
@@ -211,7 +320,7 @@ export default function SubscriptionTracker() {
         </div>
         {subscriptions.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No subscriptions detected yet.</div>
-        ) : subscriptions.map(s => <StreamRow key={s.key + (s.mark?.id ?? "")} s={s} />)}
+        ) : subscriptions.map(s => <StreamRow key={rowKey(s)} s={s} actions={notRecurring(s)} />)}
       </div>
 
       {/* Bills */}
@@ -222,8 +331,50 @@ export default function SubscriptionTracker() {
         </div>
         {bills.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No bills detected yet.</div>
-        ) : bills.map(s => <StreamRow key={s.key + (s.mark?.id ?? "")} s={s} />)}
+        ) : bills.map(s => <StreamRow key={rowKey(s)} s={s} actions={notRecurring(s)} />)}
       </div>
+
+      {/* Suggested: recurring charges to review, outside every total. */}
+      {suggested && (
+        <div style={card}>
+          <div style={cardHead}>
+            <div style={cardTitle}>Suggested</div>
+            <div style={cardTotal}>not in totals</div>
+          </div>
+          <div style={{ color: "#5a7a5a", fontSize: 12, marginBottom: 6 }}>
+            These repeat, but may not be subscriptions or bills. Confirm the ones that are; dismiss the rest.
+          </div>
+          {suggested.length === 0 ? (
+            <div style={{ color: "#5a7a5a", fontSize: 13 }}>Nothing to review.</div>
+          ) : suggested.map((s: SuggestedStream) => (
+            <StreamRow
+              key={rowKey(s)}
+              s={s}
+              chips={s.isNew && <span title="Plaid only just started seeing this" style={chip("#4ad6a0", "rgba(74,214,160,.12)", "rgba(74,214,160,.3)")}>New</span>}
+              actions={<>
+                <ActionButton onClick={() => confirm(s)} disabled={busy} label={`Confirm ${s.merchant}`}>Confirm</ActionButton>
+                <ActionButton onClick={() => dismiss(s)} disabled={busy} label={`Dismiss ${s.merchant}`}>Dismiss</ActionButton>
+                <span style={{ fontSize: 11, color: "#5a7a5a" }}>{s.confirmsAs === "bill" ? "Confirming adds it to Bills" : "Confirming adds it to Subscriptions"}</span>
+              </>}
+            />
+          ))}
+          {dismissed && dismissed.length > 0 && (
+            <details style={{ marginTop: 14 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, color: "#8ab88a" }}>Dismissed ({dismissed.length})</summary>
+              {dismissed.map((s) => (
+                <StreamRow
+                  key={rowKey(s)}
+                  s={s}
+                  showMark={false}
+                  actions={s.mark ? (
+                    <ActionButton onClick={() => removeVerdict(s.mark!.id)} disabled={busy} label={`Restore ${s.merchant}`}>Restore</ActionButton>
+                  ) : undefined}
+                />
+              ))}
+            </details>
+          )}
+        </div>
+      )}
 
       {/* Upcoming */}
       <div style={card}>
