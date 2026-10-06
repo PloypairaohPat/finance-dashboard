@@ -22,15 +22,18 @@ vi.mock('@sentry/node', async (importOriginal) => ({
 import request from 'supertest'
 import { clerkClient } from '@clerk/express'
 import { app, plaidClient } from '../src/app'
+import { plaidClient as controllerPlaid } from '../src/lib/plaidClient'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
 import { NON_DEMO_TABLES, takeBaseline } from '../scripts/lib/non-demo-baseline'
 import {
-  DELETE_CONFIRMATION, DELETION_ORDER, DeletionError, assertDeletable, deleteUserData,
+  DELETE_CONFIRMATION, DELETION_INCOMPLETE, DELETION_ORDER, DELETION_UNDERWAY_MESSAGE, DeletionError,
+  DeletionUnderway, ROW_ATTEMPTS, assertDeletable, deleteUserData,
 } from '../src/services/accountDeletion.service'
 
 const A = 'deletion-test-user-a'
 const B = 'deletion-test-user-b'
+const C = 'deletion-test-user-c'
 const clerk = clerkClient.users as unknown as Record<'banUser' | 'unbanUser' | 'deleteUser', ReturnType<typeof vi.fn>>
 const itemRemove = (plaidClient as any).itemRemove as ReturnType<typeof vi.fn>
 
@@ -75,6 +78,22 @@ async function wipe(id: string) {
   await prisma.user.deleteMany({ where: { id } })
 }
 
+/** A second Item, so one can leave Plaid and the next fail. */
+async function addItem(id: string) {
+  await prisma.plaidItem.create({ data: { userId: id, itemId: `${id}-item-2`, accessToken: encrypt(`access-token-${id}-2`), institutionName: 'Test Bank' } })
+}
+const plaidDown = () => Object.assign(new Error('boom'), { response: { data: { error_code: 'INTERNAL_SERVER_ERROR' } } })
+
+/** The DELETION_INCOMPLETE reports, as their extras. */
+const incompleteReports = () => sentry.captureMessage.mock.calls.filter((c) => c[0] === DELETION_INCOMPLETE).map((c) => c[1].extra)
+
+/**
+ * A write to one of A's rows from another connection, committed after the
+ * deletion's snapshot and before it deletes that row: Postgres refuses the
+ * delete under REPEATABLE READ (40001), as a concurrent sync's write would.
+ */
+const conflictingWrite = () => prisma.budget.updateMany({ where: { userId: A }, data: { monthlyLimit: '7.00' } })
+
 const deps = (extra: object = {}) => ({ plaidClient, clerk: clerkClient.users as any, ...extra })
 
 beforeEach(async () => {
@@ -82,7 +101,7 @@ beforeEach(async () => {
   await makeUser(A); await makeUser(B)
   for (const f of Object.values(clerk)) { f.mockReset(); f.mockResolvedValue({}) }
   itemRemove.mockReset(); itemRemove.mockResolvedValue({ data: {} })
-  sentry.captureMessage.mockClear()
+  sentry.captureMessage.mockClear(); sentry.captureException.mockClear()
 })
 afterAll(async () => { await wipe(A); await wipe(B) })
 
@@ -103,16 +122,77 @@ describe('deleteUserData', () => {
     await deleteUserData(A, deps())
     expect(await takeBaseline(prisma, A)).toEqual(before)
 
-    // A deletion that touches someone else must not commit.
+    // A deletion that touches someone else must not commit. The Item already
+    // left Plaid, so the user stays banned and it's reported to finish by hand.
     await wipe(A); await makeUser(A)
     const aBefore = await countsOf(A)
     await expect(deleteUserData(A, deps({
       hooks: { insideTransaction: (tx: any) => tx.budget.deleteMany({ where: { userId: B } }) },
-    }))).rejects.toThrow(/other users' rows changed/)
+    }))).rejects.toBeInstanceOf(DeletionUnderway)
     expect(await countsOf(A)).toEqual(aBefore)
     expect((await countsOf(B)).Budget).toBe(1)
-    expect(clerk.unbanUser).toHaveBeenCalledWith(A)
+    expect(clerk.unbanUser).not.toHaveBeenCalled()
     expect(clerk.deleteUser).toHaveBeenCalledTimes(1) // only the first, successful deletion
+    // The reason, not the message: that names other users' row counts. Not retried.
+    expect(incompleteReports()).toEqual([expect.objectContaining({ clerkUserId: A, stage: 'rows', reason: 'other users changed', attempts: 1 })])
+    expect(JSON.stringify(sentry.captureMessage.mock.calls)).not.toMatch(/row\(s\)|rows changed/)
+  })
+
+  it('2c. a conflicting write on the first attempt is retried, and the second attempt deletes', async () => {
+    const attempts: number[] = []
+    const report = await deleteUserData(A, deps({
+      hooks: {
+        beforeDelete: async (attempt: number) => {
+          attempts.push(attempt)
+          if (attempt !== 1) return
+          await conflictingWrite()
+          // Another user's write lands too: only a baseline taken fresh on
+          // attempt 2 includes it, so a reused one would read it as damage.
+          await prisma.budget.create({ data: { userId: B, category: 'Travel', monthlyLimit: '5.00' } })
+        },
+      },
+    }))
+    expect(attempts).toEqual([1, 2])
+    expect((await countsOf(B)).Budget).toBe(2)
+    expect(report.clerkDeleted).toBe(true)
+    expect(await countsOf(A)).toEqual(empty)
+    // Only the transaction re-ran: one ban, one Plaid removal, nothing reported.
+    expect(clerk.banUser).toHaveBeenCalledTimes(1)
+    expect(itemRemove).toHaveBeenCalledTimes(1)
+    expect(clerk.unbanUser).not.toHaveBeenCalled()
+    expect(incompleteReports()).toEqual([])
+  })
+
+  it('2d. a conflict on every attempt stops after the last, stays banned, and reports what finishing it needs', async () => {
+    const before = await countsOf(A)
+    const attempts: number[] = []
+    await expect(deleteUserData(A, deps({
+      hooks: { beforeDelete: async (attempt: number) => { attempts.push(attempt); await conflictingWrite() } },
+    }))).rejects.toBeInstanceOf(DeletionUnderway)
+    expect(attempts).toEqual(Array.from({ length: ROW_ATTEMPTS }, (_, i) => i + 1))
+    expect(await countsOf(A)).toEqual(before)
+    expect(clerk.unbanUser).not.toHaveBeenCalled()
+    expect(clerk.deleteUser).not.toHaveBeenCalled()
+    expect(itemRemove).toHaveBeenCalledTimes(1)
+    expect(incompleteReports()).toEqual([{ clerkUserId: A, stage: 'rows', reason: 'conflict', attempts: ROW_ATTEMPTS, prismaCode: 'P2034', pgCode: null }])
+  })
+
+  it('2e. a failure before any Item left Plaid unbans and asks to try again', async () => {
+    // A user with no Items: nothing irreversible happens before the transaction.
+    await wipe(C)
+    await prisma.user.create({ data: { id: C, email: `${C}@deletion-test.local` } })
+    await prisma.budget.create({ data: { userId: C, category: 'Shopping', monthlyLimit: '100.00' } })
+    const before = await countsOf(C)
+    const err = await deleteUserData(C, deps({
+      hooks: { insideTransaction: (tx: any) => tx.goal.deleteMany({ where: { userId: B } }) },
+    })).catch((e) => e)
+    expect(err).toBeInstanceOf(DeletionError)
+    expect(err.message).toMatch(/nothing was deleted\. Please try again/)
+    expect(await countsOf(C)).toEqual(before)
+    expect(clerk.unbanUser).toHaveBeenCalledWith(C)
+    expect(itemRemove).not.toHaveBeenCalled()
+    await wipe(C)
+    expect(incompleteReports()).toEqual([])
   })
 
   it("2b. another user's write committed during the deletion doesn't abort it (one snapshot)", async () => {
@@ -144,6 +224,18 @@ describe('deleteUserData', () => {
     const reported = JSON.stringify(sentry.captureMessage.mock.calls)
     expect(reported).toContain(`${A}-item`)
     expect(reported).not.toContain(`access-token-${A}`)
+  })
+
+  it('4b. one Item removed at Plaid and the next not: stays banned, reports, nothing deleted', async () => {
+    await addItem(A)
+    itemRemove.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce(plaidDown())
+    const before = await countsOf(A)
+    await expect(deleteUserData(A, deps())).rejects.toBeInstanceOf(DeletionUnderway)
+    expect(itemRemove).toHaveBeenCalledTimes(2)
+    expect(await countsOf(A)).toEqual(before)
+    expect(clerk.unbanUser).not.toHaveBeenCalled()
+    expect(incompleteReports()).toEqual([{ clerkUserId: A, stage: 'plaid', itemId: `${A}-item-2`, errorCode: 'INTERNAL_SERVER_ERROR' }])
+    expect(JSON.stringify(sentry.captureMessage.mock.calls)).not.toContain('access-token')
   })
 
   it('5. carries on when Plaid says the Item is already gone', async () => {
@@ -202,6 +294,17 @@ describe('DELETE /user', () => {
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({ deleted: true, accountDeleted: true })
     expect(await countsOf(A)).toEqual(empty)
+  })
+
+  it('a part-done deletion answers "underway", not an error asking to try again', async () => {
+    await addItem(A)
+    // DELETE /user uses src/lib/plaidClient's instance, not the app's.
+    const remove = (controllerPlaid as any).itemRemove as ReturnType<typeof vi.fn>
+    remove.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce(plaidDown())
+    const res = await del(A, { confirmation: DELETE_CONFIRMATION })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ deleted: false, accountDeleted: false, pending: true, message: DELETION_UNDERWAY_MESSAGE })
+    expect(clerk.unbanUser).not.toHaveBeenCalled()
   })
 
   it('8. deletes only the caller: another user named in the body is ignored and left identical', async () => {

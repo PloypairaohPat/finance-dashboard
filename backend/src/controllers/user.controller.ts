@@ -5,7 +5,9 @@ import { isValidPeriodStartDay, MIN_PERIOD_START_DAY, MAX_PERIOD_START_DAY } fro
 import * as Sentry from "@sentry/node"
 import { clerkClient } from "@clerk/express"
 import { plaidClient } from "../lib/plaidClient"
-import { DELETE_CONFIRMATION, DeletionError, confirms, deleteUserData } from "../services/accountDeletion.service"
+import {
+  DELETE_CONFIRMATION, DELETION_UNDERWAY_MESSAGE, DeletionError, DeletionUnderway, confirms, deleteUserData,
+} from "../services/accountDeletion.service"
 
 // GET /user/settings
 export async function getUserSettings(req: Request, res: Response): Promise<void> {
@@ -70,6 +72,12 @@ export async function deleteMyAccount(req: Request, res: Response) {
       }),
     })
   } catch (err: any) {
+    // Part-done after an Item left Plaid: still banned, reported, finished by hand.
+    // Not an error: they can't sign in to try again.
+    if (err instanceof DeletionUnderway) {
+      res.json({ deleted: false, accountDeleted: false, pending: true, message: DELETION_UNDERWAY_MESSAGE })
+      return
+    }
     if (err instanceof DeletionError) {
       res.status(err.status).json({ error: err.message })
       return

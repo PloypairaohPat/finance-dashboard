@@ -185,14 +185,27 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
 //
 // The phrase is checked here only to enable the button; the server checks it
 // again (DELETE /user). Afterwards the user is signed out: their Clerk account
-// is gone, or banned if its removal is still pending.
+// is gone, or banned if its removal is still pending. When the server sends a
+// message with it (deletion underway, or the Clerk account still to remove),
+// it stays until dismissed, and dismissing signs out.
 
-function DeleteAccount() {
+export function DeleteAccount() {
   const apiFetch = useApiFetch()
   const { signOut } = useClerk()
   const [typed, setTyped] = useState("")
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  /** A message to read before signing out. The session is already revoked server-side. */
+  const [notice, setNotice] = useState<string | null>(null)
+  // Closing the dialog another way (Escape, the backdrop) is dismissing it too.
+  const signedOut = useRef(false)
+  const dismiss = useRef<() => void>(() => {})
+  dismiss.current = () => {
+    if (notice === null || signedOut.current) return
+    signedOut.current = true
+    void signOut({ redirectUrl: "/" })
+  }
+  useEffect(() => () => dismiss.current(), [])
   const inputId = useId()
   const ready = typed.trim().toLowerCase() === DELETE_CONFIRMATION
 
@@ -208,7 +221,7 @@ function DeleteAccount() {
       const result = await readWriteResult(res)
       if (!result.ok) { setMessage(result.message); return }
       const body = result.data as { accountDeleted?: boolean; message?: string } | null
-      if (body?.accountDeleted === false && body.message) setMessage(body.message)
+      if (body?.accountDeleted === false && body.message) { setNotice(body.message); return }
       await signOut({ redirectUrl: "/" })
     } catch (e: any) {
       setMessage(e.message)
@@ -251,7 +264,7 @@ function DeleteAccount() {
       />
       <button
         onClick={onDelete}
-        disabled={!ready || busy}
+        disabled={!ready || busy || notice !== null}
         style={{
           width: "100%", marginTop: 10, padding: "9px 14px", borderRadius: 4,
           background: ready && !busy ? colors.red : "transparent",
@@ -261,6 +274,19 @@ function DeleteAccount() {
           fontFamily: fonts.mono, fontSize: 12, fontWeight: 600,
         }}
       >{busy ? "Deleting…" : "Delete account and all data"}</button>
+      {notice && (
+        <div role="status" style={{ marginTop: 10, fontSize: 13, color: colors.textHi, lineHeight: 1.5 }}>
+          {notice}
+          <button
+            onClick={() => dismiss.current()}
+            style={{
+              display: "block", marginTop: 8, padding: "7px 14px", borderRadius: 4, cursor: "pointer",
+              background: "transparent", color: colors.textHi, border: `1px solid ${colors.border2}`,
+              fontFamily: fonts.mono, fontSize: 12,
+            }}
+          >OK, sign out</button>
+        </div>
+      )}
       {message && (
         <div role="alert" style={{ marginTop: 10, fontFamily: fonts.mono, fontSize: 12, color: colors.red, lineHeight: 1.5 }}>
           ⚠ {message}
