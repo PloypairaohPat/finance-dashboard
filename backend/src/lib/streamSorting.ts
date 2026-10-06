@@ -77,7 +77,7 @@ export interface StreamSort {
   reason: SortReason
   /** Toward totals: a subscription or bill, active, with a known frequency. */
   counts: boolean
-  /** For a suggested stream: where it lands once confirmed. */
+  /** For a suggested stream, or one hidden as ended-unconfirmed: where it lands once confirmed. */
   confirmsAs?: 'subscription' | 'bill'
 }
 
@@ -160,7 +160,10 @@ export function sortStream(s: SortInput): StreamSort {
   const suggest = (reason: SortReason): StreamSort =>
     // 6. Asking someone to confirm something that already stopped is noise.
     // EARLY_DETECTION is active by nature, so this doesn't reach it in practice.
-    s.isActive ? { bucket: 'suggested', reason, counts: false, confirmsAs: category.confirmsAs } : hidden('ended-unconfirmed')
+    // It keeps confirmsAs: a confirmation on it (a mark) still shows it, as ended, there.
+    s.isActive
+      ? { bucket: 'suggested', reason, counts: false, confirmsAs: category.confirmsAs }
+      : { ...hidden('ended-unconfirmed'), confirmsAs: category.confirmsAs }
   // "You just started a subscription": always worth a confirm, never assumed.
   if (s.status === 'EARLY_DETECTION') return suggest('early-detection')
   // Plaid's "none of the others applies": not established, so not assumed either.

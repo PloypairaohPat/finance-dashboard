@@ -142,7 +142,9 @@ describe('sortStream', () => {
       ['no category', { pfcPrimary: null, pfcDetailed: null }],
       ['UNKNOWN status', { status: 'UNKNOWN' }],
     ])('%s that has stopped is hidden, not suggested', (_, over) => {
-      expect(sort({ ...over, isActive: false })).toEqual({ bucket: 'hidden', reason: 'ended-unconfirmed', counts: false })
+      expect(sort({ ...over, isActive: false })).toEqual({
+        bucket: 'hidden', reason: 'ended-unconfirmed', counts: false, confirmsAs: sort({ ...over, isActive: true }).confirmsAs,
+      })
       expect(sort({ ...over, isActive: true }).bucket).toBe('suggested')
     })
     it('an inactive subscription or bill by category still shows, as ended', () => {
