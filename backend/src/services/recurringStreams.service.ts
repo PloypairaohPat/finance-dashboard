@@ -151,6 +151,11 @@ export async function applyItemStreams(tx: Prisma.TransactionClient, fetched: Fe
       where: { plaidItemId: fetched.plaidItemId, userId: fetched.userId, streamId: { in: plan.removeStreamIds } },
     })
     : { count: 0 }
+  // A successful refresh, an empty one included: the first refresh fires once
+  // (M7.6 PR 2b-2), and the Plaid-items inventory shows a stalled one. Raw SQL
+  // so only this column changes: Prisma's update would also bump updatedAt,
+  // and a refresh isn't an edit to the Item (the backfill's check relies on it).
+  await tx.$executeRaw`UPDATE "PlaidItem" SET "streamsRefreshedAt" = now() WHERE id = ${fetched.plaidItemId}`
   return { skipped: false, written: plan.upserts.length, removed, droppedForAccounts: plan.droppedForAccounts }
 }
 

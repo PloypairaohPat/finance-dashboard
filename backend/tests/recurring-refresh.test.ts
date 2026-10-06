@@ -159,3 +159,26 @@ describe('the demo', () => {
     expect(call).not.toHaveBeenCalled()
   })
 })
+
+describe('streamsRefreshedAt', () => {
+  const stamp = async () => (await prisma.plaidItem.findUniqueOrThrow({ where: { id: itemId } })).streamsRefreshedAt
+
+  it('starts empty, and is set by every successful refresh, an empty one included', async () => {
+    expect(await stamp()).toBeNull()
+    await refreshItemStreams(plaidWith([s('a')]), itemId)
+    const first = await stamp()
+    expect(first).toBeInstanceOf(Date)
+    await new Promise((r) => setTimeout(r, 20))
+    await refreshItemStreams(plaidWith([]), itemId)
+    expect((await stamp())!.getTime()).toBeGreaterThan(first!.getTime())
+  })
+
+  it('is left as it was by a Plaid error', async () => {
+    await refreshItemStreams(plaidWith([s('a')]), itemId)
+    const before = await stamp()
+    const c = new PlaidApi() as any
+    ;(c.transactionsRecurringGet as Mock).mockRejectedValueOnce(Object.assign(new Error('boom'), { response: { data: { error_code: 'PRODUCT_NOT_READY' } } }))
+    await expect(refreshItemStreams(c, itemId)).rejects.toBeInstanceOf(StreamFetchError)
+    expect(await stamp()).toEqual(before)
+  })
+})
