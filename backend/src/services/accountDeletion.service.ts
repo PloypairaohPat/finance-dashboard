@@ -42,6 +42,7 @@ export const DELETION_ORDER = [
   ['SubscriptionMark', 'userId', 'subscriptionMark'],
   ['Transaction', 'userId', 'transaction'],
   ['Account', 'userId', 'account'],
+  ['RecurringStream', 'userId', 'recurringStream'],
   ['PlaidItem', 'userId', 'plaidItem'],
   ['Budget', 'userId', 'budget'],
   ['BalanceSnapshot', 'userId', 'balanceSnapshot'],

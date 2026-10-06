@@ -48,6 +48,13 @@ async function makeUser(id: string) {
   await prisma.alert.create({ data: { userId: id, kind: 'low_balance', fingerprint: `${id}-a2`, severity: 'medium', title: 't', body: 'b', deletedAt: new Date() } })
   await prisma.goal.create({ data: { userId: id, type: 'savings', name: 'g', targetAmount: '50.00' } })
   await prisma.goal.create({ data: { userId: id, type: 'savings', name: 'g2', targetAmount: '50.00', deletedAt: new Date() } })
+  await prisma.recurringStream.create({
+    data: {
+      userId: id, plaidItemId: item.id, streamId: `FAKE-${id}-stream`, plaidAccountId: account.plaidAccountId,
+      direction: 'outflow', description: 'STREAM', frequency: 'MONTHLY', status: 'MATURE', isActive: true,
+      firstDate: new Date(), lastDate: new Date(), lastAmount: '12.00', plaidTransactionIds: [`${id}-tx-1`], plaidUpdatedAt: new Date(),
+    },
+  })
 }
 
 /** Rows the user has in every table that carries a user. */
@@ -62,7 +69,7 @@ async function countsOf(id: string) {
 const empty = Object.fromEntries(NON_DEMO_TABLES.map(([t]) => [t, 0]))
 
 async function wipe(id: string) {
-  for (const t of ['subscriptionMark', 'transaction', 'account', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const) {
+  for (const t of ['subscriptionMark', 'transaction', 'account', 'recurringStream', 'plaidItem', 'budget', 'balanceSnapshot', 'alert', 'goal'] as const) {
     await (prisma[t] as any).deleteMany({ where: { userId: id } })
   }
   await prisma.user.deleteMany({ where: { id } })

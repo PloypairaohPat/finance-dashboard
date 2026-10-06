@@ -83,21 +83,35 @@ export async function unlinkPlaidItem(
   // Revoke at Plaid BEFORE touching local rows — a Plaid failure must never
   // leave orphaned local state (deleted here, still live at Plaid or vice versa).
   await removeItemAtPlaid(plaidClient, item.accessToken)
+  await removePlaidItemRows(item.id)
+}
 
-  const accounts = await prisma.account.findMany({
-    where:  { plaidItemId: item.id },
-    select: { id: true, plaidAccountId: true },
+/**
+ * Delete one Item's row and everything that depends on it, in one
+ * transaction. THE list of an Item's dependents: unlink and the duplicate-link
+ * path's discard both call it, so a new table that hangs off an Item is a
+ * one-line change here — and its restrict foreign key fails loudly until it is.
+ *
+ * Everything tied to the bank goes: its recurring streams, its transactions
+ * (and the subscription marks on them, by cascade) and accounts, and its
+ * net-worth snapshots (keyed on the Plaid account id). A goal that tracked one
+ * of its accounts keeps existing, unlinked from it.
+ */
+export async function removePlaidItemRows(plaidItemRowId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const item = await tx.plaidItem.findUnique({ where: { id: plaidItemRowId }, select: { id: true, userId: true } })
+    if (!item) return
+    const accounts = await tx.account.findMany({
+      where:  { plaidItemId: item.id },
+      select: { id: true, plaidAccountId: true },
+    })
+    const accountIds = accounts.map((a) => a.id)
+
+    await tx.recurringStream.deleteMany({ where: { plaidItemId: item.id, userId: item.userId } })
+    await tx.transaction.deleteMany({ where: { accountId: { in: accountIds } } })
+    await tx.balanceSnapshot.deleteMany({ where: { userId: item.userId, accountId: { in: accounts.map((a) => a.plaidAccountId) } } })
+    await tx.goal.updateMany({ where: { userId: item.userId, accountId: { in: accountIds } }, data: { accountId: null } })
+    await tx.account.deleteMany({ where: { plaidItemId: item.id } })
+    await tx.plaidItem.delete({ where: { id: item.id } })
   })
-  const accountIds = accounts.map((a) => a.id)
-
-  // Everything tied to this bank goes with it: its transactions and accounts,
-  // and its net-worth snapshots (keyed on the Plaid account id). A goal that
-  // tracked one of its accounts keeps existing, unlinked from it.
-  await prisma.$transaction([
-    prisma.transaction.deleteMany({ where: { accountId: { in: accountIds } } }),
-    prisma.balanceSnapshot.deleteMany({ where: { userId, accountId: { in: accounts.map((a) => a.plaidAccountId) } } }),
-    prisma.goal.updateMany({ where: { userId, accountId: { in: accountIds } }, data: { accountId: null } }),
-    prisma.account.deleteMany({ where: { plaidItemId: item.id } }),
-    prisma.plaidItem.delete({ where: { id: item.id } }),
-  ])
 }

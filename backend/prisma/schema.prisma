@@ -29,6 +29,7 @@ model User {
   balanceSnapshots BalanceSnapshot[]
   alerts           Alert[]
   goals            Goal[]
+  recurringStreams RecurringStream[]
 }
 
 // ── PlaidItem ─────────────────────────────────────────────────────
@@ -48,9 +49,13 @@ model PlaidItem {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   accounts        Account[]
+  recurringStreams RecurringStream[]
 
   @@index([userId])
   @@index([userId, institutionId])
+  // What RecurringStream's composite key references, so a stream's user is
+  // always its Item's owner.
+  @@unique([id, userId])
 }
 
 // ── Account ───────────────────────────────────────────────────────
@@ -237,5 +242,63 @@ model SubscriptionMark {
   createdAt     DateTime    @default(now())
 
   @@unique([userId, transactionId])
+  @@index([userId])
+}
+
+// ── RecurringStream (M7.6) ────────────────────────────────────────
+// Plaid's recurring streams (/transactions/recurring/get), stored so no page
+// load ever calls Plaid. Raw values and ids only, no payload: keys, sorting
+// (subscription / bill / not shown) and price changes are computed in code
+// (docs/m7.6-audit.md). Nothing writes a stream until M7.6 PR 2.
+//
+// Amounts use Transaction.amount's convention — positive is money out — set
+// from the stream's direction, never trusted from Plaid's sign, which Plaid
+// doesn't document for streams (src/lib/recurringStreams.ts). Nullable
+// because Plaid may omit them.
+//
+// Transactions are referenced by Plaid's ids as given, resolved at read time
+// against Transaction.plaidTransactionId — AND the stream's userId — so an id
+// with no live row shows the stream as unmatched instead of disappearing.
+//
+// status and frequency are Plaid's open enums, stored as text; the code
+// reading them maps unknown values to a safe default and logs them.
+//
+// Both foreign keys restrict: every path that deletes a PlaidItem or a User
+// deletes its streams first (removePlaidItemRows, account deletion, the demo
+// wipe). The (plaidItemId, userId) key means a stream's user is always its
+// Item's owner.
+enum StreamDirection {
+  inflow
+  outflow
+}
+
+model RecurringStream {
+  id                  String          @id @default(cuid())
+  userId              String
+  user                User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plaidItemId         String
+  plaidItem           PlaidItem       @relation(fields: [plaidItemId, userId], references: [id, userId], onDelete: Restrict)
+  streamId            String
+  plaidAccountId      String
+  direction           StreamDirection
+  description         String
+  merchantName        String?
+  pfcPrimary          String?
+  pfcDetailed         String?
+  frequency           String
+  status              String
+  isActive            Boolean
+  firstDate           DateTime        @db.Date
+  lastDate            DateTime        @db.Date
+  predictedNextDate   DateTime?       @db.Date
+  averageAmount       Decimal?        @db.Decimal(12, 2)
+  lastAmount          Decimal?        @db.Decimal(12, 2)
+  isoCurrencyCode     String?
+  plaidTransactionIds String[]        @default([])
+  plaidUpdatedAt      DateTime
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@unique([plaidItemId, streamId])
   @@index([userId])
 }

@@ -178,6 +178,7 @@ async function cleanupUser(userId: string): Promise<void> {
   // FK-safe order (mirrors prisma/seed-demo.ts): Transaction -> Account ->
   // PlaidItem -> User, plus the independent (no-FK) models.
   await prisma.subscriptionMark.deleteMany({ where: { userId } })
+  await prisma.recurringStream.deleteMany({ where: { userId } })
   await prisma.transaction.deleteMany({ where: { userId } })
   await prisma.account.deleteMany({ where: { userId } })
   await prisma.plaidItem.deleteMany({ where: { userId } })

@@ -409,6 +409,8 @@ npm test
 
 ### Database migrations
 
+**Naming.** Migration folders sort by name, and some were named ahead of the clock. Until the clock passes the latest folder, name a new migration one minute after it rather than taking Prisma's generated timestamp (which would sort before it).
+
 Schema changes are made with `npm run db:dev:migrate` against the **local** dev database — never `prisma db push`, and never against the deployed Supabase instance. `db push` against a shared database is exactly what broke migration history once already (it applied schema changes with no corresponding migration file, which later made `migrate dev`'s shadow-database replay fail); every schema change now needs a migration file so history stays replayable from empty.
 
 **The safety gate.** `backend/scripts/guard-local-db.ts` runs as a `pre` script before every migrate, reset, and seed. It refuses to continue unless `DATABASE_URL`, `DIRECT_URL`, **and** `SHADOW_DATABASE_URL` all resolve to `localhost`/`127.0.0.1`, and it additionally rejects any value byte-identical to one in `backend/.env`. It fails closed — a missing or unparseable URL is a refusal, and there is no bypass flag. All three URLs are checked because Prisma Migrate connects through `DIRECT_URL` rather than `DATABASE_URL`, and rebuilds the shadow database from scratch on every run.

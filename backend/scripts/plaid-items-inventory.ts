@@ -36,6 +36,7 @@ async function main() {
     select: {
       id: true, itemId: true, userId: true, institutionId: true, status: true, createdAt: true,
       accounts: { select: { id: true, name: true, mask: true, _count: { select: { transactions: { where: { deletedAt: null } } } } } },
+      _count: { select: { recurringStreams: true } },
     },
     orderBy: [{ createdAt: 'asc' }],
   })
@@ -46,7 +47,7 @@ async function main() {
   const userNo = new Map<string, number>()
   for (const i of real) if (!userNo.has(i.userId)) userNo.set(i.userId, userNo.size + 1)
 
-  console.log('item_id…  | user   | created    | institution id | status         | accounts | live transactions')
+  console.log('item_id…  | user   | created    | institution id | status         | accounts | live transactions | recurring streams')
   for (const i of real) {
     const tx = i.accounts.reduce((s, a) => s + a._count.transactions, 0)
     console.log([
@@ -56,7 +57,8 @@ async function main() {
       (i.institutionId ? 'yes' : 'NONE').padEnd(14),
       i.status.padEnd(14),
       String(i.accounts.length).padEnd(8),
-      String(tx),
+      String(tx).padEnd(17),
+      String(i._count.recurringStreams),
     ].join(' | '))
   }
 
