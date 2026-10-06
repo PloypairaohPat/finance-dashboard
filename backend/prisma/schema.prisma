@@ -50,6 +50,10 @@ model PlaidItem {
   updatedAt       DateTime  @updatedAt
   accounts        Account[]
   recurringStreams RecurringStream[]
+  // When this Item's recurring streams were last refreshed successfully (an
+  // empty answer included); null until the first. Set only by
+  // applyItemStreams. Lets the first refresh fire once and shows a stalled one.
+  streamsRefreshedAt DateTime?
 
   @@index([userId])
   @@index([userId, institutionId])
