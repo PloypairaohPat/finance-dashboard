@@ -144,7 +144,10 @@ export interface EnrichedStream {
   nextChargeDate: string | null
   daysUntilNextCharge: number | null
   txIds: string[]
-  /** Set when the user marked it as a subscription. */
+  /**
+   * Set when the user confirmed it (a mark). On a dismissed stream, the
+   * dismissal: the id Restore deletes.
+   */
   mark: { id: string } | null
   /** "ended": a marked subscription whose charges stopped. Shown, but out of the totals. */
   status: "active" | "ended"
@@ -157,7 +160,27 @@ export type MarkMembership =
   | { state: "markable" }
   | { state: "unavailable"; reason: string }
 
+/** A recurring stream to review: outside every total, with Confirm and Dismiss (M7.6). */
+export interface SuggestedStream extends EnrichedStream {
+  /** Where it lands once confirmed. */
+  confirmsAs: "subscription" | "bill"
+  /** Plaid's EARLY_DETECTION: just started. */
+  isNew: boolean
+  reason: string
+}
+
+/** A recorded answer (POST /subscriptions/verdicts). */
+export interface Verdict {
+  id: string
+  kind: "confirmed" | "dismissed"
+  transactionId: string
+}
+
 export interface SubscriptionAnalysis {
+  /** Present once the tab reads Plaid's streams (M7.6 PR 5e); absent before. */
+  suggested?: SuggestedStream[]
+  /** Dismissed streams, for Restore. Present with `suggested`. */
+  dismissed?: SuggestedStream[]
   subscriptions: EnrichedStream[]
   bills: EnrichedStream[]
   upcoming: EnrichedStream[]
