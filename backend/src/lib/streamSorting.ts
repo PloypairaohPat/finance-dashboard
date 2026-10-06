@@ -25,9 +25,11 @@
 //         the detector's old false positives  → suggested
 //         subscription codes                  → subscription
 //         on neither list, or no category     → suggested
+//    6. Suggested but inactive                → hidden   (nothing to confirm: it stopped)
 //
 //  counts: a stream counts toward totals only when it's a subscription or a
-//  bill, active, and its frequency is known. Inactive ones show as ended;
+//  bill, active, and its frequency is known. Inactive ones show as ended
+//  (subscriptions and bills by category; a confirmed one through its mark);
 //  UNKNOWN-frequency ones follow the unknown-schedule rule. Suggested and
 //  hidden streams never count.
 // ─────────────────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ export const SORT_REASONS = [
   'subscription-category',
   'category-unlisted',
   'no-category',
+  'ended-unconfirmed',
 ] as const
 export type SortReason = (typeof SORT_REASONS)[number]
 
@@ -154,12 +157,16 @@ export function sortStream(s: SortInput): StreamSort {
 
   // 4 and 5. All spend.
   const category = byCategory(s.pfcPrimary, s.pfcDetailed)
+  const suggest = (reason: SortReason): StreamSort =>
+    // 6. Asking someone to confirm something that already stopped is noise.
+    // EARLY_DETECTION is active by nature, so this doesn't reach it in practice.
+    s.isActive ? { bucket: 'suggested', reason, counts: false, confirmsAs: category.confirmsAs } : hidden('ended-unconfirmed')
   // "You just started a subscription": always worth a confirm, never assumed.
-  if (s.status === 'EARLY_DETECTION') return { bucket: 'suggested', reason: 'early-detection', counts: false, confirmsAs: category.confirmsAs }
+  if (s.status === 'EARLY_DETECTION') return suggest('early-detection')
   // Plaid's "none of the others applies": not established, so not assumed either.
-  if (s.status === 'UNKNOWN') return { bucket: 'suggested', reason: 'status-unknown', counts: false, confirmsAs: category.confirmsAs }
+  if (s.status === 'UNKNOWN') return suggest('status-unknown')
 
-  if (category.bucket === 'suggested') return { bucket: 'suggested', reason: category.reason, counts: false, confirmsAs: category.confirmsAs }
+  if (category.bucket === 'suggested') return suggest(category.reason)
   return {
     bucket: category.bucket,
     reason: category.reason,
