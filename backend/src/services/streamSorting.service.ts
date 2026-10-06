@@ -12,7 +12,7 @@ import type { RecurringStream } from '@prisma/client'
 import prisma from '../lib/prisma'
 import type { ClassKind } from '../lib/classifier'
 import { sortStream, type StreamSort } from '../lib/streamSorting'
-import { classifyWindow } from './classification.service'
+import { classifyWindow, type ClassifiedRow } from './classification.service'
 import { getPeriodStartDay } from './user.service'
 
 const DAY_MS = 86_400_000
@@ -30,6 +30,8 @@ export async function resolveStreamRows(userId: string, plaidTransactionIds: rea
 export interface SortedStream {
   stream: RecurringStream
   sort: StreamSort
+  /** Its transactions found in the user's live rows, oldest first, with our verdicts. */
+  charges: ClassifiedRow[]
 }
 
 /** Every stored stream of the user, each with its bucket, reason and whether it counts. */
@@ -41,7 +43,7 @@ export async function sortUserStreams(userId: string): Promise<SortedStream[]> {
   const rowOf = await resolveStreamRows(userId, streams.flatMap((s) => s.plaidTransactionIds))
 
   // One classification across every resolved row's dates.
-  const verdictOf = new Map<string, ClassKind>()
+  const classified = new Map<string, ClassifiedRow>()
   if (rowOf.size > 0) {
     const times = [...rowOf.values()].map((r) => r.date.getTime())
     const { rows } = await classifyWindow(userId, {
@@ -49,16 +51,19 @@ export async function sortUserStreams(userId: string): Promise<SortedStream[]> {
       until: new Date(Math.max(...times) + DAY_MS),
       startDay: await getPeriodStartDay(userId),
     })
-    for (const r of rows) verdictOf.set(r.id, r.verdict.kind)
+    for (const r of rows) classified.set(r.id, r)
   }
 
   return streams.map((stream) => {
-    const verdicts = stream.plaidTransactionIds
+    const charges = [...new Set(stream.plaidTransactionIds)]
       .map((t) => rowOf.get(t))
-      .map((row) => (row ? verdictOf.get(row.id) : undefined))
-      .filter((k): k is ClassKind => k !== undefined)
+      .map((row) => (row ? classified.get(row.id) : undefined))
+      .filter((r): r is ClassifiedRow => r !== undefined)
+      .sort((a, b) => a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id))
+    const verdicts: ClassKind[] = charges.map((c) => c.verdict.kind)
     return {
       stream,
+      charges,
       sort: sortStream({
         direction: stream.direction,
         status: stream.status,
