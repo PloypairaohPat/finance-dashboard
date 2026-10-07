@@ -1,7 +1,7 @@
 // The audit log's database-side guarantees, read back from the catalogue:
 // the summary script prints this, and tests/audit-log.test.ts checks it.
 
-import { AUDIT_RETENTION_DAYS } from '../../src/lib/auditLog'
+import { AUDIT_RETENTION_DAYS } from '../../src/lib/auditValues'
 
 /** [trigger, what it enforces]. Each must exist and be enabled. */
 export const AUDIT_TRIGGERS = [

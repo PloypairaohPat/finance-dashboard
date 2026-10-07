@@ -76,7 +76,7 @@ async function main() {
   const { clerkClient } = await import('@clerk/express')
   const { deleteUserData } = await import('../src/services/accountDeletion.service')
   try {
-    const report = await deleteUserData(userId, { plaidClient, clerk: clerkClient.users, db })
+    const report = await deleteUserData(userId, { plaidClient, clerk: clerkClient.users, db, actor: 'operator' })
     console.log(`  Items removed at Plaid   ${report.itemsRemoved}`)
     for (const [table, n] of Object.entries(report.rowsDeleted)) console.log(`  ${table.padEnd(24)} ${n} deleted`)
     console.log(`  Checked inside the transaction: every other user's rows identical; none of theirs left.`)

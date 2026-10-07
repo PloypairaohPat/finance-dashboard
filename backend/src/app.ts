@@ -39,6 +39,7 @@ import alertsRouter from "./routes/alerts.routes"
 import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
 import { clerkAuth, requireSession, demoReadOnly, DEMO_USER_ID } from "./middleware/auth"
+import { auditHashKey } from './lib/auditKey'
 import prisma from "./lib/prisma"
 import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
@@ -65,6 +66,8 @@ const REQUIRED_ENV = [
   // Unset, every Plaid Item linked would be created with no webhook, silently.
   // Whether it points at THIS deployment is checked at startup (lib/webhookUrl.ts).
   'WEBHOOK_URL',
+  // The audit log's hash key (M7.7). Its format is checked just below.
+  'AUDIT_HASH_KEY',
 ]
 
 REQUIRED_ENV.forEach((key) => {
@@ -73,6 +76,16 @@ REQUIRED_ENV.forEach((key) => {
     process.exit(1)
   }
 })
+
+// Like ENCRYPTION_KEY (utils/encrypt.ts): hex and exact length, checked before
+// decoding, at startup rather than on the first write. The message never
+// includes the value.
+try {
+  auditHashKey()
+} catch (err: any) {
+  console.error(`❌ ${err.message}`)
+  process.exit(1)
+}
 
 // ── Plaid config ──────────────────────────────────────────────────
 const plaidEnv = process.env.PLAID_ENV! as keyof typeof PlaidEnvironments

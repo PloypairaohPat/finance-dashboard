@@ -38,6 +38,8 @@ jobs:
       PLAID_SECRET: test-plaid-secret
       PLAID_ENV: sandbox
       ENCRYPTION_KEY: abababababababababababababababababababababababababababababababab
+      # A dummy, not ENCRYPTION_KEY: lib/auditKey.ts refuses the two being equal.
+      AUDIT_HASH_KEY: cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
       CLERK_SECRET_KEY: sk_test_dummy_ci
       CLERK_PUBLISHABLE_KEY: pk_test_dummy_ci
       WEBHOOK_URL: http://localhost:3001/webhook
