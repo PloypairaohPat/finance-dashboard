@@ -12,6 +12,7 @@ import {
 import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
 import { classifyPlaidError } from '../utils/plaidErrors'
+import { recordAudit } from '../lib/auditLog'
 import { firstRefreshIfNeeded, refreshAfterSync, refreshOnRecurringUpdate } from '../services/recurringStreams.service'
 
 // ── Webhook observability ────────────────────────────────────────────
@@ -218,6 +219,21 @@ export function makePlaidController(
         if (webhook_code === 'RECURRING_TRANSACTIONS_UPDATE' && item_id) {
           void refreshOnRecurringUpdate(plaidClient, item_id)
         }
+      }
+
+      // Consent withdrawn, for the whole Item or one of its accounts: recorded
+      // with the Item's hash only, whether or not we still hold the Item.
+      // Nothing else the handler does changes (USER_ACCOUNT_REVOKED has no
+      // other handling).
+      if (
+        webhook_type === 'ITEM' && typeof item_id === 'string' && item_id &&
+        (webhook_code === 'USER_PERMISSION_REVOKED' || webhook_code === 'USER_ACCOUNT_REVOKED')
+      ) {
+        await recordAudit({
+          event: webhook_code === 'USER_PERMISSION_REVOKED' ? 'item.permission_revoked' : 'item.account_revoked',
+          actor: 'plaid',
+          itemId: item_id,
+        })
       }
 
       if (

@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/node'
 import prisma from '../lib/prisma'
 import { decrypt } from '../utils/encrypt'
 import { lockUserRows } from '../lib/userLock'
+import { recordAudit } from '../lib/auditLog'
 
 export interface PlaidItemSummary {
   id:              string
@@ -52,14 +53,16 @@ export async function listPlaidItems(userId: string): Promise<PlaidItemSummary[]
 // silently orphaning a billable Item.
 const ALREADY_REMOVED_CODES = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'])
 
+/** What Plaid said: removed now, or already gone. Anything else throws. */
 export async function removeItemAtPlaid(
   plaidClient:          PlaidApi,
   encryptedAccessToken: string,
-): Promise<void> {
+): Promise<'removed' | 'already_gone'> {
   const accessToken = decrypt(encryptedAccessToken)
 
   try {
     await plaidClient.itemRemove({ access_token: accessToken })
+    return 'removed'
   } catch (err: any) {
     const code = err?.response?.data?.error_code
     if (!ALREADY_REMOVED_CODES.has(code)) throw err
@@ -70,6 +73,7 @@ export async function removeItemAtPlaid(
       level: 'warning',
       extra: { errorCode: code },
     })
+    return 'already_gone'
   }
 }
 
@@ -83,8 +87,24 @@ export async function unlinkPlaidItem(
 
   // Revoke at Plaid BEFORE touching local rows — a Plaid failure must never
   // leave orphaned local state (deleted here, still live at Plaid or vice versa).
-  await removeItemAtPlaid(plaidClient, item.accessToken)
-  await removePlaidItemRows(item.id)
+  // Each outcome goes in the audit log after it happens. Plaid removed it but
+  // our rows failed: "removed, failed"; the retry then finds it already gone
+  // and records "already_gone, ok", so the two rows tell the story.
+  const audit = { event: 'item.unlinked', actor: 'user', userId, itemId: item.itemId } as const
+  let plaidResult: 'removed' | 'already_gone'
+  try {
+    plaidResult = await removeItemAtPlaid(plaidClient, item.accessToken)
+  } catch (err: any) {
+    await recordAudit({ ...audit, plaidResult: 'failed', errorCode: err?.response?.data?.error_code })
+    throw err
+  }
+  try {
+    await removePlaidItemRows(item.id)
+  } catch (err: any) {
+    await recordAudit({ ...audit, plaidResult, outcome: 'failed', errorCode: err?.code })
+    throw err
+  }
+  await recordAudit({ ...audit, plaidResult, outcome: 'ok' })
 }
 
 /**

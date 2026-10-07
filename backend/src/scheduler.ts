@@ -5,6 +5,7 @@ import prisma from "./lib/prisma"
 import { triggerSync } from "./services/plaid.service"
 import { DEMO_USER_ID } from "./middleware/auth"
 import { refreshStaleItems, STREAMS_STALE_HOURS } from "./services/recurringStreams.service"
+import { expireAuditEvents, AUDIT_RETENTION_DAYS } from "./lib/auditLog"
 
 export function startScheduler(plaidClient: PlaidApi) {
   // Run every 6 hours — daily-at-6am missed syncs when the process wasn't alive at that exact time
@@ -60,6 +61,14 @@ export function startScheduler(plaidClient: PlaidApi) {
       console.log("💓 [Cron] DB keepalive ping OK")
     } catch (err: any) {
       console.error("❌ [Cron] DB keepalive failed:", err.message)
+    }
+    // The audit log's retention: the one DELETE its trigger allows.
+    try {
+      const expired = await expireAuditEvents()
+      if (expired > 0) console.log(`🧹 [Cron] audit log: ${expired} row(s) past ${AUDIT_RETENTION_DAYS} days expired`)
+    } catch (err: any) {
+      Sentry.captureException(err)
+      console.error("❌ [Cron] audit log expiry failed:", err.message)
     }
   })
 

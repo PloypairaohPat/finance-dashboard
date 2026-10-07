@@ -27,6 +27,12 @@
 //       deletion again finishes it (steps 2 and 3 find nothing to do).
 //    5. Sweep again: anything written between 3 and now is deleted, and the
 //       user is checked empty.
+//
+//  The audit log (lib/auditLog.ts) records it: deletion.requested before step
+//  1, then exactly one ending: stopped (unbanned, nothing irreversible),
+//  incomplete (banned, DELETION_INCOMPLETE) or completed. Never inside the
+//  row transaction, and a failed write never stops the deletion. The log is
+//  in no table list here on purpose: "an account was deleted" outlives it.
 // ─────────────────────────────────────────────────────────────────
 
 import * as Sentry from '@sentry/node'
@@ -37,6 +43,7 @@ import { DEMO_USER_ID } from '../middleware/auth'
 import { removeItemAtPlaid } from './plaidItems.service'
 import { lockUserRows } from '../lib/userLock'
 import { NON_DEMO_TABLES, diffBaselines, takeBaseline } from '../lib/userFingerprint'
+import { recordAudit, type AuditEntry } from '../lib/auditLog'
 
 /** What the user types to confirm. Compared ignoring case and surrounding spaces. */
 export const DELETE_CONFIRMATION = 'delete my data'
@@ -85,6 +92,14 @@ class CheckFailed extends Error {
   }
 }
 
+/** Why the row transaction failed, as the audit log's errorCode. */
+const ROW_FAILURE_CODES: Record<string, string> = {
+  'other users changed': 'CHECK_OTHER_USERS',
+  'rows remained': 'CHECK_ROWS_REMAINED',
+  conflict: 'CONFLICT',
+  error: 'ERROR',
+}
+
 /** Backoff before the second and third attempts of the row transaction. */
 export const ROW_RETRY_DELAYS_MS = [100, 300]
 export const ROW_ATTEMPTS = ROW_RETRY_DELAYS_MS.length + 1
@@ -114,6 +129,8 @@ export interface DeletionDeps {
   clerk: ClerkUsers
   /** Defaults to the app's client; the script passes its own on the resolved URL. */
   db?: PrismaClient
+  /** Who asked, for the audit log: the user in Settings (default), or delete-user.ts. */
+  actor?: 'user' | 'operator'
   /** Test seams: run inside the transaction, and between it and the Clerk deletion. */
   hooks?: {
     /** Each attempt, after the fingerprint and before any row is deleted. */
@@ -186,13 +203,18 @@ async function deleteRowsOnce(
 export async function deleteUserData(userId: string, deps: DeletionDeps): Promise<DeletionReport> {
   assertDeletable(userId)
   const db = deps.db ?? defaultPrisma
+  const audit = (e: Omit<AuditEntry, 'actor' | 'userId'>) => recordAudit({ ...e, actor: deps.actor ?? 'user', userId }, db)
+  await audit({ event: 'deletion.requested' })
 
   // 1. Ban: no new sessions, existing ones revoked.
   let clerkGone = false
   try {
     await deps.clerk.banUser(userId)
   } catch (err) {
-    if (!isClerkNotFound(err)) throw err
+    if (!isClerkNotFound(err)) {
+      await audit({ event: 'deletion.stopped', stage: 'BAN' })
+      throw err
+    }
     clerkGone = true
   }
   const unban = async () => {
@@ -207,8 +229,11 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
   }
 
   // Part-done: stay banned, report what finishing it needs, tell the user it's underway.
-  const incomplete = (extra: Record<string, unknown>): never => {
+  const incomplete = async (
+    extra: Record<string, unknown>, recorded: { stage: string; errorCode: unknown; itemsRemoved: number },
+  ): Promise<never> => {
     Sentry.captureMessage(DELETION_INCOMPLETE, { level: 'error', extra: { clerkUserId: userId, ...extra } })
+    await audit({ event: 'deletion.incomplete', stage: recorded.stage, errorCode: recorded.errorCode, count: recorded.itemsRemoved })
     throw new DeletionUnderway()
   }
 
@@ -227,10 +252,13 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
       removedAtPlaid++
     } catch (err: any) {
       const errorCode = err?.response?.data?.error_code ?? null
-      if (removedAtPlaid > 0) incomplete({ stage: 'plaid', itemId: item.itemId, errorCode })
+      if (removedAtPlaid > 0) {
+        await incomplete({ stage: 'plaid', itemId: item.itemId, errorCode }, { stage: 'PLAID', errorCode, itemsRemoved: removedAtPlaid })
+      }
       Sentry.captureMessage('account deletion: stopped, an Item could not be removed at Plaid', {
         level: 'error', extra: { itemId: item.itemId, errorCode },
       })
+      await audit({ event: 'deletion.stopped', stage: 'PLAID', errorCode })
       await unban()
       throw new DeletionError(500, 'Your bank connection could not be removed, so nothing was deleted. Please try again.')
     }
@@ -254,10 +282,12 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
         prismaCode: err?.code ?? null,
         pgCode: err?.meta?.code ?? err?.cause?.code ?? null,
       }
-      if (removedAtPlaid > 0) incomplete(failure)
+      const reasonCode = ROW_FAILURE_CODES[failure.reason]
+      if (removedAtPlaid > 0) await incomplete(failure, { stage: 'ROWS', errorCode: reasonCode, itemsRemoved: removedAtPlaid })
       Sentry.captureMessage('account deletion: stopped before anything irreversible, user unbanned', {
         level: 'error', extra: { clerkUserId: userId, ...failure },
       })
+      await audit({ event: 'deletion.stopped', stage: 'ROWS', errorCode: reasonCode })
       await unban()
       throw new DeletionError(500, "Deletion didn't finish, and nothing was deleted. Please try again.")
     }
@@ -292,5 +322,6 @@ export async function deleteUserData(userId: string, deps: DeletionDeps): Promis
     })
   }
 
+  await audit({ event: 'deletion.completed', outcome: clerkDeleted ? 'ok' : 'clerk_pending', count: items.length })
   return { itemsRemoved: items.length, rowsDeleted: rowsDeleted!, clerkDeleted, sweptAfter }
 }

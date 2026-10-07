@@ -8,6 +8,7 @@ import { ensureUser } from './user.service'
 import { removeItemAtPlaid, removePlaidItemRows } from './plaidItems.service'
 import { lockUserRows } from '../lib/userLock'
 import { classifyPlaidError } from '../utils/plaidErrors'
+import { recordAudit } from '../lib/auditLog'
 
 function sanitizeAccountName(name: string): string {
   // Plaid sends ® as a lone ISO-8859-1 byte (0xAE) inside a UTF-8 JSON response;
@@ -229,24 +230,37 @@ export async function exchangePublicToken(
 
     if (duplicateOf) {
       // The NEW Item goes; the user's existing one, and its rows, stay.
-      await discardNewItem(plaidClient, newId, encryptedToken, item_id)
+      await discardNewItem(plaidClient, userId, newId, encryptedToken, item_id, 'duplicate')
       throw new LinkRefused('DUPLICATE_ITEM', duplicateOf.id, duplicateOf.institutionName)
     }
 
+    await recordAudit({ event: 'item.linked', actor: 'user', userId, itemId: item_id, outcome: 'ok' })
     console.log(`✅ ${institutionName} connected — ${plaidAccounts.length} accounts`)
     return { institutionName }
   } catch (err) {
     if (err instanceof LinkRefused) throw err
     // Anything failed after the exchange: don't leave a billed Item behind.
-    if (stored) await discardNewItem(plaidClient, stored.id, encryptedToken, item_id)
-    else await removeOrReport(plaidClient, encryptedToken, item_id)
+    if (stored) await discardNewItem(plaidClient, userId, stored.id, encryptedToken, item_id, 'failed')
+    else {
+      // Exchanged, but never stored: Plaid's answer is all there is to record.
+      const removal = await removeOrReport(plaidClient, encryptedToken, item_id)
+      await recordAudit({ event: 'item.link_discarded', actor: 'user', userId, itemId: item_id, outcome: 'failed', plaidResult: removal.result, errorCode: removal.errorCode })
+    }
     throw err
   }
 }
 
-/** Remove a just-exchanged Item at Plaid, then its row. If Plaid refuses, keep the row and report the id. */
-async function discardNewItem(plaidClient: PlaidApi, rowId: string, encryptedToken: string, itemId: string) {
-  if (await removeOrReport(plaidClient, encryptedToken, itemId)) {
+/**
+ * Remove a just-exchanged Item at Plaid, then its row. If Plaid refuses, keep
+ * the row and report the id. Recorded either way: a "failed" Plaid result is a
+ * billed Item left behind, which removeOrReport has already sent to Sentry.
+ */
+async function discardNewItem(
+  plaidClient: PlaidApi, userId: string, rowId: string, encryptedToken: string, itemId: string, reason: 'duplicate' | 'failed',
+) {
+  const removal = await removeOrReport(plaidClient, encryptedToken, itemId)
+  await recordAudit({ event: 'item.link_discarded', actor: 'user', userId, itemId, outcome: reason, plaidResult: removal.result, errorCode: removal.errorCode })
+  if (removal.result !== 'failed') {
     // The same list of an Item's dependents unlink uses.
     await removePlaidItemRows(rowId)
   } else {
@@ -254,17 +268,19 @@ async function discardNewItem(plaidClient: PlaidApi, rowId: string, encryptedTok
   }
 }
 
-/** /item/remove; on failure, the item_id (never the token) to Sentry. True when removed. */
-async function removeOrReport(plaidClient: PlaidApi, encryptedToken: string, itemId: string): Promise<boolean> {
+/** /item/remove; on failure, the item_id (never the token) to Sentry. */
+async function removeOrReport(
+  plaidClient: PlaidApi, encryptedToken: string, itemId: string,
+): Promise<{ result: 'removed' | 'already_gone' | 'failed'; errorCode?: string }> {
   try {
-    await removeItemAtPlaid(plaidClient, encryptedToken)
-    return true
+    return { result: await removeItemAtPlaid(plaidClient, encryptedToken) }
   } catch (removeErr: any) {
+    const errorCode = removeErr?.response?.data?.error_code ?? null
     Sentry.captureMessage('plaid.link: a just-exchanged Item could not be removed; report it to Plaid by item_id', {
       level: 'error',
-      extra: { itemId, errorCode: removeErr?.response?.data?.error_code ?? null },
+      extra: { itemId, errorCode },
     })
-    return false
+    return { result: 'failed', errorCode }
   }
 }
 
