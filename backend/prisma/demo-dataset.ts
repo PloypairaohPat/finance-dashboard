@@ -181,7 +181,11 @@ export interface PaymentAppExpectation {
  * the way each transaction states its expected verdict.
  */
 export type ExpectedComposed =
-  | { list: 'subscriptions' | 'bills'; status: 'active' | 'ended'; marked: boolean; priceUp?: true }
+  | {
+      list: 'subscriptions' | 'bills'; status: 'active' | 'ended'; marked: boolean; priceUp?: true
+      /** A confirmation that no longer counts, flagged in place: why. */
+      notCounted?: 'not-spending' | 'removed'
+    }
   | { list: 'suggested'; isNew: boolean; confirmsAs: 'subscription' | 'bill' }
   | { list: 'dismissed' }
   /** An inflow: never on the Subscriptions tab. */
@@ -1664,11 +1668,20 @@ export function buildDemoDataset(now: Date): DemoDataset {
     { plaidTransactionId: monthly('tutoring')[0], kind: 'confirmed' },
     { plaidTransactionId: latest('language-course'), kind: 'confirmed' },
     { plaidTransactionId: latest('haircut'), kind: 'dismissed' },
+    // A confirmation on a charge the classifier counts as a transfer, not spending
+    // (a move into an investment account): what a confirmation looks like once
+    // its charge stops being spending. No spending row shares its merchant, so
+    // it's flagged at every build date.
+    { plaidTransactionId: monthly('savings-investment')[0], kind: 'confirmed' },
   ]
   const markedSeries: DemoMarkedSeries[] = [{
     anchor: marks[0],
     note: 'the gym under four names, kept as a mark: in no stream, followed from its first charge',
     expected: { list: 'subscriptions', status: 'active', marked: true, priceUp: true },
+  }, {
+    anchor: monthly('savings-investment')[0],
+    note: 'a confirmation on a move into an investment account, which the classifier counts as a transfer: shown "Not counted", outside every total, with Unmark',
+    expected: { list: 'subscriptions', status: 'active', marked: true, notCounted: 'not-spending' },
   }]
 
   return {

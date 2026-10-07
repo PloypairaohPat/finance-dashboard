@@ -590,7 +590,7 @@ const CASE_CHECKS: Record<string, CaseCheck> = {
     expect(built - day(g4)).toBeLessThan(PRICE_UP_LOOKBACK_DAYS)
     // The seed marks the first charge.
     expect(ds.verdicts).toContainEqual({ plaidTransactionId: g1.plaidTransactionId, kind: 'confirmed' })
-    expect(ds.markedSeries.map((m) => m.anchor)).toEqual([g1.plaidTransactionId])
+    expect(ds.markedSeries.map((m) => m.anchor)).toContain(g1.plaidTransactionId)
   },
   'd1-memo-rent-same-day': ([out, inflow]) => {
     expect(out.detailed).toBe('RENT_AND_UTILITIES_RENT')
