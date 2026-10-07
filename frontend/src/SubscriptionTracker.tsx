@@ -49,6 +49,17 @@ const cardTotal: React.CSSProperties = {
   color: "#5a7a5a", textTransform: "uppercase", letterSpacing: ".06em",
 }
 
+/** "Updated 3h ago": how old the stalest Item's streams are. */
+export function updatedLabel(oldest: string | null, now: number = Date.now()): string {
+  if (!oldest) return "Not updated yet"
+  const m = Math.floor((now - new Date(oldest).getTime()) / 60000)
+  if (m < 1) return "Updated just now"
+  if (m < 60) return `Updated ${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `Updated ${h}h ago`
+  return `Updated ${Math.floor(h / 24)}d ago`
+}
+
 const chip = (color: string, bg: string, border: string): React.CSSProperties => ({
   fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
   padding: "2px 6px", borderRadius: 3, background: bg, color, border: `1px solid ${border}`,
@@ -116,7 +127,9 @@ function StreamRow({ s, chips, actions, showMark = true }: {
           <span title="You confirmed this one" style={chip("#4a9eff", "rgba(74,158,255,.12)", "rgba(74,158,255,.3)")}>Confirmed by you</span>
         )}
         {s.status === "ended" && (
-          <span title="No charge for two billing periods: not counted in the totals" style={{
+          <span title={s.source === "plaid"
+            ? "Plaid reports this has stopped: shown, but not counted in the totals"
+            : "No charge for two billing periods: not counted in the totals"} style={{
             fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
             padding: "2px 6px", borderRadius: 3,
             background: "rgba(90,122,90,.15)", color: "#8ab88a",
@@ -266,7 +279,7 @@ export default function SubscriptionTracker() {
     return <div style={{ color: "#ff6b6b", fontSize: 13, padding: 20 }}>⚠ {error ?? "Couldn't load subscriptions."}</div>
   }
 
-  const { subscriptions, bills, upcoming, alerts, totals, suggested, dismissed } = data
+  const { subscriptions, bills, upcoming, alerts, totals, suggested, dismissed, freshness } = data
   const rowKey = (s: EnrichedStream) => `${s.key}:${s.txIds[0] ?? ""}:${s.mark?.id ?? ""}`
   // Only a Plaid stream can be dismissed; a marked series is undone from its charge.
   const notRecurring = (s: EnrichedStream) => s.source === "plaid" ? (
@@ -275,6 +288,13 @@ export default function SubscriptionTracker() {
 
   return (
     <div>
+      {/* How current the streams are, by the stalest Item. Sync refreshes them. */}
+      {freshness && (
+        <div title="Refreshed when your bank reports changes, at least daily, and whenever you press Sync" style={{
+          fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#5a7a5a",
+          textAlign: "right", marginBottom: 10, letterSpacing: ".04em",
+        }}>{updatedLabel(freshness.oldest)}</div>
+      )}
       {notice && (
         <div role={notice.tone === "error" ? "alert" : "status"} style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 6, fontSize: 12.5,

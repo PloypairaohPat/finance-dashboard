@@ -1,31 +1,30 @@
 // ─────────────────────────────────────────────────────────────────
 //  tests/subscriptions-excluded.test.ts — an excluded row can't become a bill
 //
-//  Recurring-charge detection groups any repeating positive amount by merchant.
-//  Before M7.3 that included money moved to savings and card payments, so a
-//  monthly transfer could be listed as a recurring bill.
+//  Plaid forms a recurring stream from any repeating charge, transfers
+//  included; before M7.3 our own detection did the same, so a monthly transfer
+//  could be listed as a recurring bill. Since M7.6 PR 5e the tab reads Plaid's
+//  streams, and the sorting's verdict step is what keeps transfers out.
 //
-//  The fixture is a controlled comparison: three $250 monthly series with the
+//  The fixture is a controlled comparison: three $250 monthly streams with the
 //  same amounts and the same cadence, differing only in what the classifier
-//  says each one IS. The gym membership must be detected — which proves the
-//  shape is detectable at all — and the other two must not. Nothing else
-//  differs, so the verdict is the only thing that can account for it.
+//  says each one IS. The gym membership must be listed — which proves the
+//  shape gets through at all — and the other two must not, in any list.
+//  Nothing else differs, so the verdict is the only thing that can account for it.
 // ─────────────────────────────────────────────────────────────────
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
-import { fetchSubscriptionAnalysis } from '../src/services/subscriptions.service'
+import { composeSubscriptions } from '../src/services/streamComposition.service'
 
 /**
- * Every detected stream. Detection splits by amount: $50 and over is a "bill" and
- * goes to `bills`, not `subscriptions`. Looking in one list alone would make both
- * "not detected" assertions pass vacuously — and a monthly savings transfer is a
- * bill-sized amount, so `bills` is precisely where the bug lived.
+ * Everything the tab lists: subscriptions, bills AND suggestions. Looking in one
+ * list alone would make the "not listed" assertions pass vacuously.
  */
 async function detectedMerchants(): Promise<string[]> {
-  const analysis = await fetchSubscriptionAnalysis(USER)
-  return [...analysis.subscriptions, ...analysis.bills].map((s) => s.merchant.toUpperCase())
+  const analysis = await composeSubscriptions(USER)
+  return [...analysis.subscriptions, ...analysis.bills, ...analysis.suggested].map((s) => s.merchant.toUpperCase())
 }
 
 const USER = 'subscriptions-excluded-test-user'
@@ -33,6 +32,7 @@ const BANK = 'Excluded Test Bank'
 const DAY_MS = 86_400_000
 
 async function cleanup() {
+  await prisma.recurringStream.deleteMany({ where: { userId: USER } })
   await prisma.transaction.deleteMany({ where: { userId: USER } })
   await prisma.account.deleteMany({ where: { userId: USER } })
   await prisma.plaidItem.deleteMany({ where: { userId: USER } })
@@ -82,12 +82,28 @@ beforeAll(async () => {
         [{ name: BANK, type: 'financial_institution' }]),
     ],
   })
+  // Plaid's stream for each series.
+  for (const [slug, name, primary, detailed] of [
+    ['gym', 'IRONWORKS GYM', 'PERSONAL_CARE', 'PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS'],
+    ['savings', 'TRANSFER TO SAVINGS', 'TRANSFER_OUT', 'TRANSFER_OUT_SAVINGS'],
+    ['card', 'CARD PAYMENT', 'LOAN_PAYMENTS', 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'],
+  ]) {
+    await prisma.recurringStream.create({
+      data: {
+        userId: USER, plaidItemId: item.id, streamId: `FAKE-${slug}`, plaidAccountId: `${USER}-Checking`, direction: 'outflow',
+        description: name, merchantName: name, pfcPrimary: primary, pfcDetailed: detailed,
+        frequency: 'MONTHLY', status: 'MATURE', isActive: true,
+        firstDate: new Date(utcToday - 70 * DAY_MS), lastDate: new Date(utcToday - 10 * DAY_MS),
+        plaidTransactionIds: [0, 1, 2].map((i) => `${USER}-${slug}-${i}`), plaidUpdatedAt: new Date(),
+      },
+    })
+  }
 })
 
 afterAll(cleanup)
 
-describe('recurring detection only considers spending', () => {
-  it('detects the gym membership, proving the $250 monthly shape is detectable', async () => {
+describe('the tab lists only spending', () => {
+  it('lists the gym membership, proving the $250 monthly shape gets through', async () => {
     const merchants = await detectedMerchants()
     expect(merchants.some((m) => m.includes('IRONWORKS'))).toBe(true)
   })

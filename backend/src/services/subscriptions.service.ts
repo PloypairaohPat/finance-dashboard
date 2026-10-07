@@ -356,18 +356,18 @@ async function storedStreams(userId: string, now: Date) {
   return { streams: [...marked, ...detected], recent }
 }
 
-/** The bell's input: stored data only. No Plaid call, for real users or the demo. */
-export async function analyseStoredSubscriptions(
+/**
+ * The OLD analysis: the custom detector plus marks. Since M7.6 PR 5e the tab,
+ * the bell and the panel read composeSubscriptions (streamComposition.service)
+ * instead; this stays only for scripts/stream-composition-audit.ts and a
+ * rollback, and is deleted with the detector in PR 5f.
+ */
+export async function analyseWithDetector(
   userId: string,
   now: Date = new Date(),
 ): Promise<SubscriptionAnalysis> {
   const { streams, recent } = await storedStreams(userId, now)
   return analyse(streams, recent, now)
-}
-
-/** The Subscriptions tab. The stored analysis; never a Plaid call on a page load. */
-export async function fetchSubscriptionAnalysis(userId: string): Promise<SubscriptionAnalysis> {
-  return analyseStoredSubscriptions(userId)
 }
 
 /** What counts toward totals and upcoming: running, on a known schedule. */

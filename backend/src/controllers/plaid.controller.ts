@@ -12,7 +12,7 @@ import {
 import { getUserId } from '../middleware/auth'
 import { verifyPlaidWebhook } from '../utils/verifyPlaidWebhook'
 import { classifyPlaidError } from '../utils/plaidErrors'
-import { firstRefreshIfNeeded, refreshOnRecurringUpdate } from '../services/recurringStreams.service'
+import { firstRefreshIfNeeded, refreshAfterSync, refreshOnRecurringUpdate } from '../services/recurringStreams.service'
 
 // ── Webhook observability ────────────────────────────────────────────
 // One JSON object per line, so Railway's log search can filter on
@@ -125,8 +125,18 @@ export function makePlaidController(
     async sync(req: Request, res: Response) {
       try {
         const userId = getUserId(req)
-        const result = await triggerSync(plaidClient, userId)
-        res.json(result)
+        const { syncedItemIds, ...result } = await triggerSync(plaidClient, userId)
+        // Then the streams of every Item that synced (M7.6 PR 5e): after the sync,
+        // not alongside it, under the Plaid limiter like the sync, and skipped
+        // within the cooldown. A failure is reported and never fails the sync.
+        // The response waits for both, so the app's refetch on it sees fresh streams.
+        let streams = { refreshed: 0, skipped: 0, failed: 0 }
+        try {
+          streams = await refreshAfterSync(plaidClient, userId, syncedItemIds)
+        } catch (err) {
+          Sentry.captureException(err)
+        }
+        res.json({ ...result, streams })
       } catch (err: any) {
         console.error('❌ sync:', err.message)
         res.status(500).json({ error: err.message })

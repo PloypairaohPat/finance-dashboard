@@ -19,7 +19,7 @@
 import type { MarkKind, Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { lockUserRows } from '../lib/userLock'
-import { MarkError, isSpend } from './subscriptionMarks.service'
+import { MarkError, isSpend } from './markRules'
 
 export const VERDICTS: readonly MarkKind[] = ['confirmed', 'dismissed']
 

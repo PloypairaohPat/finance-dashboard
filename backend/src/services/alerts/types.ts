@@ -47,7 +47,7 @@ export interface DetectorContext {
   paymentAppByPeriod: Map<string, number>
   budgets: Budget[]
   /**
-   * Recurring streams from STORED data only (analyseStoredSubscriptions): the
+   * Recurring streams from STORED data only (composeSubscriptions): the
    * bell must not call Plaid. A failure is carried rather than swallowed, so the
    * detector that needs this can throw and answer for nothing — instead of
    * answering "nothing" and resolving its alerts by absence, which is what a

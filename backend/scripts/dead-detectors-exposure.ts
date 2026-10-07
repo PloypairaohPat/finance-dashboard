@@ -63,7 +63,7 @@ async function main() {
 
   const { classifyWindow } = await import('../src/services/classification.service')
   const { getPeriodStartDay } = await import('../src/services/user.service')
-  const { fetchSubscriptionAnalysis } = await import('../src/services/subscriptions.service')
+  const { analyseWithDetector } = await import('../src/services/subscriptions.service')
 
   const users = await db.prisma.user.findMany({
     where: { transactions: { some: {} } },
@@ -125,7 +125,7 @@ async function main() {
     // ── price rises, from stored data alone ───────────────────────
     const report = async (name: string) => {
       try {
-        const a = await fetchSubscriptionAnalysis(userId)
+        const a = await analyseWithDetector(userId)
         const streams = [...a.subscriptions, ...a.bills]
         return {
           source: name,

@@ -8,6 +8,9 @@
 //  frontend, did the same. PR 2 brings recurring streams back as stored data,
 //  fetched on a webhook or a schedule — never on a page load.
 //
+//  Of user actions, only POST /sync calls it (M7.6 PR 5e: the Sync button
+//  refreshes streams too), and only for an Item past the cooldown.
+//
 //  All ids are invented.
 // ─────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,9 @@ const recurringCalls = () => recurring().reduce((n, f) => n + f.mock.calls.lengt
 
 async function cleanup() {
   await prisma.alert.deleteMany({ where: { userId: USER } })
+  await prisma.recurringStream.deleteMany({ where: { userId: USER } })
+  // POST /sync writes a balance snapshot for the user's account.
+  await prisma.balanceSnapshot.deleteMany({ where: { userId: USER } })
   await prisma.transaction.deleteMany({ where: { userId: USER } })
   await prisma.account.deleteMany({ where: { userId: USER } })
   await prisma.plaidItem.deleteMany({ where: { userId: USER } })
@@ -61,6 +67,26 @@ describe('page loads never call /transactions/recurring/get', () => {
     recurring().forEach((f) => f.mockClear())
     expect((await request(app).get('/subscriptions').set(headers)).status).toBe(200)
     expect((await request(app).get('/alerts').set(headers)).status).toBe(200)
+    expect(recurringCalls()).toBe(0)
+  })
+})
+
+describe('of user actions, only POST /sync calls it, and only past the cooldown', () => {
+  it('POST /sync refreshes an Item never refreshed, then not again inside the cooldown', async () => {
+    recurring().forEach((f) => f.mockClear())
+    await prisma.plaidItem.updateMany({ where: { userId: USER }, data: { streamsRefreshedAt: null } })
+    expect((await request(app).post('/sync').set('X-Test-User', USER)).status).toBe(200)
+    expect(recurringCalls()).toBe(1)
+    expect((await request(app).post('/sync').set('X-Test-User', USER)).status).toBe(200)
+    expect(recurringCalls()).toBe(1)
+  })
+
+  it('page loads still never do, even with the Item due', async () => {
+    await prisma.plaidItem.updateMany({ where: { userId: USER }, data: { streamsRefreshedAt: null } })
+    recurring().forEach((f) => f.mockClear())
+    for (const path of ['/subscriptions', '/alerts', '/transactions', '/insights']) {
+      await request(app).get(path).set('X-Test-User', USER)
+    }
     expect(recurringCalls()).toBe(0)
   })
 })

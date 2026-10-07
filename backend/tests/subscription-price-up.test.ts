@@ -25,20 +25,16 @@ import { runDetectors } from '../src/services/alerts/dispatcher'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
 import type { DetectorContext } from '../src/services/alerts/types'
 
-// Lets one test make the bell's subscription input unreadable. Wraps whichever
-// of the two entry points exists, so the file runs against old and new code.
+// Lets one test make the bell's subscription input unreadable: since M7.6 PR 5e
+// that's composeSubscriptions, which the tab reads too.
 const failInput = vi.hoisted(() => ({ on: false }))
-vi.mock('../src/services/subscriptions.service', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>()
-  const guard = (name: string) => {
-    const fn = actual[name]
-    if (typeof fn !== 'function') return {}
-    return {
-      [name]: (...args: unknown[]) =>
-        failInput.on ? Promise.reject(new Error('subscription input unavailable')) : (fn as (...a: unknown[]) => unknown)(...args),
-    }
+vi.mock('../src/services/streamComposition.service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/streamComposition.service')>()
+  return {
+    ...actual,
+    composeSubscriptions: (...args: Parameters<typeof actual.composeSubscriptions>) =>
+      failInput.on ? Promise.reject(new Error('subscription input unavailable')) : actual.composeSubscriptions(...args),
   }
-  return { ...actual, ...guard('fetchSubscriptionAnalysis'), ...guard('analyseStoredSubscriptions') }
 })
 
 const DAY_MS = 86_400_000
@@ -89,7 +85,7 @@ async function makeUser(name: string) {
     })
   const card = await account('Card', 'credit', 'credit card')
   await account('Checking', 'depository', 'checking')
-  return { id, cardId: card.id }
+  return { id, cardId: card.id, itemId: item.id }
 }
 
 /** A card purchase: ordinary spend, which is what subscription detection reads. */
@@ -99,7 +95,7 @@ const MUSIC: Code = ['ENTERTAINMENT', 'ENTERTAINMENT_MUSIC_AND_AUDIO']
 const WATER: Code = ['RENT_AND_UTILITIES', 'RENT_AND_UTILITIES_WATER']
 
 async function charge(user: { id: string; cardId: string }, name: string, amount: number, ago: number, [primary, detailed]: Code) {
-  await prisma.transaction.create({
+  return prisma.transaction.create({
     data: {
       userId: user.id, accountId: user.cardId, plaidTransactionId: `${user.id}-${name}-${ago}`,
       date: daysAgo(ago), amount: amount.toFixed(2), name, cleanName: name,
@@ -112,10 +108,19 @@ async function charge(user: { id: string; cardId: string }, name: string, amount
   })
 }
 
-/** Four charges 25 days apart, the last one moved to `last`. */
-async function stream(user: { id: string; cardId: string }, name: string, base: number, last: number, code: Code) {
-  for (const ago of [77, 52, 27]) await charge(user, name, base, ago, code)
-  await charge(user, name, last, 2, code)
+/** Four charges 25 days apart, the last one moved to `last`, and Plaid's stream over them. */
+async function stream(user: { id: string; cardId: string; itemId: string }, name: string, base: number, last: number, code: Code) {
+  const ids: string[] = []
+  for (const ago of [77, 52, 27]) ids.push((await charge(user, name, base, ago, code)).plaidTransactionId)
+  ids.push((await charge(user, name, last, 2, code)).plaidTransactionId)
+  return prisma.recurringStream.create({
+    data: {
+      userId: user.id, plaidItemId: user.itemId, streamId: `FAKE-${name}`, plaidAccountId: `${user.id}-Card`, direction: 'outflow',
+      description: name, merchantName: name, pfcPrimary: code[0], pfcDetailed: code[1],
+      frequency: 'MONTHLY', status: 'MATURE', isActive: true, firstDate: daysAgo(77), lastDate: daysAgo(2),
+      plaidTransactionIds: ids, plaidUpdatedAt: new Date(),
+    },
+  })
 }
 
 const priceUp = (userId: string) =>
@@ -124,6 +129,7 @@ const priceUp = (userId: string) =>
 async function cleanup() {
   for (const id of users) {
     await prisma.alert.deleteMany({ where: { userId: id } })
+    await prisma.recurringStream.deleteMany({ where: { userId: id } })
     await prisma.transaction.deleteMany({ where: { userId: id } })
     await prisma.account.deleteMany({ where: { userId: id } })
     await prisma.plaidItem.deleteMany({ where: { userId: id } })
@@ -186,9 +192,8 @@ describe('subscription_price_up', () => {
     await runDetectors(u.id)
     expect(await priceUp(u.id)).toHaveLength(1) // the control: it fired
 
-    // 35 days on, the raised charge is 37 days old. Three charges are still
-    // inside the analysis's 90 days, so the stream is still detected: only the
-    // detector's own lookback can make the alert go away.
+    // 35 days on, the raised charge is 37 days old. The stream is still stored
+    // and still active: only the detector's own lookback can make the alert go away.
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(Date.now() + 35 * DAY_MS))
     await runDetectors(u.id)
@@ -196,17 +201,17 @@ describe('subscription_price_up', () => {
     expect(alert.resolvedAt).not.toBeNull()
   })
 
-  it('does not fire twice when the group\'s display name changes', async () => {
+  it('does not fire twice when the stream\'s display name changes', async () => {
     const u = await makeUser('renamed')
-    await stream(u, 'VIEWLOOM.COM', 9.99, 11.99, TV)
+    const s = await stream(u, 'VIEWLOOM.COM', 9.99, 11.99, TV)
     spyOnPlaid()
     await runDetectors(u.id)
     expect(await priceUp(u.id)).toHaveLength(1)
 
-    // A shorter variant arrives. Same grouping key ("viewloom"), so custom
-    // detection now displays the group as "Viewloom". The latest and previous
+    // Plaid renames the stream on a refresh. The fingerprint keys on the
+    // merchant's identity, not the display name, and the latest and previous
     // charges are unchanged, so it is the same rise.
-    await charge(u, 'Viewloom', 9.99, 88, TV)
+    await prisma.recurringStream.update({ where: { id: s.id }, data: { merchantName: 'Viewloom' } })
     await runDetectors(u.id)
     const alerts = await priceUp(u.id)
     expect(alerts).toHaveLength(1)

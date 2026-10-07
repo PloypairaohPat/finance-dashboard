@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────
-//  subscriptionMarks.service — "Mark as subscription", and un-marking.
+//  subscriptionMarks.service — "Mark as subscription" (or as a bill) from the
+//  transaction panel, and un-marking.
 //
 //  Every function takes the caller's userId and checks the transaction or
 //  mark belongs to them BEFORE anything else, answering 404 otherwise, so an
@@ -7,30 +8,27 @@
 //  database backs this up: a mark's foreign key is (transactionId, userId),
 //  so a mark can't point at another user's transaction at all.
 //
-//  A mark stores only its anchor. What it covers — the merchant, the
-//  schedule, the charges — is derived on every read in subscriptions.service.
+//  Since M7.6 PR 5e a mark is a confirmation, written through the verdict
+//  writer (streamVerdicts.service): one answer per stream, under the per-user
+//  lock. On a charge in a stream it anchors on the stream's newest posted
+//  charge, as Confirm on the tab does; where it lands — Subscriptions or
+//  Bills — follows the sorting definition, and the panel says which.
 // ─────────────────────────────────────────────────────────────────
 
-import { Prisma } from "@prisma/client"
 import prisma from "../lib/prisma"
-import { classifyWindow } from "./classification.service"
-import { analyseStoredSubscriptions } from "./subscriptions.service"
-import { getPeriodStartDay } from "./user.service"
+import { MarkError, isSpend } from "./markRules"
+import { composeSubscriptions } from "./streamComposition.service"
+import { writeVerdict } from "./streamVerdicts.service"
 
-/** A request the caller got wrong, with the HTTP status that says how. */
-export class MarkError extends Error {
-  constructor(public readonly status: 400 | 404 | 409, message: string) {
-    super(message)
-  }
-}
+export { MarkError, isSpend }
+
+type Lands = "subscription" | "bill"
 
 export type Membership =
-  | { state: "marked"; markId: string }
-  | { state: "detected" }
-  | { state: "markable" }
+  | { state: "marked"; markId: string; landsIn: Lands }
+  | { state: "detected"; landsIn: Lands }
+  | { state: "markable"; landsIn: Lands }
   | { state: "unavailable"; reason: string }
-
-const DAY_MS = 86_400_000
 
 const PENDING_REASON =
   "This charge is still pending. A pending row gets a new id when it posts, so a mark on it would be lost; mark it once it has posted."
@@ -47,34 +45,36 @@ async function ownTransaction(userId: string, transactionId: unknown) {
   return tx
 }
 
-/** Whether the classifier counts this one row as spending. */
-export async function isSpend(userId: string, tx: { id: string; date: Date }): Promise<{ spend: boolean; label: string }> {
-  const startDay = await getPeriodStartDay(userId)
-  const { rows } = await classifyWindow(userId, {
-    since: tx.date, until: new Date(tx.date.getTime() + DAY_MS), startDay,
-  })
-  const verdict = rows.find(r => r.id === tx.id)?.verdict
-  return { spend: verdict?.kind === "spend", label: verdict?.kind ?? "unclassified" }
+/** Where a charge stands, and the charge a confirmation of it anchors on. */
+async function locate(userId: string, tx: { id: string; date: Date; pending: boolean }): Promise<{ membership: Membership; anchor: string }> {
+  const analysis = await composeSubscriptions(userId)
+  const shown = [...analysis.subscriptions, ...analysis.bills]
+  const lands = (kind: string): Lands => (kind === "bill" ? "bill" : "subscription")
+
+  const marked = shown.find(s => s.mark && s.txIds.includes(tx.id))
+  if (marked) return { membership: { state: "marked", markId: marked.mark!.id, landsIn: lands(marked.kind) }, anchor: tx.id }
+  const detected = shown.find(s => !s.mark && s.txIds.includes(tx.id))
+  if (detected) return { membership: { state: "detected", landsIn: lands(detected.kind) }, anchor: tx.id }
+  if (tx.pending) return { membership: { state: "unavailable", reason: PENDING_REASON }, anchor: tx.id }
+  if (!(await isSpend(userId, tx)).spend) {
+    return { membership: { state: "unavailable", reason: "Only spending can be a subscription or a bill." }, anchor: tx.id }
+  }
+  // A suggested or dismissed stream: confirming lands it where the sorting says,
+  // anchored on its newest posted charge. Otherwise a mark of its own, as before.
+  const stream = [...(analysis.suggested ?? []), ...(analysis.dismissed ?? [])].find(s => s.txIds.includes(tx.id))
+  if (stream) return { membership: { state: "markable", landsIn: stream.confirmsAs }, anchor: stream.anchorTxId ?? tx.id }
+  return { membership: { state: "markable", landsIn: "subscription" }, anchor: tx.id }
 }
 
 /** Where a transaction stands, for the detail panel. Throws 404 for another user's. */
 export async function membershipOf(userId: string, transactionId: unknown): Promise<Membership> {
   const tx = await ownTransaction(userId, transactionId)
-  const analysis = await analyseStoredSubscriptions(userId)
-  const streams = [...analysis.subscriptions, ...analysis.bills]
-  const marked = streams.find(s => s.mark && s.txIds.includes(tx.id))
-  if (marked) return { state: "marked", markId: marked.mark!.id }
-  if (streams.some(s => !s.mark && s.txIds.includes(tx.id))) return { state: "detected" }
-  if (tx.pending) return { state: "unavailable", reason: PENDING_REASON }
-  if (!(await isSpend(userId, tx)).spend) {
-    return { state: "unavailable", reason: "Only spending can be a subscription." }
-  }
-  return { state: "markable" }
+  return (await locate(userId, tx)).membership
 }
 
 /**
- * Mark a charge as a subscription. Marking a charge that already belongs to a
- * marked subscription returns that mark rather than adding a second.
+ * Mark a charge: a confirmation. Marking a charge that already belongs to a
+ * marked subscription or bill returns that mark rather than adding a second.
  */
 export async function createMark(
   userId: string,
@@ -82,7 +82,7 @@ export async function createMark(
 ): Promise<{ mark: { id: string; transactionId: string; createdAt: Date }; created: boolean }> {
   // Ownership first: nothing below runs for another user's transaction.
   const tx = await ownTransaction(userId, transactionId)
-  const membership = await membershipOf(userId, tx.id)
+  const { membership, anchor } = await locate(userId, tx)
   if (membership.state === "marked") {
     const mark = await prisma.subscriptionMark.findFirstOrThrow({
       where: { id: membership.markId, userId, kind: "confirmed" },
@@ -92,23 +92,8 @@ export async function createMark(
   }
   if (membership.state === "unavailable") throw new MarkError(409, membership.reason)
 
-  try {
-    const mark = await prisma.subscriptionMark.create({
-      data: { userId, transactionId: tx.id, kind: "confirmed" },
-      select: { id: true, transactionId: true, createdAt: true },
-    })
-    return { mark, created: true }
-  } catch (e) {
-    // Two requests marking the same charge at once: the second finds the first's.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      const mark = await prisma.subscriptionMark.findFirstOrThrow({
-        where: { userId, transactionId: tx.id, kind: "confirmed" },
-        select: { id: true, transactionId: true, createdAt: true },
-      })
-      return { mark, created: false }
-    }
-    throw e
-  }
+  const v = await writeVerdict(userId, anchor, "confirmed")
+  return { mark: { id: v.id, transactionId: v.transactionId, createdAt: v.createdAt }, created: true }
 }
 
 /** Un-mark: remove the mark and nothing else. 404 for another user's mark, or a dismissal. */

@@ -158,11 +158,14 @@ export interface EnrichedStream {
   status: "active" | "ended"
 }
 
-/** Where one transaction stands with "Mark as subscription" (GET /subscriptions/marks/membership/:id). */
+/**
+ * Where one transaction stands with "Mark as subscription" (GET /subscriptions/marks/membership/:id).
+ * `landsIn`: the list a mark puts it in, or the one it's already in (M7.6 PR 5e).
+ */
 export type MarkMembership =
-  | { state: "marked"; markId: string }
-  | { state: "detected" }
-  | { state: "markable" }
+  | { state: "marked"; markId: string; landsIn?: "subscription" | "bill" }
+  | { state: "detected"; landsIn?: "subscription" | "bill" }
+  | { state: "markable"; landsIn?: "subscription" | "bill" }
   | { state: "unavailable"; reason: string }
 
 /** A recurring stream to review: outside every total, with Confirm and Dismiss (M7.6). */
@@ -186,6 +189,11 @@ export interface SubscriptionAnalysis {
   suggested?: SuggestedStream[]
   /** Dismissed streams, for Restore. Present with `suggested`. */
   dismissed?: SuggestedStream[]
+  /**
+   * When the streams were last refreshed, by the least recently refreshed Item
+   * (null: one never has). Absent or null: nothing to say (the demo, no Items).
+   */
+  freshness?: { oldest: string | null } | null
   subscriptions: EnrichedStream[]
   bills: EnrichedStream[]
   upcoming: EnrichedStream[]

@@ -305,12 +305,14 @@ export async function createUpdateLinkToken(
 export async function triggerSync(
   plaidClient: PlaidApi,
   userId: string
-): Promise<{ added: number; modified: number; removed: number }> {
+): Promise<{ added: number; modified: number; removed: number; syncedItemIds: string[] }> {
   const items = await prisma.plaidItem.findMany({
     where: { userId },
   })
 
   let added = 0, modified = 0, removed = 0
+  /** Items whose sync succeeded: the Sync button refreshes their streams after. */
+  const syncedItemIds: string[] = []
   for (const item of items) {
     // Isolate each item's sync — one broken connection must not abort the rest.
     try {
@@ -354,6 +356,7 @@ export async function triggerSync(
         where: { id: item.id },
         data:  { status: 'healthy', errorCode: null, lastErrorAt: null },
       })
+      syncedItemIds.push(item.id)
     } catch (err: any) {
       const { status, errorCode } = classifyPlaidError(err)
       await prisma.plaidItem.update({
@@ -374,5 +377,5 @@ export async function triggerSync(
     console.warn(`⚠️  [sync] final snapshot failed for user ${userId}:`, snapErr.message)
   }
 
-  return { added, modified, removed }
+  return { added, modified, removed, syncedItemIds }
 }

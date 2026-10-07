@@ -1,6 +1,6 @@
 import prisma from "../../lib/prisma"
 import type { AlertKind, Detector, DetectorContext, DetectedAlert } from "./types"
-import { analyseStoredSubscriptions } from "../subscriptions.service"
+import { composeSubscriptions } from "../streamComposition.service"
 import { classifyWindow } from "../classification.service"
 import { getPeriodStartDay } from "../user.service"
 import { fromDateKey, recentPeriods } from "../../lib/period"
@@ -56,7 +56,8 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
     prisma.budget.findMany({ where: { userId } }),
     // Stored data only: no Plaid call when the bell opens. A failure is kept,
     // not swallowed, so only the detector that reads it fails (see types.ts).
-    analyseStoredSubscriptions(userId, now).then(
+    // The same composition the tab reads, so the bell stays a subset of the tab.
+    composeSubscriptions(userId, now).then(
       (analysis) => ({ ok: true as const, analysis }),
       (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error : new Error(String(error)) }),
     ),
