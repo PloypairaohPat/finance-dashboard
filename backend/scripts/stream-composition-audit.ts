@@ -1,27 +1,23 @@
 // ─────────────────────────────────────────────────────────────────
-//  stream-composition-audit — what the tab would show on streams (M7.6 PR 5)
-//  set against what it shows today, per user. The gate before PR 5e.
+//  stream-composition-audit — what the Subscriptions tab shows, per user,
+//  as counts: each list, what counts toward totals, suggestions, dismissals,
+//  confirmations shown as marked, and the no-charge-twice invariant.
 //
-//  READ-ONLY, and stores nothing. Runs the same code both sides use —
-//  analyseWithDetector (today) and composeSubscriptions (5e) — on the
-//  read-only connection (scripts/lib/read-only-db.ts). No Plaid calls, no
-//  decryption.
+//  It was the gate before M7.6 PR 5e, comparing the tab on Plaid's streams
+//  with the old detector's. Since PR 5f deleted the detector, it reports the
+//  streams side alone, in the same lines as before, so a run before a change
+//  and a run after it can be compared line for line.
+//
+//  READ-ONLY, and stores nothing. Runs composeSubscriptions, the code the tab
+//  and the bell read, on the read-only connection (scripts/lib/read-only-db.ts).
+//  No Plaid calls, no decryption.
 //
 //  Counts only. Users appear as "user N"; no names, amounts, ids or dates.
-//  Monthly totals appear as a direction (higher, lower, same), never a figure.
 //
 //    railway run npx tsx scripts/stream-composition-audit.ts --allow-remote <db host>
 // ─────────────────────────────────────────────────────────────────
 
 import { connectReadOnly, redact } from './lib/read-only-db'
-
-type Counter = Map<string, number>
-const bump = (m: Counter, k: string) => m.set(k, (m.get(k) ?? 0) + 1)
-const show = (title: string, m: Counter) => {
-  const rows = [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-  console.log(`  ${title}: ${rows.length === 0 ? '(none)' : rows.map(([k, n]) => `${k} ${n}`).join(' | ')}`)
-}
-const direction = (before: number, after: number) => (after > before ? 'higher' : after < before ? 'lower' : 'same')
 
 async function main() {
   const db = await connectReadOnly('stream-composition-audit')
@@ -30,7 +26,6 @@ async function main() {
 
   // Loaded after connectReadOnly so they use the connection it set up.
   const { DEMO_USER_ID } = await import('../src/middleware/auth')
-  const { analyseWithDetector } = await import('../src/services/subscriptions.service')
   const { composeSubscriptions } = await import('../src/services/streamComposition.service')
 
   const users = await db.prisma.user.findMany({
@@ -42,8 +37,7 @@ async function main() {
 
   for (const [i, user] of users.entries()) {
     const now = new Date()
-    const [today, streams, marks] = await Promise.all([
-      analyseWithDetector(user.id, now),
+    const [streams, marks] = await Promise.all([
       composeSubscriptions(user.id, now),
       db.prisma.subscriptionMark.findMany({ where: { userId: user.id }, select: { id: true, kind: true } }),
     ])
@@ -51,29 +45,12 @@ async function main() {
     const ended = (xs: Array<{ status: string }>) => xs.filter((s) => s.status === 'ended').length
 
     console.log(`user ${i + 1}`)
-    console.log(`  today:      subscriptions ${today.subscriptions.length} (counted ${counted(today.subscriptions)}) | bills ${today.bills.length} (counted ${counted(today.bills)}) | upcoming ${today.upcoming.length}`)
     console.log(`  on streams: subscriptions ${streams.subscriptions.length} (counted ${counted(streams.subscriptions)}, ended ${ended(streams.subscriptions)})` +
       ` | bills ${streams.bills.length} (counted ${counted(streams.bills)}, ended ${ended(streams.bills)})` +
       ` | suggested ${streams.suggested.length} (new ${streams.suggested.filter((s) => s.isNew).length})` +
       ` | dismissed ${streams.dismissed.length} | upcoming ${streams.upcoming.length}`)
-    console.log(`  monthly totals on streams: subscriptions ${direction(today.totals.monthlySubscriptions, streams.totals.monthlySubscriptions)}` +
-      ` | bills ${direction(today.totals.monthlyBills, streams.totals.monthlyBills)} | all ${direction(today.totals.monthlyAll, streams.totals.monthlyAll)}`)
 
-    // Where each item listed today goes: by a shared charge.
-    const placeOf = new Map<string, string>()
-    for (const [place, xs] of [['subscription', streams.subscriptions], ['bill', streams.bills], ['suggested', streams.suggested], ['dismissed', streams.dismissed]] as const) {
-      for (const s of xs) for (const id of s.txIds) if (!placeOf.has(id)) placeOf.set(id, place)
-    }
-    const moves: Counter = new Map()
-    for (const [kind, xs] of [['subscription', today.subscriptions], ['bill', today.bills]] as const) {
-      for (const s of xs) {
-        const place = s.txIds.map((id) => placeOf.get(id)).find(Boolean) ?? 'not shown'
-        bump(moves, `${kind}${s.mark ? ' (marked)' : ''} → ${place}`)
-      }
-    }
-    show("today's items, by where they land", moves)
-
-    // Every confirmation today must still show as marked.
+    // Every confirmation must show as marked.
     const confirmed = marks.filter((m) => m.kind === 'confirmed')
     const shownMarks = new Set([...streams.subscriptions, ...streams.bills].map((s) => s.mark?.id).filter(Boolean))
     console.log(`  confirmations shown as marked: ${confirmed.filter((m) => shownMarks.has(m.id)).length} of ${confirmed.length}` +

@@ -18,6 +18,10 @@
 //  with the grouping key as a parameter. Spend rows come from classifyWindow
 //  over the same 90 days loadSpendRows reads.
 //
+//  NOT LIVE CODE: this local logic mirrors the subscription detector M7.6 PR 5f
+//  deleted. The tab reads Plaid's stored streams now. Kept as the record of the
+//  Stage 0 decision on merchant identity.
+//
 //    railway run npx tsx scripts/merchant-identity-audit.ts --allow-remote <db host>
 // ─────────────────────────────────────────────────────────────────
 

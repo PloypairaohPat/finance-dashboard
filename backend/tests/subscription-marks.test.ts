@@ -12,7 +12,6 @@ import request from 'supertest'
 import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
-import { analyseWithDetector } from '../src/services/subscriptions.service'
 import { composeSubscriptions } from '../src/services/streamComposition.service'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
 import { loadContext } from '../src/services/alerts/dispatcher'
@@ -142,8 +141,7 @@ beforeAll(async () => {
   ])
   await mark(endedUser, 'ended', 'e1')
 
-  // Look-alike names of one merchant, unmarked: Plaid's stream holds them, and the
-  // old detection (kept until M7.6 PR 5f) groups them by identity.
+  // Look-alike names of one merchant, unmarked: Plaid's stream holds them as one.
   lookUser = await makeUser('look', [
     { key: 'l1', ago: 70, amount: 15, name: 'LOOKALIKE ONE', entity: 'ent-look', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO' },
     { key: 'l2', ago: 40, amount: 15, name: 'LOOKALIKE-TWO X', entity: 'ent-look', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO' },
@@ -221,15 +219,6 @@ describe('a marked subscription', () => {
       const tabKeys = new Set([...tab.subscriptions, ...tab.bills].map((s: { key: string; mark: { id: string } | null }) => `${s.key}|${s.mark?.id ?? ''}`))
       for (const s of [...bell.subscriptions, ...bell.bills]) expect(tabKeys.has(`${s.key}|${s.mark?.id ?? ''}`), userId).toBe(true)
     }
-  })
-})
-
-describe('the old detection (deleted in M7.6 PR 5f)', () => {
-  it("groups by merchant identity, so one merchant's look-alike names are one subscription", async () => {
-    const a = await analyseWithDetector(lookUser)
-    const all = [...a.subscriptions, ...a.bills]
-    expect(all.map((s) => s.key)).toEqual(['entity:ent-look'])
-    expect(all[0].mark).toBeNull()
   })
 })
 

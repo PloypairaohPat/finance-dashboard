@@ -180,11 +180,8 @@ export async function composeSubscriptions(userId: string, now: Date = new Date(
   if (marks.length > 0) {
     const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - MARK_LOOKBACK_MONTHS, now.getUTCDate()))
     const rows = await loadSpendRows(userId, now, since)
-    const rowOf = new Map(rows.map((r) => [r.id, r]))
+    // Each series' monthly amount comes from markedStreams, by the one definition.
     for (const s of markedStreams(marks, rows, now, since, claimed)) {
-      // The one monthly-amount definition: a subscription's last posted charge.
-      const posted = s.txIds.map((id) => rowOf.get(id)).filter((r) => r && !r.pending).map((r) => r!.amount)
-      s.monthlyAmount = monthlyAmount('subscription', posted, s.frequency) ?? 0
       if (isCounted(s)) Object.assign(s, predictNextCharge(s, now))
       out.push(s)
     }
