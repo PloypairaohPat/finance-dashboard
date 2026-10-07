@@ -169,6 +169,17 @@ describe("SubscriptionTracker", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("still pending")
   })
 
+  it("Ended says why it isn't counted: Plaid's word for a stream, the missed charges for a marked series", async () => {
+    await mount({
+      ...onStreams,
+      subscriptions: [stream("Gonestream", { status: "ended" }), row("Goneseries", { status: "ended", mark: { id: "mark-2" } })],
+    })
+    const tip = (merchant: string) =>
+      [...container.querySelectorAll("span")].find((s) => s.textContent === "Ended" && s.closest("div[style]")?.textContent?.includes(merchant))?.title
+    expect(tip("Gonestream")).toBe("Plaid reports this has stopped: shown, but not counted in the totals")
+    expect(tip("Goneseries")).toBe("No charge for two billing periods: not counted in the totals")
+  })
+
   it("a refused write says why", async () => {
     await mount(onStreams)
     writeReply = () => reply({ error: "This charge is still pending." }, 409)

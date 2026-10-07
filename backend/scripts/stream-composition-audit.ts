@@ -3,7 +3,7 @@
 //  set against what it shows today, per user. The gate before PR 5e.
 //
 //  READ-ONLY, and stores nothing. Runs the same code both sides use —
-//  analyseStoredSubscriptions (today) and composeSubscriptions (5e) — on the
+//  analyseWithDetector (today) and composeSubscriptions (5e) — on the
 //  read-only connection (scripts/lib/read-only-db.ts). No Plaid calls, no
 //  decryption.
 //
@@ -30,7 +30,7 @@ async function main() {
 
   // Loaded after connectReadOnly so they use the connection it set up.
   const { DEMO_USER_ID } = await import('../src/middleware/auth')
-  const { analyseStoredSubscriptions } = await import('../src/services/subscriptions.service')
+  const { analyseWithDetector } = await import('../src/services/subscriptions.service')
   const { composeSubscriptions } = await import('../src/services/streamComposition.service')
 
   const users = await db.prisma.user.findMany({
@@ -43,7 +43,7 @@ async function main() {
   for (const [i, user] of users.entries()) {
     const now = new Date()
     const [today, streams, marks] = await Promise.all([
-      analyseStoredSubscriptions(user.id, now),
+      analyseWithDetector(user.id, now),
       composeSubscriptions(user.id, now),
       db.prisma.subscriptionMark.findMany({ where: { userId: user.id }, select: { id: true, kind: true } }),
     ])

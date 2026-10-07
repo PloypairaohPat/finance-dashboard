@@ -116,7 +116,9 @@ function StreamRow({ s, chips, actions, showMark = true }: {
           <span title="You confirmed this one" style={chip("#4a9eff", "rgba(74,158,255,.12)", "rgba(74,158,255,.3)")}>Confirmed by you</span>
         )}
         {s.status === "ended" && (
-          <span title="No charge for two billing periods: not counted in the totals" style={{
+          <span title={s.source === "plaid"
+            ? "Plaid reports this has stopped: shown, but not counted in the totals"
+            : "No charge for two billing periods: not counted in the totals"} style={{
             fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
             padding: "2px 6px", borderRadius: 3,
             background: "rgba(90,122,90,.15)", color: "#8ab88a",

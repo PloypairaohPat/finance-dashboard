@@ -1,13 +1,14 @@
 import { Request, Response } from "express"
 import { getUserId } from "../middleware/auth"
-import { fetchSubscriptionAnalysis } from "../services/subscriptions.service"
+import { composeSubscriptions } from "../services/streamComposition.service"
 import { MarkError, createMark, deleteMark, membershipOf } from "../services/subscriptionMarks.service"
 import { deleteVerdict, writeVerdict } from "../services/streamVerdicts.service"
 
 export async function getSubscriptions(req: Request, res: Response) {
   try {
     const userId = getUserId(req)
-    const data = await fetchSubscriptionAnalysis(userId)
+    // Stored streams and the user's verdicts (M7.6 PR 5e). Never a Plaid call on a page load.
+    const data = await composeSubscriptions(userId)
     res.json(data)
   } catch (err: any) {
     console.error("getSubscriptions error:", err.message)

@@ -14,7 +14,7 @@ import { encrypt } from '../src/utils/encrypt'
 import { loadContext } from '../src/services/alerts/dispatcher'
 import { detectLargeTransaction } from '../src/services/alerts/detectors/largeTransaction'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
-import { analyseStoredSubscriptions } from '../src/services/subscriptions.service'
+import { composeSubscriptions } from '../src/services/streamComposition.service'
 
 const USER = 'pending-marker-test-user'
 const DAY = 86_400_000
@@ -26,6 +26,7 @@ const ids: Record<string, string> = {}
 
 async function cleanup() {
   await prisma.alert.deleteMany({ where: { userId: USER } })
+  await prisma.recurringStream.deleteMany({ where: { userId: USER } })
   await prisma.transaction.deleteMany({ where: { userId: USER } })
   await prisma.account.deleteMany({ where: { userId: USER } })
   await prisma.plaidItem.deleteMany({ where: { userId: USER } })
@@ -63,6 +64,15 @@ beforeAll(async () => {
   for (const [k, back, amt, pend] of [['s1', 80, 10, false], ['s2', 55, 10, false], ['s3', 30, 10, false], ['s4', 5, 12, true]] as const) {
     await add(k, new Date(today - back * DAY), amt, 'STREAMLET', pend, 'ENTERTAINMENT', 'ENTERTAINMENT_TV_AND_MOVIES')
   }
+  // Plaid's stream over those charges: what the tab and the bell read (M7.6 PR 5e).
+  await prisma.recurringStream.create({
+    data: {
+      userId: USER, plaidItemId: item.id, streamId: 'FAKE-streamlet', plaidAccountId: `${USER}-card`, direction: 'outflow',
+      description: 'STREAMLET', merchantName: 'STREAMLET', pfcPrimary: 'ENTERTAINMENT', pfcDetailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+      frequency: 'MONTHLY', status: 'MATURE', isActive: true, firstDate: new Date(today - 80 * DAY), lastDate: new Date(today - 5 * DAY),
+      plaidTransactionIds: ['s1', 's2', 's3', 's4'].map((k) => `${USER}-${k}`), plaidUpdatedAt: new Date(),
+    },
+  })
 })
 
 afterAll(cleanup)
@@ -79,7 +89,7 @@ describe('the marker reaches every place a pending row is shown', () => {
   })
 
   it('a subscription whose last charge is pending says so', async () => {
-    const a = await analyseStoredSubscriptions(USER)
+    const a = await composeSubscriptions(USER)
     const s = [...a.subscriptions, ...a.bills].find((x) => x.key === 'streamlet')
     expect(s).toMatchObject({ lastChargePending: true, lastAmount: 12 })
   })

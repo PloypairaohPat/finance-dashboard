@@ -12,7 +12,8 @@ import request from 'supertest'
 import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
-import { analyseStoredSubscriptions, fetchSubscriptionAnalysis } from '../src/services/subscriptions.service'
+import { analyseWithDetector } from '../src/services/subscriptions.service'
+import { composeSubscriptions } from '../src/services/streamComposition.service'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
 import { loadContext } from '../src/services/alerts/dispatcher'
 
@@ -71,12 +72,26 @@ async function makeUser(suffix: string, defs: TxDef[]): Promise<string> {
   return userId
 }
 
+/** Plaid's stream over some of a user's charges, by fixture key. */
+async function stream(userId: string, suffix: string, keys: string[], [primary, detailed]: [string, string]) {
+  const item = await prisma.plaidItem.findFirstOrThrow({ where: { userId } })
+  return prisma.recurringStream.create({
+    data: {
+      userId, plaidItemId: item.id, streamId: `FAKE-${suffix}`, plaidAccountId: `${userId}-card`, direction: 'outflow',
+      description: suffix, merchantName: suffix, pfcPrimary: primary, pfcDetailed: detailed,
+      frequency: 'MONTHLY', status: 'MATURE', isActive: true, firstDate: ago(90), lastDate: ago(10),
+      plaidTransactionIds: keys.map((k) => `${userId}-${k}`), plaidUpdatedAt: new Date(),
+    },
+  })
+}
+
 const mark = (userId: string, suffix: string, key: string) =>
   prisma.subscriptionMark.create({ data: { userId, transactionId: txId.get(`${suffix}/${key}`)! } })
 
 async function cleanup() {
   const where = { userId: { startsWith: PREFIX } }
   await prisma.subscriptionMark.deleteMany({ where })
+  await prisma.recurringStream.deleteMany({ where })
   await prisma.alert.deleteMany({ where })
   await prisma.transaction.deleteMany({ where })
   await prisma.account.deleteMany({ where })
@@ -104,12 +119,13 @@ beforeAll(async () => {
   ])
   await mark(gymUser, 'gym', 'g1')
 
-  // Detected AND marked: one subscription, not two.
+  // A Plaid stream AND a mark on one of its charges: one subscription, not two.
   bothUser = await makeUser('both', [
     { key: 's1', ago: 75, amount: 9.99, name: 'STREAMLET', entity: 'ent-streamlet', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_TV_AND_MOVIES' },
     { key: 's2', ago: 45, amount: 9.99, name: 'STREAMLET.COM', entity: 'ent-streamlet', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_TV_AND_MOVIES' },
     { key: 's3', ago: 15, amount: 9.99, name: 'STREAMLET', entity: 'ent-streamlet', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_TV_AND_MOVIES' },
   ])
+  await stream(bothUser, 'both', ['s1', 's2', 's3'], ['ENTERTAINMENT', 'ENTERTAINMENT_TV_AND_MOVIES'])
   await mark(bothUser, 'both', 's2')
 
   // Marked on its only charge: schedule unknown.
@@ -126,12 +142,14 @@ beforeAll(async () => {
   ])
   await mark(endedUser, 'ended', 'e1')
 
-  // Look-alike names of one merchant, unmarked: detection by identity finds it.
+  // Look-alike names of one merchant, unmarked: Plaid's stream holds them, and the
+  // old detection (kept until M7.6 PR 5f) groups them by identity.
   lookUser = await makeUser('look', [
     { key: 'l1', ago: 70, amount: 15, name: 'LOOKALIKE ONE', entity: 'ent-look', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO' },
     { key: 'l2', ago: 40, amount: 15, name: 'LOOKALIKE-TWO X', entity: 'ent-look', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO' },
     { key: 'l3', ago: 10, amount: 15, name: 'LKLK THREE', entity: 'ent-look', primary: 'ENTERTAINMENT', detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO' },
   ])
+  await stream(lookUser, 'look', ['l1', 'l2', 'l3'], ['ENTERTAINMENT', 'ENTERTAINMENT_MUSIC_AND_AUDIO'])
 
   // The API's user, and another whose rows they must never touch.
   apiUser = await makeUser('api', [
@@ -149,7 +167,7 @@ afterAll(cleanup)
 
 describe('a marked subscription', () => {
   it('follows the merchant across names and to its new price, and leaves the one-off out', async () => {
-    const a = await analyseStoredSubscriptions(gymUser)
+    const a = await composeSubscriptions(gymUser)
     expect(a.subscriptions).toHaveLength(1)
     const s = a.subscriptions[0]
     expect(s.key).toBe('entity:ent-ironline')
@@ -167,15 +185,15 @@ describe('a marked subscription', () => {
     expect(alerts[0].fingerprint).toBe(`price_up:entity:ent-ironline:${ago(1).toISOString().slice(0, 10)}`)
   })
 
-  it('and a detected subscription of the same merchant are one subscription', async () => {
-    const a = await analyseStoredSubscriptions(bothUser)
+  it('and a Plaid stream of the same charges are one subscription, shown as marked', async () => {
+    const a = await composeSubscriptions(bothUser)
     const all = [...a.subscriptions, ...a.bills]
     expect(all).toHaveLength(1)
     expect(all[0].mark).not.toBeNull()
   })
 
   it('with only its anchor adds nothing to monthly totals', async () => {
-    const a = await analyseStoredSubscriptions(anchorOnlyUser)
+    const a = await composeSubscriptions(anchorOnlyUser)
     expect(a.subscriptions).toHaveLength(1)
     expect(a.subscriptions[0].frequency).toBe('UNKNOWN')
     expect(a.subscriptions[0].monthlyAmount).toBe(0)
@@ -184,7 +202,7 @@ describe('a marked subscription', () => {
   })
 
   it('that has ended is shown as ended, out of the totals, with no price-up', async () => {
-    const a = await analyseStoredSubscriptions(endedUser)
+    const a = await composeSubscriptions(endedUser)
     expect(a.subscriptions).toHaveLength(1)
     expect(a.subscriptions[0].status).toBe('ended')
     expect(a.totals.monthlyAll).toBe(0)
@@ -194,17 +212,21 @@ describe('a marked subscription', () => {
 
   it('stays in the tab whenever it is in the bell', async () => {
     for (const userId of [gymUser, bothUser, anchorOnlyUser, endedUser, lookUser]) {
-      const bell = await analyseStoredSubscriptions(userId)
-      const tab = await fetchSubscriptionAnalysis(userId)
-      const tabKeys = new Set([...tab.subscriptions, ...tab.bills].map((s) => `${s.key}|${s.mark?.id ?? ''}`))
+      // What the bell reads, and what GET /subscriptions returns.
+      const ctx = await loadContext(userId)
+      if (!ctx.subscriptions.ok) throw ctx.subscriptions.error
+      const bell = ctx.subscriptions.analysis
+      const tab = (await request(app).get('/subscriptions').set('X-Test-User', userId)).body
+      expect(bell.subscriptions.length + bell.bills.length, userId).toBeGreaterThan(0)
+      const tabKeys = new Set([...tab.subscriptions, ...tab.bills].map((s: { key: string; mark: { id: string } | null }) => `${s.key}|${s.mark?.id ?? ''}`))
       for (const s of [...bell.subscriptions, ...bell.bills]) expect(tabKeys.has(`${s.key}|${s.mark?.id ?? ''}`), userId).toBe(true)
     }
   })
 })
 
-describe('detection', () => {
+describe('the old detection (deleted in M7.6 PR 5f)', () => {
   it("groups by merchant identity, so one merchant's look-alike names are one subscription", async () => {
-    const a = await analyseStoredSubscriptions(lookUser)
+    const a = await analyseWithDetector(lookUser)
     const all = [...a.subscriptions, ...a.bills]
     expect(all.map((s) => s.key)).toEqual(['entity:ent-look'])
     expect(all[0].mark).toBeNull()
@@ -254,12 +276,12 @@ describe('POST /subscriptions/marks', () => {
 
   it('reports membership for the panel', async () => {
     const markId = (await prisma.subscriptionMark.findFirstOrThrow({ where: { userId: apiUser } })).id
-    expect((await as(apiUser).membership(txId.get('api/p2')!)).body).toEqual({ state: 'marked', markId })
+    expect((await as(apiUser).membership(txId.get('api/p2')!)).body).toEqual({ state: 'marked', markId, landsIn: 'subscription' })
     expect((await as(apiUser).membership(txId.get('api/pending')!)).body).toMatchObject({ state: 'unavailable' })
     expect((await as(apiUser).membership(txId.get('api/pay')!)).body).toMatchObject({ state: 'unavailable' })
     expect((await as(bothUser).membership(txId.get('both/s1')!)).body).toMatchObject({ state: 'marked' })
-    expect((await as(lookUser).membership(txId.get('look/l1')!)).body).toEqual({ state: 'detected' })
-    expect((await as(otherUser).membership(txId.get('other/o1')!)).body).toEqual({ state: 'markable' })
+    expect((await as(lookUser).membership(txId.get('look/l1')!)).body).toEqual({ state: 'detected', landsIn: 'subscription' })
+    expect((await as(otherUser).membership(txId.get('other/o1')!)).body).toEqual({ state: 'markable', landsIn: 'subscription' })
     expect((await as(apiUser).membership(txId.get('other/o1')!)).status).toBe(404)
   })
 })

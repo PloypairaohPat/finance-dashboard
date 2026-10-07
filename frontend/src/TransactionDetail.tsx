@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
+import { markLabels } from "./lib/markLabels"
 import { readWriteResult } from "./lib/writeResult"
 import type { EnrichedTransaction, CategoryOption, MarkMembership } from "./types"
 import MerchantAvatar from "./MerchantAvatar"
@@ -279,20 +280,23 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
           </div>
         )}
 
-        {/* Mark as subscription. Only on settled spending (the server says which):
-            a pending row gets a new id when it posts, so a mark on it would be lost. */}
-        {membership && membership.state !== "unavailable" && (
+        {/* Mark as a subscription or a bill. Only on settled spending (the server says
+            which): a pending row gets a new id when it posts, so a mark on it would be
+            lost. Which list it lands in follows the sorting, and the server says that too. */}
+        {membership && membership.state !== "unavailable" && (() => {
+          const labels = markLabels(membership)
+          return (
           <div style={{ marginBottom: 20 }}>
             <div style={{
               fontFamily: "IBM Plex Mono, monospace", fontSize: 10,
               color: "#5a7a5a", textTransform: "uppercase", letterSpacing: ".08em",
               marginBottom: 6,
             }}>
-              Subscription
+              Recurring
             </div>
             {membership.state === "detected" ? (
               <div style={{ fontSize: 12.5, color: "#8ab88a", lineHeight: 1.45 }}>
-                Detected automatically — it's on the Subscriptions tab.
+                {labels.detected}
               </div>
             ) : (
               <>
@@ -311,12 +315,10 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
                     cursor: savingMark ? "wait" : "pointer",
                   }}
                 >
-                  {membership.state === "marked" ? "Marked as a subscription · Unmark" : "Mark as subscription"}
+                  {labels.button}
                 </button>
                 <div style={{ fontSize: 11.5, color: "#5a7a5a", marginTop: 6, lineHeight: 1.45 }}>
-                  {membership.state === "marked"
-                    ? "Tracked on the Subscriptions tab, through name changes and price changes. Unmarking removes only the mark."
-                    : "Track this charge on the Subscriptions tab, even when the merchant's name or price changes."}
+                  {labels.help}
                 </div>
               </>
             )}
@@ -326,7 +328,8 @@ export default function TransactionDetail({ transaction, onClose, onUpdate }: Pr
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
 
         {/* Category */}
         <div style={{ marginBottom: 20 }}>

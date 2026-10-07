@@ -6,7 +6,7 @@
 //  /transactions/recurring/get ONCE. Our database is read on the read-only
 //  connection (scripts/lib/read-only-db.ts); the detector side runs the same
 //  code GET /subscriptions uses for its stored streams
-//  (analyseStoredSubscriptions), which only reads.
+//  (analyseWithDetector), which only reads.
 //
 //  Counts only. Users and Items appear as "user N" and "item N"; no names,
 //  amounts, ids or dates are printed: categories appear as Plaid's codes only.
@@ -46,7 +46,7 @@ async function main() {
   const { decrypt } = await import('../src/utils/encrypt')
   const { plaidClient } = await import('../src/lib/plaidClient')
   const { merchantIdentity } = await import('../src/lib/merchantIdentity')
-  const { analyseStoredSubscriptions } = await import('../src/services/subscriptions.service')
+  const { analyseWithDetector } = await import('../src/services/subscriptions.service')
   const { classifyWindow } = await import('../src/services/classification.service')
   const { getPeriodStartDay } = await import('../src/services/user.service')
 
@@ -165,7 +165,7 @@ async function main() {
       select: { id: true, plaidTransactionId: true, merchantEntityId: true, counterpartyEntities: true, cleanName: true, name: true },
     })
     const byPlaidId = new Map(rows.map((r) => [r.plaidTransactionId, r]))
-    const analysis = await analyseStoredSubscriptions(userId)
+    const analysis = await analyseWithDetector(userId)
     const detected = [...analysis.subscriptions, ...analysis.bills]
     const detectedByTx = new Map<string, number>()
     detected.forEach((d, i) => d.txIds.forEach((t) => detectedByTx.set(t, i)))

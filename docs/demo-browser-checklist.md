@@ -4,8 +4,7 @@ Walk this in a real browser after any change to the demo, the Subscriptions & Bi
 bell, and before merging a PR that changes what the demo shows. Open the app with `?demo=1`,
 at desktop width and again at about 375 px wide.
 
-Items marked **(5e)** hold once the tab reads Plaid's streams (M7.6 PR 5e). Before that, the
-tab shows the old detector's list and those items don't apply.
+Items marked **(5e)** hold since the tab reads Plaid's streams (M7.6 PR 5e).
 
 ## Pending charges
 
@@ -28,6 +27,10 @@ tab shows the old detector's list and those items don't apply.
       the Ironline gym, and Lingohall with **Ended** and **Confirmed by you**.
 - [ ] **Bills:** Greystone Apartments, City Power & Light, Xfinity, T-Mobile, Geico, the car
       loan, and the monthly transfer to R Okafor with **Confirmed by you**.
+- [ ] Opening one of R Okafor's charges, the panel says **"Marked as a bill · Unmark"** and
+      that it's tracked under Bills. A Netflix charge says it was found automatically, under
+      Subscriptions.
+- [ ] Hovering **Ended** on Lingohall says Plaid reports it has stopped.
 - [ ] Each card's monthly total is the sum of its rows that are active and on a known schedule:
       Lingohall adds nothing.
 - [ ] **Not recurring** shows on every row that is a stream, and not on the Ironline gym, which

@@ -10,7 +10,7 @@ import request from 'supertest'
 import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
-import { analyseStoredSubscriptions } from '../src/services/subscriptions.service'
+import { composeSubscriptions } from '../src/services/streamComposition.service'
 import { membershipOf } from '../src/services/subscriptionMarks.service'
 
 const A = 'mark-kind-user-a'
@@ -43,7 +43,7 @@ async function makeUser(id: string) {
   txOf[id] = t.id
 }
 
-const markedSubscriptions = async (userId: string) => (await analyseStoredSubscriptions(userId)).subscriptions.filter((s) => s.mark)
+const markedSubscriptions = async (userId: string) => (await composeSubscriptions(userId)).subscriptions.filter((s) => s.mark)
 
 beforeEach(async () => {
   await wipe(A); await wipe(B)

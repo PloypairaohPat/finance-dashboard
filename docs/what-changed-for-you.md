@@ -208,14 +208,62 @@ The Subscriptions & Bills page could list your monthly credit-card payment as a 
 bill. It isn't one — it pays for purchases that are already on the page individually. It
 no longer appears there, and neither does a regular transfer into savings.
 
-## You can mark a subscription yourself
+## Subscriptions & Bills now comes from your bank's recurring payments
+
+The Subscriptions & Bills page used to be our own guess: it looked through your last
+three months for charges that repeated at a steady amount. It now uses the recurring
+payments your bank data already identifies (through Plaid, the service that connects
+your accounts), and then sorts each one using what Ledger knows about the charges.
+
+**What you'll notice:**
+
+- **Your subscriptions may have moved.** Things the old page listed as subscriptions are
+  now spread across three places: **Subscriptions**, **Bills**, and a new **Suggested**
+  list. A small insurance premium, for example, is now under Bills, and a café you
+  visit every week is a suggestion rather than a subscription.
+- **Your monthly total will probably go up.** Recurring bills such as rent, utilities,
+  internet and loan payments are now found reliably and counted. Before, many were
+  missed, often because the amount changes a little each month. You aren't spending
+  more; the page is just counting more of what you already pay.
+- **Transfers still never count.** A regular move into savings, or a payment to a credit
+  card you've connected, isn't a bill and isn't listed.
+
+**The Suggested list.** Some payments repeat but may not be subscriptions or bills: a
+café you visit weekly, a payment to a person, a new service that has only charged once
+so far (marked **New**). These are listed under **Suggested**, outside every total, until
+you decide:
+
+- **Confirm** if it's a subscription or a bill. It moves to the list the row tells you
+  ("Confirming adds it to Bills") and counts from then on.
+- **Dismiss** if it isn't. It disappears from the page. An **Undo** appears straight
+  away, and anything you've dismissed stays under **Dismissed** at the bottom of the
+  Suggested list, with **Restore** to bring it back.
+
+**Anything can be marked "not recurring".** Every row that came from your bank's
+recurring payments has a **Not recurring** button, for the times we sorted something
+wrong. It works like Dismiss, with the same Undo and Restore.
+
+**Things that have stopped.** A subscription or bill that has stopped stays on the page
+marked **Ended** and leaves your totals. A suggestion that stopped before you confirmed
+it isn't listed at all: there's nothing left to decide.
+
+**Keeping it current.** The page updates on its own when your bank reports new recurring
+payments, and at least once a day. The **Sync** button now refreshes it too: one button
+for everything. The page shows when it was last updated ("Updated 3 h ago"), so you can
+see how fresh it is without pressing anything.
+
+In the demo, Confirm, Dismiss and Restore show what they'd do but don't save, like
+everything else there.
+
+## You can mark a subscription or a bill yourself
 
 Some subscriptions never show up on the Subscriptions & Bills page on their own. The
 usual reason is that the merchant's name keeps changing on your statement — the same
 gym can appear under several different names over a few months — or that its price
 changed and it stopped looking regular.
 
-Open any charge and choose **Mark as subscription**. From then on that subscription is
+Open any charge and choose **Mark as a subscription** (or **Mark as a bill**, when the
+charge is a bill: the button says which list it will go to). From then on it is
 tracked from the charge you marked: later charges from the same merchant that arrive on
 its usual schedule are counted as the same subscription, even under a different name
 and even at a new price. A price rise shows in the bell, like any other.
