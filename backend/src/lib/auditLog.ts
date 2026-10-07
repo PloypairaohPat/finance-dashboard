@@ -30,6 +30,12 @@ import {
 
 export * from './auditValues'
 
+/**
+ * The Sentry title when a signed-in request carried no session id, so
+ * session.first_seen couldn't be written. Once per process, with no ids.
+ */
+export const AUDIT_SESSION_WITHOUT_ID = 'audit log: session without id'
+
 /** The Sentry title when a row couldn't be written. An alert rule can notify on it. */
 export const AUDIT_WRITE_FAILED = 'audit log: write failed'
 
@@ -116,9 +122,23 @@ export function recordSessionSeen(userId: string, sessionId: string, db: AuditDb
   })()
 }
 
-/** Tests only: forget the sessions this process has seen, as a restart would. */
+let reportedSessionWithoutId = false
+
+/**
+ * A signed-in request with a user id but no session id: session.first_seen is
+ * skipped, and that's reported, once per process, so it can't stay silent.
+ */
+export function reportSessionWithoutId(): void {
+  if (reportedSessionWithoutId) return
+  reportedSessionWithoutId = true
+  Sentry.captureMessage(AUDIT_SESSION_WITHOUT_ID, { level: 'warning' })
+  console.warn(`⚠️  ${AUDIT_SESSION_WITHOUT_ID}`)
+}
+
+/** Tests only: forget the sessions this process has seen, and its one report, as a restart would. */
 export function forgetSeenSessions(): void {
   seenSessions.clear()
+  reportedSessionWithoutId = false
 }
 
 /**

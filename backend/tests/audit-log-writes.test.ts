@@ -31,7 +31,7 @@ import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
 import { auditHash, loadAuditHashKey } from '../src/lib/auditKey'
 import {
-  AUDIT_RETENTION_DAYS, AUDIT_WRITE_FAILED, auditCode, expireAuditEvents, forgetSeenSessions, recordAudit, recordSessionSeen,
+  AUDIT_RETENTION_DAYS, AUDIT_SESSION_WITHOUT_ID, AUDIT_WRITE_FAILED, auditCode, expireAuditEvents, forgetSeenSessions, recordAudit, recordSessionSeen,
 } from '../src/lib/auditLog'
 import { DeletionError, DeletionUnderway, deleteUserData } from '../src/services/accountDeletion.service'
 import { askLookup, onlyKnownArgs } from '../scripts/lib/audit-lookup'
@@ -412,6 +412,29 @@ describe('sessions', () => {
     await recordSessionSeen(id, sid)
     expect(await sessionRows(sid)).toHaveLength(1)
     expect(writeFailures()).toEqual([])
+  })
+
+  it('reports a signed-in request without a session id: one warning per process, no ids, and still no row', async () => {
+    forgetSeenSessions() // a fresh process
+    const { id } = await makeUser('nosid', { items: 0 })
+    const reports = () => sentry.captureMessage.mock.calls.filter((c) => c[0] === AUDIT_SESSION_WITHOUT_ID)
+    expect((await load(id)).status).toBe(200)
+    expect(reports()).toEqual([[AUDIT_SESSION_WITHOUT_ID, { level: 'warning' }]])
+    await load(id)
+    await load(id)
+    expect(reports()).toHaveLength(1)
+    forgetSeenSessions() // a restart reports again
+    await load(id)
+    expect(reports()).toHaveLength(2)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(await eventsOf(id)).toEqual([])
+    expect(JSON.stringify(reports())).not.toContain(id)
+    // Demo requests and requests with a session id don't report it.
+    forgetSeenSessions()
+    sentry.captureMessage.mockClear()
+    await request(app).get('/plaid-items').set('X-Demo-Mode', '1')
+    await load(id, U('session-3'))
+    expect(reports()).toEqual([])
   })
 
   it('records nothing for demo requests or a request without a session id', async () => {

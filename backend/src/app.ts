@@ -40,6 +40,7 @@ import networthRouter from "./routes/networth.routes"
 import cashflowRouter from "./routes/cashflow.routes"
 import { clerkAuth, requireSession, demoReadOnly, DEMO_USER_ID } from "./middleware/auth"
 import { auditHashKey } from './lib/auditKey'
+import { runningCommit } from './lib/runningCommit'
 import prisma from "./lib/prisma"
 import insightsRoutes from "./routes/insights.routes"
 import subscriptionsRoutes from "./routes/subscriptions.routes"
@@ -241,9 +242,10 @@ app.get('/health', async (_req: Request, res: Response) => {
       // leave lastSync/lastSyncAgeHours as null
     }
 
-    res.json({ status: 'ok', db: 'ok', lastSync, lastSyncAgeHours })
+    // The deployed commit, so "is the merge live?" is one request away.
+    res.json({ status: 'ok', db: 'ok', lastSync, lastSyncAgeHours, commit: runningCommit() })
   } catch {
-    res.status(503).json({ status: 'degraded', db: 'unreachable' })
+    res.status(503).json({ status: 'degraded', db: 'unreachable', commit: runningCommit() })
   }
 })
 
