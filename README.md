@@ -51,7 +51,7 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 
 ### Intelligence
 - **7-detector Smart Alerts engine** — large transactions, new merchants, monthly pace, budget exceeded, low balance, missed paycheck, subscription price-up
-- **Subscriptions & Bills from Plaid's recurring streams** (stored, refreshed by webhook and a daily backstop, never on page load), sorted by one definition into Subscriptions, Bills and Suggested, with Confirm, Dismiss and "Mark as a subscription/bill" (`docs/m7.6-audit.md`)
+- **Subscriptions & Bills from Plaid's recurring streams** (stored, refreshed by webhook, a daily backstop and the Sync button past a 10-minute cooldown, never on page load), sorted by one definition into Subscriptions, Bills and Suggested, with Confirm, Dismiss and "Mark as a subscription/bill" (`docs/m7.6-audit.md`)
 - **Composite Financial Health Score** (0–100) weighted across savings rate, spend control, debt load, growth trend
 - **Goal tracking** — 4 types (savings, emergency fund, vacation/purchase, debt payoff)
 - **Monthly insights** — summary, runway, top merchants, largest purchases

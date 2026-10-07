@@ -189,6 +189,11 @@ export interface SubscriptionAnalysis {
   suggested?: SuggestedStream[]
   /** Dismissed streams, for Restore. Present with `suggested`. */
   dismissed?: SuggestedStream[]
+  /**
+   * When the streams were last refreshed, by the least recently refreshed Item
+   * (null: one never has). Absent or null: nothing to say (the demo, no Items).
+   */
+  freshness?: { oldest: string | null } | null
   subscriptions: EnrichedStream[]
   bills: EnrichedStream[]
   upcoming: EnrichedStream[]

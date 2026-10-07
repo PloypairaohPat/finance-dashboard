@@ -6,14 +6,16 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import SubscriptionTracker from "./SubscriptionTracker"
+import SubscriptionTracker, { updatedLabel } from "./SubscriptionTracker"
 import type { EnrichedStream, SubscriptionAnalysis, SuggestedStream } from "./types"
 
 const mockApiFetch = jest.fn<Promise<Response>, [string, RequestInit?]>()
 jest.mock("@clerk/clerk-react", () => ({ useAuth: () => ({ isSignedIn: true }) }))
 jest.mock("./lib/useApiFetch", () => ({ useApiFetch: () => mockApiFetch }))
 jest.mock("./lib/DemoContext", () => ({ useDemo: () => ({ demoMode: false }) }))
-jest.mock("./SyncProvider", () => ({ useSyncVersion: () => 0 }))
+// The app bumps the sync version when POST /sync returns, which is after the sync and the stream refresh.
+const mockSync = { version: 0 }
+jest.mock("./SyncProvider", () => ({ useSyncVersion: () => mockSync.version }))
 
 ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -76,6 +78,7 @@ async function mount(analysis: SubscriptionAnalysis) {
 }
 
 beforeEach(() => {
+  mockSync.version = 0
   mockApiFetch.mockReset()
   writeReply = () => reply({ verdict: { id: "verdict-9", kind: "dismissed", transactionId: "x" } }, 201)
   mockApiFetch.mockImplementation(async (_url, init) =>
@@ -178,6 +181,37 @@ describe("SubscriptionTracker", () => {
       [...container.querySelectorAll("span")].find((s) => s.textContent === "Ended" && s.closest("div[style]")?.textContent?.includes(merchant))?.title
     expect(tip("Gonestream")).toBe("Plaid reports this has stopped: shown, but not counted in the totals")
     expect(tip("Goneseries")).toBe("No charge for two billing periods: not counted in the totals")
+  })
+
+  it("reads the tab again when a sync finishes", async () => {
+    await mount(onStreams)
+    const before = gets()
+    mockSync.version = 1
+    await act(async () => root.render(<SubscriptionTracker />))
+    await settle()
+    expect(gets()).toBe(before + 1)
+  })
+
+  it("shows how fresh the streams are, by the stalest Item, and nothing when there is nothing to say", async () => {
+    const threeHours = new Date(Date.now() - 3 * 3_600_000 - 60_000).toISOString()
+    await mount({ ...onStreams, freshness: { oldest: threeHours } })
+    expect(text()).toContain("Updated 3h ago")
+    act(() => root.unmount()); container.remove()
+    await mount({ ...onStreams, freshness: { oldest: null } })
+    expect(text()).toContain("Not updated yet")
+    act(() => root.unmount()); container.remove()
+    await mount({ ...onStreams, freshness: null })
+    expect(text()).not.toContain("Updated")
+    expect(text()).not.toContain("Not updated")
+  })
+
+  it("updatedLabel counts minutes, hours and days", () => {
+    const now = Date.parse("2026-10-07T12:00:00Z")
+    expect(updatedLabel("2026-10-07T11:59:40Z", now)).toBe("Updated just now")
+    expect(updatedLabel("2026-10-07T11:50:00Z", now)).toBe("Updated 10m ago")
+    expect(updatedLabel("2026-10-07T07:00:00Z", now)).toBe("Updated 5h ago")
+    expect(updatedLabel("2026-10-04T12:00:00Z", now)).toBe("Updated 3d ago")
+    expect(updatedLabel(null, now)).toBe("Not updated yet")
   })
 
   it("a refused write says why", async () => {

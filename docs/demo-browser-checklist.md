@@ -36,6 +36,8 @@ Items marked **(5e)** hold since the tab reads Plaid's streams (M7.6 PR 5e).
 - [ ] **Not recurring** shows on every row that is a stream, and not on the Ironline gym, which
       is a marked series.
 - [ ] Upcoming lists only active, counted rows, soonest first.
+- [ ] There is no "Updated … ago" line in the demo (its streams are never refreshed), and
+      **Sync** shows the demo message.
 
 ## Suggested (5e)
 

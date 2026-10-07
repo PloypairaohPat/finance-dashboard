@@ -179,8 +179,9 @@ export async function refreshItemStreams(
 
 // ── Triggers (M7.6 PR 2b-2) ───────────────────────────────────────
 //
-// The only callers of refreshItemStreams in the app: Plaid's webhooks and the
-// daily backstop. Never a page load or a user action. Each handles its own
+// The only callers of refreshItemStreams in the app: Plaid's webhooks, the
+// daily backstop, and the Sync button (refreshAfterSync, M7.6 PR 5e). Never a
+// page load, and the Sync button only past a cooldown. Each handles its own
 // errors and never throws, so a webhook handler or the scheduler can call it
 // and move on: a Plaid error was already reported by fetchItemStreams, the
 // demo is skipped quietly, and anything else goes to Sentry.
@@ -263,4 +264,59 @@ export async function refreshStaleItems(
     else if (outcome === 'failed') failed++
   }
   return { due: due.length, refreshed, failed }
+}
+
+// ── The Sync button (M7.6 PR 5e) ──────────────────────────────────
+
+/** An Item whose streams were refreshed this recently is skipped when the user presses Sync. */
+export const SYNC_REFRESH_COOLDOWN_MINUTES = 10
+
+/**
+ * After POST /sync has synced the user's Items: refresh the streams of each
+ * one that synced — after its sync, not alongside it, so the streams'
+ * transactions are already in our rows. An Item refreshed within the cooldown
+ * is skipped, so pressing Sync again doesn't call Plaid again. Never throws: a
+ * failure goes to Sentry like any trigger's, and the sync it follows stands.
+ */
+export async function refreshAfterSync(
+  plaidClient: PlaidApi,
+  userId: string,
+  syncedItemRowIds: readonly string[],
+  now: Date = new Date(),
+  db: PrismaClient = defaultPrisma,
+): Promise<{ refreshed: number; skipped: number; failed: number }> {
+  const cutoff = new Date(now.getTime() - SYNC_REFRESH_COOLDOWN_MINUTES * 60_000)
+  const items = await db.plaidItem.findMany({
+    where: { userId, id: { in: [...syncedItemRowIds] } },
+    select: { id: true, streamsRefreshedAt: true },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  })
+  let refreshed = 0, skipped = 0, failed = 0
+  for (const item of items) {
+    if (item.streamsRefreshedAt && item.streamsRefreshedAt > cutoff) { skipped++; continue }
+    const outcome = await refreshAndReport(plaidClient, item.id, 'sync button', db)
+    if (outcome === 'refreshed') refreshed++
+    else if (outcome === 'failed') failed++
+    else skipped++
+  }
+  return { refreshed, skipped, failed }
+}
+
+/**
+ * How current the tab's streams are: when the least recently refreshed of the
+ * user's Items was refreshed, or null if one never has. null overall for the
+ * demo, whose Items are never refreshed, and for a user with no Items.
+ */
+export async function streamsFreshness(
+  userId: string,
+  db: PrismaClient = defaultPrisma,
+): Promise<{ oldest: string | null } | null> {
+  if (userId === DEMO_USER_ID) return null
+  const items = await db.plaidItem.findMany({
+    where: { userId, accessToken: { not: DEMO_ITEM_TOKEN } },
+    select: { streamsRefreshedAt: true },
+  })
+  if (items.length === 0) return null
+  if (items.some((i) => i.streamsRefreshedAt === null)) return { oldest: null }
+  return { oldest: new Date(Math.min(...items.map((i) => i.streamsRefreshedAt!.getTime()))).toISOString() }
 }
