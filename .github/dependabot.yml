@@ -1,0 +1,53 @@
+# Dependabot (M7.7): weekly version updates, grouped so a week is at most a
+# few PRs. Majors aren't grouped: each comes as its own PR. Security updates
+# (turned on in the repo's Code security settings) are grouped per directory.
+# Every npm PR touches a lockfile, so dependency-audit enforces on it.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend-runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+      backend-dev:
+        dependency-type: development
+        update-types: [minor, patch]
+      backend-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # Create React App's last release; a major would be a migration, not an update.
+      - dependency-name: react-scripts
+        update-types: ['version-update:semver-major']
+    groups:
+      frontend-runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+      frontend-dev:
+        dependency-type: development
+        update-types: [minor, patch]
+      frontend-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']

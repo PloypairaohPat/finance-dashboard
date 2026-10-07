@@ -1,0 +1,4 @@
+{
+  "about": "Accepted dependency risks for .github/scripts/audit-gate.mjs. One entry per advisory and package: { \"advisory\": \"GHSA-xxxx-xxxx-xxxx\", \"package\": \"name\", \"reason\": \"why it doesn't apply to us\", \"reviewBy\": \"YYYY-MM-DD\" }. Past reviewBy, the entry fails the gate until it's renewed or removed. Keep this empty unless a fix isn't available.",
+  "entries": []
+}
