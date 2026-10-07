@@ -324,3 +324,36 @@ model RecurringStream {
   @@unique([plaidItemId, streamId])
   @@index([userId])
 }
+
+// ── AuditEvent (M7.7) ─────────────────────────────────────────────
+// An append-only log of security events: a bank linked, discarded or
+// unlinked, an account deletion requested, stopped, left incomplete or
+// completed, a session first seen. It outlives the user on purpose, so it has
+// no userId and no foreign key to User: it's in none of the per-user table
+// lists, and deleting an account leaves it alone. People and Items appear
+// only as keyed hashes (pseudonymous while we hold the key), and every other
+// column is a code the database limits. No free text.
+//
+// The migration's triggers, not this model, make it append-only: UPDATE and
+// TRUNCATE are refused, DELETE only for rows past retention
+// (AUDIT_RETENTION_DAYS in src/lib/auditLog.ts), and `at` is always the
+// insert time. That stops app code, not someone holding DATABASE_URL: the
+// app's role owns the table and could drop the triggers.
+model AuditEvent {
+  id          BigInt   @id @default(autoincrement())
+  at          DateTime @default(now())
+  event       String
+  actor       String
+  subject     String?
+  itemRef     String?
+  sessionRef  String?  @unique
+  plaidResult String?
+  outcome     String?
+  stage       String?
+  errorCode   String?
+  count       Int?
+  keyVersion  Int      @default(1)
+
+  @@index([subject, at])
+  @@index([at])
+}
