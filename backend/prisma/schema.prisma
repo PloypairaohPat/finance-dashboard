@@ -21,6 +21,10 @@ model User {
   // income instead of netting against payments to people (R4). Off by default:
   // turning it on re-derives every past period. See docs/m7.3-classifier.md.
   paymentAppInflowsAreIncome Boolean @default(false)
+  // M7.6 PR 6 — whether the user wants the missed-paycheck alert: a salary
+  // stream's payday passing without pay (docs/m7.6-missed-paycheck.md). Off by
+  // default, opt-in only. PR 6a adds the column; nothing reads it until 6b.
+  missedPaycheckAlerts Boolean @default(false)
   plaidItems   PlaidItem[]
   accounts     Account[]
   transactions Transaction[]
