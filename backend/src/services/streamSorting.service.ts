@@ -32,6 +32,13 @@ export interface SortedStream {
   sort: StreamSort
   /** Its transactions found in the user's live rows, oldest first, with our verdicts. */
   charges: ClassifiedRow[]
+  /**
+   * Its transactions the user's rows hold as removed (soft-deleted by a sync).
+   * They never count toward anything; a verdict on one still applies to the
+   * stream, so a confirmation or dismissal doesn't vanish when Plaid removes
+   * the charge it sits on. The stream's own user's rows only.
+   */
+  removedChargeIds: string[]
 }
 
 /** Every stored stream of the user, each with its bucket, reason and whether it counts. */
@@ -41,6 +48,12 @@ export async function sortUserStreams(userId: string): Promise<SortedStream[]> {
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   })
   const rowOf = await resolveStreamRows(userId, streams.flatMap((s) => s.plaidTransactionIds))
+  const removedOf = new Map(
+    (await prisma.transaction.findMany({
+      where: { userId, deletedAt: { not: null }, plaidTransactionId: { in: [...new Set(streams.flatMap((s) => s.plaidTransactionIds))] } },
+      select: { id: true, plaidTransactionId: true },
+    })).map((r) => [r.plaidTransactionId, r.id]),
+  )
 
   // One classification across every resolved row's dates.
   const classified = new Map<string, ClassifiedRow>()
@@ -64,6 +77,7 @@ export async function sortUserStreams(userId: string): Promise<SortedStream[]> {
     return {
       stream,
       charges,
+      removedChargeIds: [...new Set(stream.plaidTransactionIds)].map((t) => removedOf.get(t)).filter((id): id is string => id !== undefined),
       sort: sortStream({
         direction: stream.direction,
         status: stream.status,

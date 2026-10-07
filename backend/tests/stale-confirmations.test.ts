@@ -18,6 +18,7 @@ import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
 import { encrypt } from '../src/utils/encrypt'
 import { composeSubscriptions, type ComposedAnalysis } from '../src/services/streamComposition.service'
+import { sortUserStreams } from '../src/services/streamSorting.service'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
 import type { DetectedAlert, DetectorContext } from '../src/services/alerts/types'
 
@@ -140,6 +141,21 @@ describe('a confirmation on a charge Plaid removed (sync soft-deleted it)', () =
     expect(r.suggested).toEqual([])
   })
 
+  it("a removed confirmed charge under another name is still the stream's: no extra row of its own", async () => {
+    const w = await world('removed-renamed')
+    const cs = [
+      await charge(w, 65, 215, 'R OKAFOR', TO_PERSON), await charge(w, 35, 215, 'R OKAFOR', TO_PERSON),
+      // The confirmed charge carried another label (as a pending row can) before the bank removed it.
+      await charge(w, 5, 215, 'ONLINE TRANSFER 0042', TO_PERSON),
+    ]
+    await stream(w, cs, 'R OKAFOR', TO_PERSON)
+    const m = await confirm(w, cs[2].id)
+    await remove(cs[2].id)
+    const r = await compose(w)
+    expect(r.bills.map((s) => s.mark?.id)).toEqual([m.id])
+    expect(r.subscriptions).toEqual([])
+  })
+
   it('a dismissal on a removed charge keeps the stream dismissed', async () => {
     const w = await world('removed-dismissal')
     const cs = [await charge(w, 65, 80, 'CLINIC', ['MEDICAL', 'MEDICAL_PRIMARY_CARE']), await charge(w, 35, 80, 'CLINIC', ['MEDICAL', 'MEDICAL_PRIMARY_CARE'])]
@@ -216,6 +232,8 @@ describe('guards', () => {
     const r = await compose(a)
     expect(r.dismissed).toEqual([])
     expect(r.suggested.map((s) => s.merchant)).toEqual(['CLINIC'])
+    // Resolved by the stream's own user only: B's removed row is never one of A's stream's charges.
+    expect((await sortUserStreams(a.userId)).flatMap((s) => s.removedChargeIds)).toEqual([])
   })
 
   it("DELETE /subscriptions/verdicts/:id with another user's verdict on a removed charge is a 404, and the row is unchanged", async () => {

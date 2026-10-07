@@ -149,7 +149,8 @@ describe('composeSubscriptions', () => {
     const w = await world('pending')
     await stream(w, await series(w, [10, 10, 12], 'STREAMCO', CAT.tv, { lastPending: true }), 'StreamCo', CAT.tv)
     const [s] = (await compose(w)).subscriptions
-    expect(s).toMatchObject({ lastAmount: 12, lastChargePending: true, monthlyAmount: 10, priceChange: null })
+    // The pending charge sets the date, never an amount: the last amount is the last posted one.
+    expect(s).toMatchObject({ lastAmount: 10, lastChargePending: true, monthlyAmount: 10, priceChange: null })
     // Confirm and Dismiss anchor on the newest POSTED charge, skipping the pending one.
     expect(s.anchorTxId).toBe(s.txIds[1])
   })
