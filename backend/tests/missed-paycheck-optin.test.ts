@@ -1,25 +1,32 @@
 // ─────────────────────────────────────────────────────────────────
-//  M7.6 PR 6a: User.missedPaycheckAlerts, the opt-in. Column only: off for
-//  everyone, existing users included, and nothing reads or writes it yet —
-//  the settings API and the bell behave exactly as before.
-//  All ids are invented.
+//  User.missedPaycheckAlerts, the opt-in (M7.6 PR 6a), and the settings API
+//  that carries it (6b): off for everyone until they turn it on; GET says
+//  whether there's a regular paycheck to watch, so the dialog can say plainly
+//  when there isn't. All ids are invented.
 // ─────────────────────────────────────────────────────────────────
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { app } from '../src/app'
 import prisma from '../src/lib/prisma'
-import { runDetectors } from '../src/services/alerts/dispatcher'
+import { encrypt } from '../src/utils/encrypt'
 
 const USER = 'missed-paycheck-optin-test-user'
 const LEGACY = 'missed-paycheck-optin-legacy-user'
 
 async function wipe() {
-  await prisma.alert.deleteMany({ where: { userId: { in: [USER, LEGACY] } } })
+  for (const id of [USER, LEGACY]) {
+    await prisma.alert.deleteMany({ where: { userId: id } })
+    await prisma.recurringStream.deleteMany({ where: { userId: id } })
+    await prisma.plaidItem.deleteMany({ where: { userId: id } })
+  }
   await prisma.user.deleteMany({ where: { id: { in: [USER, LEGACY] } } })
 }
 beforeEach(wipe)
 afterAll(wipe)
+
+const get = () => request(app).get('/user/settings').set('X-Test-User', USER)
+const put = (body: object) => request(app).put('/user/settings').set('X-Test-User', USER).send(body)
 
 describe('the column', () => {
   it('is off for a new user', async () => {
@@ -38,26 +45,50 @@ describe('the column', () => {
   })
 })
 
-describe('nothing reads or writes it yet', () => {
+describe('GET and PUT /user/settings', () => {
   beforeEach(async () => {
     await prisma.user.create({ data: { id: USER, email: `${USER}@optin-test.local` } })
   })
 
-  it('GET /user/settings answers exactly as before', async () => {
-    const res = await request(app).get('/user/settings').set('X-Test-User', USER)
+  it('GET carries the setting, off, and says no regular paycheck was found', async () => {
+    const res = await get()
     expect(res.status).toBe(200)
-    expect(Object.keys(res.body).sort()).toEqual(['paymentAppInflowsAreIncome', 'periodStartDay'])
+    expect(res.body).toEqual({ periodStartDay: 1, paymentAppInflowsAreIncome: false, missedPaycheckAlerts: false, regularPaycheckFound: false })
   })
 
-  it('PUT /user/settings does not accept it, and it stays off', async () => {
-    const res = await request(app).put('/user/settings').set('X-Test-User', USER).send({ missedPaycheckAlerts: true })
-    expect(res.status).toBe(400)
+  it('PUT turns it on and off, and answers with what was stored', async () => {
+    expect((await put({ missedPaycheckAlerts: true })).body).toMatchObject({ missedPaycheckAlerts: true })
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: USER } })).missedPaycheckAlerts).toBe(true)
+    expect((await put({ missedPaycheckAlerts: false })).body).toMatchObject({ missedPaycheckAlerts: false })
+  })
+
+  it('PUT refuses anything but true or false, and changes nothing', async () => {
+    for (const value of ['true', 1, null]) {
+      expect((await put({ missedPaycheckAlerts: value })).status, String(value)).toBe(400)
+    }
     expect((await prisma.user.findUniqueOrThrow({ where: { id: USER } })).missedPaycheckAlerts).toBe(false)
   })
 
-  it('the bell raises no missed_paycheck alert, even with it on', async () => {
-    await prisma.user.update({ where: { id: USER }, data: { missedPaycheckAlerts: true } })
-    await runDetectors(USER)
-    expect(await prisma.alert.count({ where: { userId: USER, kind: 'missed_paycheck' } })).toBe(0)
+  it('regularPaycheckFound is true only with a qualifying salary stream', async () => {
+    const item = await prisma.plaidItem.create({ data: { userId: USER, itemId: `${USER}-item`, accessToken: encrypt('fake'), institutionName: 'Test Bank' } })
+    const add = (detailed: string, status: string) => prisma.recurringStream.create({
+      data: {
+        userId: USER, plaidItemId: item.id, streamId: `FAKE-${detailed}-${status}`, plaidAccountId: `${USER}-acct`, direction: 'inflow',
+        description: 'PAY', pfcPrimary: 'INCOME', pfcDetailed: detailed, frequency: 'BIWEEKLY', status, isActive: true,
+        firstDate: new Date(), lastDate: new Date(), plaidTransactionIds: [], plaidUpdatedAt: new Date(),
+      },
+    })
+    await add('INCOME_INTEREST_EARNED', 'MATURE')
+    await add('INCOME_SALARY', 'EARLY_DETECTION')
+    expect((await get()).body.regularPaycheckFound).toBe(false)
+    await add('INCOME_SALARY', 'MATURE')
+    expect((await get()).body.regularPaycheckFound).toBe(true)
+  })
+
+  it('demo mode: the demo message, and nothing changes', async () => {
+    const demo = await prisma.user.findUnique({ where: { id: 'demo-user' }, select: { missedPaycheckAlerts: true } })
+    const res = await request(app).put('/user/settings').set('X-Demo-Mode', '1').send({ missedPaycheckAlerts: !demo?.missedPaycheckAlerts })
+    expect(res.body).toMatchObject({ demo: true, ok: false })
+    expect(await prisma.user.findUnique({ where: { id: 'demo-user' }, select: { missedPaycheckAlerts: true } })).toEqual(demo)
   })
 })

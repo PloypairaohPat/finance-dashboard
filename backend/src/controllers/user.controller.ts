@@ -20,7 +20,7 @@ export async function getUserSettings(req: Request, res: Response): Promise<void
   }
 }
 
-// PUT /user/settings  { periodStartDay?: number, paymentAppInflowsAreIncome?: boolean }
+// PUT /user/settings  { periodStartDay?: number, paymentAppInflowsAreIncome?: boolean, missedPaycheckAlerts?: boolean }
 //
 // Either field, or both. A field that isn't sent is left alone, so the dialog
 // can save one setting without restating the other.
@@ -28,7 +28,7 @@ export async function getUserSettings(req: Request, res: Response): Promise<void
 export async function putUserSettings(req: Request, res: Response): Promise<void> {
   try {
     const userId = getUserId(req)
-    const { periodStartDay, paymentAppInflowsAreIncome } = req.body ?? {}
+    const { periodStartDay, paymentAppInflowsAreIncome, missedPaycheckAlerts } = req.body ?? {}
 
     // JSON types only — "10" and "true" as strings are rejected, not coerced.
     if (periodStartDay !== undefined && !isValidPeriodStartDay(periodStartDay)) {
@@ -41,12 +41,16 @@ export async function putUserSettings(req: Request, res: Response): Promise<void
       res.status(400).json({ error: "paymentAppInflowsAreIncome must be true or false" })
       return
     }
-    if (periodStartDay === undefined && paymentAppInflowsAreIncome === undefined) {
-      res.status(400).json({ error: "Nothing to save: send periodStartDay, paymentAppInflowsAreIncome, or both" })
+    if (missedPaycheckAlerts !== undefined && typeof missedPaycheckAlerts !== "boolean") {
+      res.status(400).json({ error: "missedPaycheckAlerts must be true or false" })
+      return
+    }
+    if (periodStartDay === undefined && paymentAppInflowsAreIncome === undefined && missedPaycheckAlerts === undefined) {
+      res.status(400).json({ error: "Nothing to save: send periodStartDay, paymentAppInflowsAreIncome or missedPaycheckAlerts" })
       return
     }
 
-    res.json(await updateUserSettings(userId, { periodStartDay, paymentAppInflowsAreIncome }))
+    res.json(await updateUserSettings(userId, { periodStartDay, paymentAppInflowsAreIncome, missedPaycheckAlerts }))
   } catch (err: any) {
     console.error("putUserSettings:", err.message)
     res.status(500).json({ error: "Failed to save settings" })

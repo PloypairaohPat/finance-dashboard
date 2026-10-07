@@ -19,10 +19,10 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { connectReadOnly, redact } from './lib/read-only-db'
-import { dayOf } from './lib/businessDays'
+import { dayOf } from '../src/lib/businessDays'
 import {
   HALF_PERIOD_DAYS, SALARY_CODES, deadline, exclusionOf, nominalSchedule, paydays, wouldFire, type PayFrequency,
-} from './lib/paycheckBacktest'
+} from '../src/lib/paydays'
 
 const GRACES = [1, 2, 3] as const
 const DAY = 86_400_000

@@ -55,7 +55,7 @@
  *                then the same without --dry-run
  */
 import { PrismaClient, Prisma } from '@prisma/client'
-import { DEMO_USER_ID, buildDemoDataset } from './demo-dataset'
+import { DEMO_SETTINGS, DEMO_USER_ID, buildDemoDataset } from './demo-dataset'
 import { SENTINEL_TOKEN, buildPlan, type Plan } from './demo-plan'
 import { CREATE_ORDER, WIPE_ORDER } from './demo-tables'
 import { connectReadOnly, hasFlag, makeRefuse, redact, resolveConnection } from '../scripts/lib/read-only-db'
@@ -249,8 +249,8 @@ async function write(plan: Plan): Promise<void> {
 
         await tx.user.upsert({
           where: { id: DEMO_USER_ID },
-          update: { periodStartDay: plan.dataset.startDay },
-          create: { id: DEMO_USER_ID, email: 'demo@ledger.app', periodStartDay: plan.dataset.startDay },
+          update: { periodStartDay: plan.dataset.startDay, ...DEMO_SETTINGS },
+          create: { id: DEMO_USER_ID, email: 'demo@ledger.app', periodStartDay: plan.dataset.startDay, ...DEMO_SETTINGS },
         })
         for (const table of CREATE_ORDER) {
           try {

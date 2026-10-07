@@ -602,6 +602,18 @@ export default function App() {
   );
 
   const accountControl = demoMode ? (
+            <>
+            {/* The demo's settings, shown as stored; every change is refused with the demo message. */}
+            <button
+              onClick={() => setSettingsOpen(true)}
+              style={{
+                background: "transparent", border: "1px solid #333", color: "#888",
+                padding: "6px 14px", borderRadius: "4px", cursor: "pointer",
+                fontSize: "11px", fontFamily: "'IBM Plex Mono', monospace", marginRight: 8,
+              }}
+            >
+              Settings
+            </button>
             <button
               onClick={() => setDemoMode(false)}
               style={{
@@ -612,6 +624,7 @@ export default function App() {
             >
               Exit demo
             </button>
+            </>
   ) : (
             // Settings (M7.2) sits in the account menu: the period start day it
             // holds reaches the hero, Insights and five charts, not one chart.

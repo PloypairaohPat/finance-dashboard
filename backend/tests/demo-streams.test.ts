@@ -15,7 +15,7 @@ import { buildPlan, type Plan } from '../prisma/demo-plan'
 import { CREATE_ORDER, WIPE_ORDER } from '../prisma/demo-tables'
 import { composeSubscriptions, type ComposedAnalysis } from '../src/services/streamComposition.service'
 import { detectSubscriptionPriceUp } from '../src/services/alerts/detectors/subscriptionPriceUp'
-import type { DetectorContext } from '../src/services/alerts/types'
+import type { DetectedAlert, DetectorContext } from '../src/services/alerts/types'
 
 const ds = buildDemoDataset(new Date())
 
@@ -42,7 +42,7 @@ describe('the demo streams as data', () => {
     expect(has((e, s) => e.list === 'suggested' && e.isNew && s.status === 'EARLY_DETECTION'), 'a new one').not.toEqual([])
     expect(has((e) => e.list === 'dismissed'), 'a dismissed one').not.toEqual([])
     expect(has((e, s) => e.list === 'bills' && e.marked && s.detailed.startsWith('TRANSFER_OUT')), 'a payment to a person confirmed into Bills').not.toEqual([])
-    expect(has((e, s) => e.list !== 'suggested' && e.list !== 'dismissed' && e.marked && e.status === 'ended' && !s.isActive), 'a confirmed one that ended').not.toEqual([])
+    expect(has((e, s) => (e.list === 'subscriptions' || e.list === 'bills') && e.marked && e.status === 'ended' && !s.isActive), 'a confirmed one that ended').not.toEqual([])
     expect(has((e) => e.list === 'subscriptions' && !e.marked && e.priceUp === true), 'the price rise').not.toEqual([])
     expect(ds.markedSeries.map((m) => m.expected), 'the marked gym').toEqual([{ list: 'subscriptions', status: 'active', marked: true, priceUp: true }])
   })
@@ -54,7 +54,7 @@ describe('the demo streams as data', () => {
     for (const s of ds.streams) {
       const kinds = ds.verdicts.filter((v) => s.txIds.includes(v.plaidTransactionId)).map((v) => v.kind)
       const e = s.expected
-      expect(kinds, s.streamId).toEqual(e.list === 'dismissed' ? ['dismissed'] : e.list !== 'suggested' && e.marked ? ['confirmed'] : [])
+      expect(kinds, s.streamId).toEqual(e.list === 'dismissed' ? ['dismissed'] : (e.list === 'subscriptions' || e.list === 'bills') && e.marked ? ['confirmed'] : [])
     }
   })
 
@@ -62,7 +62,10 @@ describe('the demo streams as data', () => {
     const plan = buildPlan(ds)
     expect(plan.recurringStream).toHaveLength(ds.streams.length)
     expect(plan.subscriptionMark.map((m) => m.kind).sort()).toEqual(ds.verdicts.map((v) => v.kind).sort())
-    expect(plan.recurringStream.every((s) => s.direction === 'outflow' && Number(s.lastAmount) > 0)).toBe(true)
+    // Transaction.amount's sign: an outflow positive, an inflow negative.
+    for (const st of plan.recurringStream) {
+      expect(Math.sign(Number(st.lastAmount)), st.streamId).toBe(st.direction === 'outflow' ? 1 : -1)
+    }
   })
 })
 
@@ -117,6 +120,13 @@ describe('what the tab shows for the demo, on streams', () => {
   }
 
   function check(expected: ExpectedComposed, chargeIds: string[], label: string) {
+    if (expected.list === 'hidden') {
+      // An inflow: none of its charges in any list.
+      for (const id of chargeIds) {
+        expect(Object.values(lists()).flat().some((x) => x.txIds.includes(id)), `${label}: ${id}`).toBe(false)
+      }
+      return
+    }
     const { list, s } = placeOf(chargeIds[chargeIds.length - 1])
     expect(list, label).toBe(expected.list)
     // Every charge of the fixture is in that one item.
@@ -146,7 +156,7 @@ describe('what the tab shows for the demo, on streams', () => {
   })
 
   it('shows nothing the fixtures do not declare, and no charge twice', () => {
-    const declared = ds.streams.length + ds.markedSeries.length
+    const declared = ds.streams.filter((s) => s.expected.list !== 'hidden').length + ds.markedSeries.length
     const shown = Object.values(lists()).flat()
     expect(shown).toHaveLength(declared)
     const ids = [...result.subscriptions, ...result.bills, ...result.suggested].flatMap((s) => s.txIds)
@@ -155,7 +165,8 @@ describe('what the tab shows for the demo, on streams', () => {
 
   it('the bell gets the price rises: the stream and the marked gym', () => {
     const ctx = { now: ds.now, subscriptions: { ok: true, analysis: result } } as unknown as DetectorContext
-    const merchants = detectSubscriptionPriceUp(ctx).map((a) => a.title)
+    // The detector is synchronous; its type allows a promise for the ones that aren't.
+    const merchants = (detectSubscriptionPriceUp(ctx) as DetectedAlert[]).map((a) => a.title)
     expect(merchants).toHaveLength(2)
     expect(merchants.some((t) => t.startsWith('Viewloom'))).toBe(true)
   })
