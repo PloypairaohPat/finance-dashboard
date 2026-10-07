@@ -155,6 +155,11 @@ export interface EnrichedStream {
    * dismissal: the id Restore deletes.
    */
   mark: { id: string } | null
+  /**
+   * A confirmation that no longer counts: none of its charges is live spending
+   * today. Shown where the user put it, outside every total, with Unmark.
+   */
+  notCounted?: { reason: "not-spending" | "removed" }
   /** "ended": a marked subscription whose charges stopped. Shown, but out of the totals. */
   status: "active" | "ended"
 }
