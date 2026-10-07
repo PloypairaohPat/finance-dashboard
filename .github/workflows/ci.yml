@@ -45,9 +45,9 @@ jobs:
       WEBHOOK_URL: http://localhost:3001/webhook
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -71,7 +71,7 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: python3 .github/scripts/check-notebook-outputs.py
 
   # Real users' ids and dated amounts never belong in a committed file. Prints
@@ -82,7 +82,7 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: python3 .github/scripts/check-personal-data.py
 
   # M7.2 — before this job, a frontend-only break (type error, lint error that
@@ -95,9 +95,9 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           # 24, not 22: both repro scripts import .ts files directly and rely on
           # Node's built-in TypeScript type stripping, verified on Node 24.
