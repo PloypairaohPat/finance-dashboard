@@ -122,7 +122,7 @@ export interface InsightsResponse {
   highlights: Insight[]
 }
 
-export type StreamKind = "subscription" | "bill" | "income"
+export type StreamKind = "subscription" | "bill"
 export type Frequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "SEMI_MONTHLY" | "ANNUALLY" | "UNKNOWN"
 
 export interface EnrichedStream {
@@ -138,6 +138,7 @@ export interface EnrichedStream {
   /** The last charge hasn't posted yet. */
   lastChargePending: boolean
   monthlyAmount: number
+  /** "plaid": one of Plaid's streams; "custom": a marked series (a confirmation on a charge in no stream). */
   source: "plaid" | "custom"
   priceChange: { previousAmount: number; pctChange: number } | null
   isDuplicate: boolean

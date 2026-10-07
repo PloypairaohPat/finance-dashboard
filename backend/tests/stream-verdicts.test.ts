@@ -139,6 +139,29 @@ describe('POST /subscriptions/verdicts', () => {
     expect(await verdictsOf(A)).toEqual([])
   })
 
+  // The guarantee subscriptions-excluded holds for streams, at the writer:
+  // a transfer can't be confirmed into Subscriptions or Bills.
+  it('refuses to confirm an outgoing transfer: a move to savings, or a card payment Ledger pairs', async () => {
+    const checking = await prisma.account.create({
+      data: { userId: A, plaidItemId: w.a.itemId, plaidAccountId: `${A}-checking`, name: 'Checking', type: 'depository', subtype: 'checking', isoCurrencyCode: 'USD' },
+    })
+    const tx = (key: string, accountId: string, amount: number, primary: string, detailed: string, daysAgo: number) =>
+      prisma.transaction.create({
+        data: {
+          userId: A, accountId, plaidTransactionId: `${A}-${key}`, date: ago(daysAgo), amount: amount.toFixed(2),
+          name: key.toUpperCase(), cleanName: key.toUpperCase(), categoryPrimary: primary, categoryDetailed: detailed, isoCurrencyCode: 'USD',
+          rawJson: { personal_finance_category: { primary, detailed, confidence_level: 'VERY_HIGH' }, counterparties: [] },
+        },
+      })
+    const toSavings = await tx('to-savings', checking.id, 300, 'TRANSFER_OUT', 'TRANSFER_OUT_SAVINGS', 12)
+    const cardPaymentOut = await tx('card-payment-out', checking.id, 450, 'LOAN_PAYMENTS', 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT', 8)
+    await tx('card-payment-in', w.a.accountId, -450, 'LOAN_PAYMENTS', 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT', 8)
+    for (const t of [toSavings, cardPaymentOut]) {
+      expect((await post(A, { transactionId: t.id, verdict: 'confirmed' })).status, t.name).toBe(409)
+    }
+    expect(await verdictsOf(A)).toEqual([])
+  })
+
   it("IDOR: confirming or dismissing another user's charge is a 404, and no row anywhere changes", async () => {
     const before = await everyVerdict()
     for (const verdict of ['confirmed', 'dismissed']) {
