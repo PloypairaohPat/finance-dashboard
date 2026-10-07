@@ -1,6 +1,6 @@
 import { clerkMiddleware, requireAuth, getAuth } from "@clerk/express";
 import { Request, Response, NextFunction } from "express";
-import { recordSessionSeen } from "../lib/auditLog";
+import { recordSessionSeen, reportSessionWithoutId } from "../lib/auditLog";
 
 // The demo user seeded by prisma/seed-demo.ts. Demo requests always resolve
 // to this id and nothing else. Keep this value in sync with seed-demo.ts.
@@ -25,7 +25,8 @@ const clerkRequireSession = requireAuth();
 //
 // Once Clerk has let a request through, the first time this backend sees its
 // session goes in the audit log (session.first_seen). The request doesn't
-// wait for that write, and a failed one goes to Sentry (lib/auditLog.ts).
+// wait for that write, and a failed one goes to Sentry (lib/auditLog.ts). A
+// user id with no session id can't be recorded: that's reported instead.
 export function requireSession(req: Request, res: Response, next: NextFunction) {
   if (isDemoRequest(req)) return next();
   return clerkRequireSession(req, res, (err?: unknown) => {
@@ -36,7 +37,9 @@ export function requireSession(req: Request, res: Response, next: NextFunction) 
 
 function noteSession(req: Request): void {
   const auth = getAuth(req);
-  if (auth?.userId && auth.sessionId) void recordSessionSeen(auth.userId, auth.sessionId);
+  if (!auth?.userId) return;
+  if (auth.sessionId) void recordSessionSeen(auth.userId, auth.sessionId);
+  else reportSessionWithoutId();
 }
 
 // Read-only guard for demo mode. Blocks every mutating request so a visitor

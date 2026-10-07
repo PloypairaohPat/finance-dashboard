@@ -5,12 +5,14 @@
 import { app, plaidClient } from './app'
 import { startScheduler } from './scheduler'
 import { checkWebhookUrl } from './lib/webhookUrl'
+import { runningCommit } from './lib/runningCommit'
 
 // ── Start ─────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001
 app.listen(PORT, () => {
   console.log(`\n🚀 Plaid backend running on http://localhost:${PORT}`)
   console.log(`   Environment: ${process.env.PLAID_ENV}`)
+  console.log(`   Commit:      ${runningCommit()}`)
   console.log(`   Products:    ${process.env.PLAID_PRODUCTS}`)
   console.log(`\n   Endpoints:`)
   console.log(`   POST /create_link_token`)
