@@ -31,6 +31,10 @@ Items marked **(5e)** hold since the tab reads Plaid's streams (M7.6 PR 5e).
       that it's tracked under Bills. A Netflix charge says it was found automatically, under
       Subscriptions.
 - [ ] Hovering **Ended** on Lingohall says Plaid reports it has stopped.
+- [ ] **FIDELITY TRANSFER** is in Subscriptions with **Confirmed by you** and **Not counted**;
+      hovering **Not counted** says its charge isn't counted as spending any more. It adds
+      nothing to the Subscriptions total, has no Upcoming date, and its row has **Unmark**
+      (which shows the demo message).
 - [ ] Each card's monthly total is the sum of its rows that are active and on a known schedule:
       Lingohall adds nothing.
 - [ ] **Not recurring** shows on every row that is a stream, and not on the Ironline gym, which
