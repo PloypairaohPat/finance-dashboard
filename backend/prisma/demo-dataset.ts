@@ -184,16 +184,25 @@ export type ExpectedComposed =
   | { list: 'subscriptions' | 'bills'; status: 'active' | 'ended'; marked: boolean; priceUp?: true }
   | { list: 'suggested'; isNew: boolean; confirmsAs: 'subscription' | 'bill' }
   | { list: 'dismissed' }
+  /** An inflow: never on the Subscriptions tab. */
+  | { list: 'hidden' }
+
+/** The demo user's settings the seed writes. Demo visitors can't change them. */
+export const DEMO_SETTINGS = {
+  /** On, so the demo shows the missed-paycheck alert (M7.6 PR 6b). */
+  missedPaycheckAlerts: true,
+} as const
 
 /** A Plaid recurring stream over the demo's own charges. */
 export interface DemoStream {
   /** Carries the FAKE marker: no real stream id looks like it. */
   streamId: string
+  direction: 'outflow' | 'inflow'
   accountKey: AccountKey
   description: string
   merchantName: string
   detailed: string
-  frequency: 'MONTHLY'
+  frequency: 'MONTHLY' | 'SEMI_MONTHLY' | 'BIWEEKLY'
   status: 'MATURE' | 'EARLY_DETECTION'
   isActive: boolean
   /** YYYY-MM-DD, or null for an inactive stream. */
@@ -202,6 +211,8 @@ export interface DemoStream {
   txIds: string[]
   note: string
   expected: ExpectedComposed
+  /** For a salary inflow: what the missed-paycheck alert must say at the build date. */
+  paycheck?: 'on time' | 'overdue'
 }
 
 /** A verdict the seed records, since demo visitors can't write. */
@@ -1482,6 +1493,36 @@ export function buildDemoDataset(now: Date): DemoDataset {
   }
   const priceRiseIds = cases.find((c) => c.id === 'subscription-price-rise')!.txIds
 
+  // ── a second job, paid biweekly, whose last payday passed with no pay (M7.6 PR 6b) ──
+  // Relative to the build date, like the price rise: four on-time deposits, the
+  // last 21 days ago, so the payday after it was 7 calendar days ago. That is
+  // always past its deadline (2 banking days, whatever the weekday or holiday),
+  // so the demo bell shows the missed-paycheck alert after every reseed, until
+  // the next payday a week later. Fixed amounts and no rnd(): every other row is unchanged.
+  const sideJob: string[] = []
+  {
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    for (const [i, ago] of [63, 49, 35, 21].entries()) {
+      const id = `demo-lantern-pay-${i + 1}`
+      transactions.push({
+        plaidTransactionId: id,
+        accountKey: 'checking',
+        date: new Date(today - ago * 86_400_000).toISOString().slice(0, 10),
+        amount: -643.27,
+        name: 'LANTERN BOOKS PAYROLL',
+        merchantName: null,
+        primary: 'INCOME',
+        detailed: 'INCOME_SALARY',
+        confidence: 'VERY_HIGH',
+        counterparties: [],
+        pending: false,
+        expected: income(),
+        decisions: [],
+      })
+      sideJob.push(id)
+    }
+  }
+
   // ── marked subscription: one gym, four names, a price rise and a one-off ──
   //
   // What "Mark as subscription" is for. The four monthly charges carry four
@@ -1547,24 +1588,30 @@ export function buildDemoDataset(now: Date): DemoDataset {
   const streams: DemoStream[] = []
   const stream = (
     slug: string, txIds: string[], note: string, expected: ExpectedComposed,
-    o: { status?: DemoStream['status']; isActive?: boolean } = {},
+    o: {
+      status?: DemoStream['status']; isActive?: boolean; direction?: DemoStream['direction']
+      frequency?: DemoStream['frequency']; predictedNextDate?: string; paycheck?: DemoStream['paycheck']
+    } = {},
   ) => {
     const first = txOf.get(txIds[0])!
     const last = txOf.get(txIds[txIds.length - 1])!
     const isActive = o.isActive ?? true
     streams.push({
       streamId: `FAKE-demo-stream-${slug}`,
+      direction: o.direction ?? 'outflow',
       accountKey: first.accountKey,
       description: first.name,
       merchantName: first.merchantName ?? first.name,
       detailed: first.detailed,
-      frequency: 'MONTHLY',
+      frequency: o.frequency ?? 'MONTHLY',
       status: o.status ?? 'MATURE',
       isActive,
-      predictedNextDate: isActive ? new Date(Date.parse(`${last.date}T00:00:00Z`) + 30 * DAY).toISOString().slice(0, 10) : null,
+      predictedNextDate: o.predictedNextDate
+        ?? (isActive ? new Date(Date.parse(`${last.date}T00:00:00Z`) + 30 * DAY).toISOString().slice(0, 10) : null),
       txIds,
       note,
       expected,
+      ...(o.paycheck && { paycheck: o.paycheck }),
     })
   }
   const monthly = (slug: string) => slugIds.get(slug)!
@@ -1590,6 +1637,27 @@ export function buildDemoDataset(now: Date): DemoDataset {
     { list: 'subscriptions', status: 'ended', marked: true }, { isActive: false })
   stream('price-rise', priceRiseIds, 'the price rise, as a stream: the bell shows price-up',
     { ...subscription, priceUp: true })
+
+  // Salary, as Plaid's inflow streams (M7.6 PR 6b). Never on the Subscriptions tab.
+  {
+    const pay = [...monthly('payroll-1'), ...monthly('payroll-2')]
+      .sort((a, b) => txOf.get(a)!.date.localeCompare(txOf.get(b)!.date))
+    // The next payday after the last: the 15th after a 1st, the next 1st after a 15th.
+    const last = new Date(`${txOf.get(pay[pay.length - 1])!.date}T00:00:00Z`)
+    const next = last.getUTCDate() === 1
+      ? Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), 15)
+      : Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 1)
+    stream('salary', pay, 'the salary on the 1st and the 15th: on time at every build date', { list: 'hidden' }, {
+      direction: 'inflow', frequency: 'SEMI_MONTHLY', paycheck: 'on time',
+      predictedNextDate: new Date(next).toISOString().slice(0, 10),
+    })
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    stream('side-job', sideJob, 'a second job paid biweekly, its last payday 7 days ago with no pay: the missed-paycheck alert',
+      { list: 'hidden' }, {
+        direction: 'inflow', frequency: 'BIWEEKLY', paycheck: 'overdue',
+        predictedNextDate: new Date(today - 7 * DAY).toISOString().slice(0, 10),
+      })
+  }
 
   const verdicts: DemoVerdict[] = [
     { plaidTransactionId: marks[0], kind: 'confirmed' },

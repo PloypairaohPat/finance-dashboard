@@ -68,6 +68,10 @@ export function buildPlan(dataset: DemoDataset, userId: string = DEMO_USER_ID): 
       accessToken: SENTINEL_TOKEN,
       institutionId: item.institutionId,
       institutionName: item.institutionName,
+      // As of the build: the missed-paycheck alert judges a payday only on data
+      // current past its deadline, and the demo never syncs.
+      lastSyncedAt: now,
+      streamsRefreshedAt: now,
     }
   })
 
@@ -173,7 +177,7 @@ export function buildPlan(dataset: DemoDataset, userId: string = DEMO_USER_ID): 
       plaidItemId: itemId.get(itemOfAccount.get(st.accountKey)!)!,
       streamId: st.streamId,
       plaidAccountId: plaidAccountId.get(st.accountKey)!,
-      direction: 'outflow',
+      direction: st.direction,
       description: st.description,
       merchantName: st.merchantName,
       pfcPrimary: primaryOf(st.detailed),
@@ -184,7 +188,7 @@ export function buildPlan(dataset: DemoDataset, userId: string = DEMO_USER_ID): 
       firstDate: day(charges[0].date),
       lastDate: day(charges[charges.length - 1].date),
       predictedNextDate: st.predictedNextDate ? day(st.predictedNextDate) : null,
-      // Transaction.amount's sign: an outflow is positive.
+      // Transaction.amount's sign, which the charges already carry: out positive, in negative.
       averageAmount: money(amounts.reduce((a, b) => a + b, 0) / amounts.length),
       lastAmount: money(amounts[amounts.length - 1]),
       isoCurrencyCode: CURRENCY,
