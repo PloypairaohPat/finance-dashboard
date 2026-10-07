@@ -11,9 +11,9 @@ import React from "react"
 
 export const PENDING_TITLE = "Not posted yet. It counts in your totals now, and may change or be replaced when it posts."
 
-export default function PendingChip({ label = "Pending" }: { label?: string }) {
+export default function PendingChip({ label = "Pending", title = PENDING_TITLE }: { label?: string; title?: string }) {
   return (
-    <span data-testid="pending-chip" title={PENDING_TITLE} style={{
+    <span data-testid="pending-chip" title={title} style={{
       fontFamily: "IBM Plex Mono, monospace", fontSize: 9,
       padding: "1px 6px", borderRadius: 3,
       background: "rgba(240,160,48,.10)", color: "#f0a030",

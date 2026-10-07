@@ -84,8 +84,12 @@ function fromStream(
   verdict: Verdict | null,
   now: Date,
 ): EnrichedStream {
+  // Dates from the newest charge, pending or not; amounts from posted charges
+  // only, since a pending amount can still change. charges are live spending.
   const last = charges[charges.length - 1]
-  const posted = charges.filter((c) => !c.pending).map((c) => c.amount)
+  const postedCharges = charges.filter((c) => !c.pending)
+  const posted = postedCharges.map((c) => c.amount)
+  const lastPosted = postedCharges[postedCharges.length - 1] ?? last
   const frequency = readFrequency(stream.frequency) as Frequency
   const status = stream.isActive ? 'active' : 'ended'
   const s: EnrichedStream = {
@@ -97,7 +101,7 @@ function fromStream(
     kind: bucket,
     category: mapPlaidCategory(last.categoryPrimary ?? stream.pfcPrimary),
     frequency,
-    lastAmount: Number(last.amount.toFixed(2)),
+    lastAmount: Number(lastPosted.amount.toFixed(2)),
     lastDate: isoDay(last.date),
     lastChargePending: last.pending,
     monthlyAmount: monthlyAmount(bucket, posted, frequency) ?? 0,
@@ -136,7 +140,9 @@ export async function composeSubscriptions(userId: string, now: Date = new Date(
   for (const v of verdicts) verdictsOn.set(v.transactionId, [...(verdictsOn.get(v.transactionId) ?? []), v])
   const latestOn = (s: SortedStream): Verdict | null => {
     let best: Verdict | null = null
-    for (const c of s.charges) for (const v of verdictsOn.get(c.id) ?? []) if (!best || later(v, best)) best = v
+    // Its removed charges too: a verdict on a charge Plaid removed still speaks for the stream.
+    const ids = [...s.charges.map((c) => c.id), ...s.removedChargeIds]
+    for (const id of ids) for (const v of verdictsOn.get(id) ?? []) if (!best || later(v, best)) best = v
     return best
   }
 
@@ -149,7 +155,10 @@ export async function composeSubscriptions(userId: string, now: Date = new Date(
   const inComposable = new Set<string>()
   for (const p of sorted) {
     if (!composable(p)) continue
+    // A confirmation on any of its charges, removed ones included, is this
+    // stream's: never also followed as a series of its own (the ghost).
     p.charges.forEach((c) => inComposable.add(c.id))
+    p.removedChargeIds.forEach((id) => inComposable.add(id))
     const verdict = latestOn(p)
     if (verdict?.kind === 'dismissed') dismissed.push({ p, verdict })
     else if (verdict?.kind === 'confirmed') {
@@ -179,7 +188,10 @@ export async function composeSubscriptions(userId: string, now: Date = new Date(
   const marks = (await loadMarks(userId)).filter((m) => !inComposable.has(m.transaction.id))
   if (marks.length > 0) {
     const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - MARK_LOOKBACK_MONTHS, now.getUTCDate()))
-    const rows = await loadSpendRows(userId, now, since)
+    // Rows from the oldest anchor at least, so whether each anchor is spending
+    // today is known (the series itself is still walked from `since`).
+    const oldestAnchor = Math.min(...marks.map((m) => m.transaction.date.getTime()))
+    const rows = await loadSpendRows(userId, now, new Date(Math.min(since.getTime(), oldestAnchor)))
     // Each series' monthly amount comes from markedStreams, by the one definition.
     for (const s of markedStreams(marks, rows, now, since, claimed)) {
       if (isCounted(s)) Object.assign(s, predictNextCharge(s, now))

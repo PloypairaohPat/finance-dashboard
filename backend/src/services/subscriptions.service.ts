@@ -64,6 +64,13 @@ export interface EnrichedStream {
   /** Set when the user marked or confirmed it; the id un-marks it. */
   mark: { id: string } | null
   /**
+   * A confirmation that no longer counts: none of its charges is live
+   * spending today. "not-spending": its charge is now a transfer or other
+   * non-spending money. "removed": the bank removed it. Shown where the user
+   * put it, outside every total, and still removable.
+   */
+  notCounted?: { reason: "not-spending" | "removed" }
+  /**
    * "ended": a marked subscription whose last two slots passed with no charge.
    * Shown, but out of the totals, upcoming and alerts. Detected streams are
    * always "active": detection drops a stream that stops.
@@ -145,7 +152,7 @@ export function loadMarks(userId: string) {
       transaction: {
         select: {
           id: true, date: true, amount: true, cleanName: true, name: true, categoryPrimary: true,
-          merchantEntityId: true, counterpartyEntities: true,
+          merchantEntityId: true, counterpartyEntities: true, deletedAt: true,
         },
       },
     },
@@ -171,6 +178,12 @@ export function seriesPriceChange(amounts: number[]) {
 /**
  * One stream per mark: the anchor's merchant (its raw ids under the current
  * identity rule), and the charges walked from the anchor (lib/subscriptionSeries).
+ *
+ * `rows` are the user's live spending rows, pending included, reaching back to
+ * the oldest anchor. Only those charges feed anything: dates from the newest of
+ * them, pending or not; amounts and the price change from the posted ones. An
+ * anchor that is removed, or no longer spending, feeds neither; a series left
+ * with no such charge is notCounted, shown where the user put it, out of every total.
  */
 export function markedStreams(
   marks: Mark[], rows: SpendRow[], now: Date, since: Date,
@@ -192,46 +205,47 @@ export function markedStreams(
     if (ids.some(id => claimed.has(id))) continue
     ids.forEach(id => claimed.add(id))
 
-    const byId = new Map(sameMerchant.map(r => [r.id, r]))
     // Shown under the name of the charge the user marked: the one they recognised.
     const display = label
-    const last = series.charges[series.charges.length - 1]
     const frequency: Frequency = series.period ? FREQUENCY_OF[series.period] : "UNKNOWN"
     const ended = series.ended
+    // Live spending charges set dates; the posted ones among them set amounts.
+    const usable = series.charges.filter(c => rowOf.has(c.id))
+    const posted = usable.filter(c => !rowOf.get(c.id)!.pending)
+    const stale = usable.length === 0
+    const last = stale ? series.charges[series.charges.length - 1] : usable[usable.length - 1]
+    const lastPosted = posted[posted.length - 1] ?? last
     out.push({
       merchant: display,
       cleanMerchant: display,
       key,
       // The user said it is a subscription; the amount-based bill split doesn't apply.
       kind: "subscription",
-      category: mapPlaidCategory(byId.get(last.id)?.category ?? t.categoryPrimary),
+      category: mapPlaidCategory(rowOf.get(last.id)?.category ?? t.categoryPrimary),
       frequency,
-      lastAmount: Number(last.amount.toFixed(2)),
+      lastAmount: Number(lastPosted.amount.toFixed(2)),
       lastDate: last.date.toISOString().slice(0, 10),
-      lastChargePending: byId.get(last.id)?.pending ?? false,
+      lastChargePending: rowOf.get(last.id)?.pending ?? false,
       // The one monthly-amount definition (lib/monthlyAmount): a subscription's
       // last posted charge, per frequency. An unknown schedule has none yet (0):
       // an annual charge assumed monthly would put a year's price into the total.
-      monthlyAmount: monthlyAmount(
-        "subscription",
-        ids.map(id => rowOf.get(id)).filter(r => r && !r.pending).map(r => r!.amount),
-        frequency,
-      ) ?? 0,
+      monthlyAmount: monthlyAmount("subscription", posted.map(c => c.amount), frequency) ?? 0,
       source: "custom",
-      priceChange: ended ? null : seriesPriceChange(series.charges.map(c => c.amount)),
+      priceChange: ended ? null : seriesPriceChange(posted.map(c => c.amount)),
       isDuplicate: false,
       nextChargeDate: null,
       daysUntilNextCharge: null,
       txIds: ids,
       mark: { id: m.id },
       status: ended ? "ended" : "active",
+      ...(stale && { notCounted: { reason: t.deletedAt ? "removed" as const : "not-spending" as const } }),
     })
   }
   return out
 }
 
 /** What counts toward totals and upcoming: running, on a known schedule. */
-export const isCounted = (s: EnrichedStream) => s.status === "active" && s.frequency !== "UNKNOWN"
+export const isCounted = (s: EnrichedStream) => s.status === "active" && s.frequency !== "UNKNOWN" && !s.notCounted
 
 /**
  * The composition's last steps (streamComposition.service): duplicates, the

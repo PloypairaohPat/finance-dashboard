@@ -83,6 +83,16 @@ function ActionButton({ onClick, disabled, label, children }: {
   )
 }
 
+/** The tab's pending chip: the amount beside it is the last posted charge, not the pending one. */
+export const SUBSCRIPTION_PENDING_TITLE =
+  "The newest charge is still pending. Totals and price changes use posted charges only, so it counts once it posts."
+
+/** Why a confirmation no longer counts, for its chip's tooltip. */
+export const NOT_COUNTED_TITLE: Record<"not-spending" | "removed", string> = {
+  "not-spending": "You confirmed this, but its charge isn't counted as spending any more (it's now a transfer or similar), so it's left out of your totals. Unmark it if it no longer applies.",
+  "removed": "You confirmed this, but your bank has since removed its charge, so it's left out of your totals. Unmark it if it no longer applies.",
+}
+
 function StreamRow({ s, chips, actions, showMark = true }: {
   s: EnrichedStream; chips?: React.ReactNode; actions?: React.ReactNode
   /** Off where `mark` isn't a confirmation: on a dismissed stream it's the dismissal. */
@@ -126,6 +136,9 @@ function StreamRow({ s, chips, actions, showMark = true }: {
         {showMark && s.mark && (
           <span title="You confirmed this one" style={chip("#4a9eff", "rgba(74,158,255,.12)", "rgba(74,158,255,.3)")}>Confirmed by you</span>
         )}
+        {s.notCounted && (
+          <span title={NOT_COUNTED_TITLE[s.notCounted.reason]} style={chip("#f0a030", "rgba(240,160,48,.12)", "rgba(240,160,48,.3)")}>Not counted</span>
+        )}
         {s.status === "ended" && (
           <span title={s.source === "plaid"
             ? "Plaid reports this has stopped: shown, but not counted in the totals"
@@ -150,7 +163,8 @@ function StreamRow({ s, chips, actions, showMark = true }: {
           marginTop: 2,
         }}>{FREQ_LABEL[s.frequency]}</div>
         {/* The amount above is a charge that hasn't posted yet. */}
-        {s.lastChargePending && <div style={{ marginTop: 3 }}><PendingChip /></div>}
+        {/* The newest charge hasn't posted. Its date counts; its amount doesn't yet. */}
+        {s.lastChargePending && <div style={{ marginTop: 3 }}><PendingChip title={SUBSCRIPTION_PENDING_TITLE} /></div>}
       </div>
     </div>
   )
@@ -281,10 +295,18 @@ export default function SubscriptionTracker() {
 
   const { subscriptions, bills, upcoming, alerts, totals, suggested, dismissed, freshness } = data
   const rowKey = (s: EnrichedStream) => `${s.key}:${s.txIds[0] ?? ""}:${s.mark?.id ?? ""}`
-  // Only a Plaid stream can be dismissed; a marked series is undone from its charge.
-  const notRecurring = (s: EnrichedStream) => s.source === "plaid" ? (
-    <ActionButton onClick={() => dismiss(s)} disabled={busy} label={`${s.merchant} is not recurring`}>Not recurring</ActionButton>
-  ) : undefined
+  // Only a Plaid stream can be dismissed; a marked series is undone from its
+  // charge. A confirmation that no longer counts gets Unmark on its row: its
+  // charge may be one the bank removed, which can't be opened.
+  const rowActions = (s: EnrichedStream) => {
+    if (s.notCounted && s.mark) {
+      const markId = s.mark.id
+      return <ActionButton onClick={() => removeVerdict(markId)} disabled={busy} label={`Unmark ${s.merchant}`}>Unmark</ActionButton>
+    }
+    return s.source === "plaid" ? (
+      <ActionButton onClick={() => dismiss(s)} disabled={busy} label={`${s.merchant} is not recurring`}>Not recurring</ActionButton>
+    ) : undefined
+  }
 
   return (
     <div>
@@ -344,7 +366,7 @@ export default function SubscriptionTracker() {
         </div>
         {subscriptions.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No subscriptions detected yet.</div>
-        ) : subscriptions.map(s => <StreamRow key={rowKey(s)} s={s} actions={notRecurring(s)} />)}
+        ) : subscriptions.map(s => <StreamRow key={rowKey(s)} s={s} actions={rowActions(s)} />)}
       </div>
 
       {/* Bills */}
@@ -355,7 +377,7 @@ export default function SubscriptionTracker() {
         </div>
         {bills.length === 0 ? (
           <div style={{ color: "#5a7a5a", fontSize: 13 }}>No bills detected yet.</div>
-        ) : bills.map(s => <StreamRow key={rowKey(s)} s={s} actions={notRecurring(s)} />)}
+        ) : bills.map(s => <StreamRow key={rowKey(s)} s={s} actions={rowActions(s)} />)}
       </div>
 
       {/* Suggested: recurring charges to review, outside every total. */}

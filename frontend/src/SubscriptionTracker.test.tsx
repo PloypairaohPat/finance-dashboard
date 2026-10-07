@@ -214,6 +214,30 @@ describe("SubscriptionTracker", () => {
     expect(updatedLabel(null, now)).toBe("Not updated yet")
   })
 
+  it("a confirmation that no longer counts: a Not counted chip that says why, and Unmark on its row", async () => {
+    await mount({
+      ...onStreams,
+      subscriptions: [
+        row("Gonecharge", { mark: { id: "mark-gone" }, notCounted: { reason: "removed" } }),
+        row("Nowtransfer", { mark: { id: "mark-transfer" }, notCounted: { reason: "not-spending" } }),
+        row("Markgym", { mark: { id: "mark-1" } }),
+      ],
+    })
+    const chipOf = (merchant: string) =>
+      [...container.querySelectorAll("span")].find((s) => s.textContent === "Not counted" && s.closest("div[style]")?.textContent?.includes(merchant))
+    expect(chipOf("Gonecharge")?.title).toContain("your bank has since removed")
+    expect(chipOf("Nowtransfer")?.title).toContain("isn't counted as spending")
+    expect(chipOf("Markgym")).toBeUndefined()
+    expect(button("Unmark Markgym")).toBeNull() // a counted mark is undone from its charge, as before
+    await click("Unmark Gonecharge")
+    expect(writes()).toEqual([{ method: "DELETE", path: "/subscriptions/verdicts/mark-gone", body: null }])
+  })
+
+  it("the pending chip says the amount beside it is the last posted charge", async () => {
+    await mount({ ...onStreams, subscriptions: [stream("Pendco", { lastChargePending: true })] })
+    expect(container.querySelector('[data-testid="pending-chip"]')?.getAttribute("title")).toContain("use posted charges only")
+  })
+
   it("a refused write says why", async () => {
     await mount(onStreams)
     writeReply = () => reply({ error: "This charge is still pending." }, 409)

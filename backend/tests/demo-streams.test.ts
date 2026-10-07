@@ -44,7 +44,10 @@ describe('the demo streams as data', () => {
     expect(has((e, s) => e.list === 'bills' && e.marked && s.detailed.startsWith('TRANSFER_OUT')), 'a payment to a person confirmed into Bills').not.toEqual([])
     expect(has((e, s) => (e.list === 'subscriptions' || e.list === 'bills') && e.marked && e.status === 'ended' && !s.isActive), 'a confirmed one that ended').not.toEqual([])
     expect(has((e) => e.list === 'subscriptions' && !e.marked && e.priceUp === true), 'the price rise').not.toEqual([])
-    expect(ds.markedSeries.map((m) => m.expected), 'the marked gym').toEqual([{ list: 'subscriptions', status: 'active', marked: true, priceUp: true }])
+    expect(ds.markedSeries.map((m) => m.expected), 'the marked gym, and a confirmation that no longer counts').toEqual([
+      { list: 'subscriptions', status: 'active', marked: true, priceUp: true },
+      { list: 'subscriptions', status: 'active', marked: true, notCounted: 'not-spending' },
+    ])
   })
 
   it('every verdict is on a stream charge or a marked series anchor, and every marked stream has one', () => {
@@ -135,6 +138,7 @@ describe('what the tab shows for the demo, on streams', () => {
       expect(s.status, label).toBe(expected.status)
       expect(s.mark !== null, label).toBe(expected.marked)
       if (expected.priceUp) expect(s.priceChange?.pctChange ?? 0, label).toBeGreaterThan(0)
+      expect(s.notCounted?.reason, label).toBe(expected.notCounted)
     } else if (expected.list === 'suggested') {
       expect({ isNew: (s as any).isNew, confirmsAs: (s as any).confirmsAs }, label).toEqual({ isNew: expected.isNew, confirmsAs: expected.confirmsAs })
     } else {

@@ -91,7 +91,8 @@ describe('the marker reaches every place a pending row is shown', () => {
   it('a subscription whose last charge is pending says so', async () => {
     const a = await composeSubscriptions(USER)
     const s = [...a.subscriptions, ...a.bills].find((x) => x.key === 'streamlet')
-    expect(s).toMatchObject({ lastChargePending: true, lastAmount: 12 })
+    // Pending: shown as pending, but the amount is the last posted one (a pending amount can still change).
+    expect(s).toMatchObject({ lastChargePending: true, lastAmount: 10 })
   })
 })
 

@@ -275,6 +275,14 @@ wrong. It works like Dismiss, with the same Undo and Restore.
 marked **Ended** and leaves your totals. A suggestion that stopped before you confirmed
 it isn't listed at all: there's nothing left to decide.
 
+**If something you confirmed stops counting.** Your bank can change a charge after you've
+confirmed it: it can remove it, or a charge we counted as spending can turn out to be a
+transfer — a card payment, say, once you link that card. Your confirmation stays where you put
+it, marked **Not counted**, and it's left out of your totals and Upcoming; hover over the label
+to see why. Use **Unmark** on that row if it no longer applies. If the charge later counts as
+spending again, so does your confirmation. A pending charge counts for its date but not its
+amount until it posts, since the amount can still change.
+
 **Keeping it current.** The page updates on its own when your bank reports new recurring
 payments, and at least once a day. The **Sync** button now refreshes it too: one button
 for everything. The page shows when it was last updated ("Updated 3 h ago"), so you can
