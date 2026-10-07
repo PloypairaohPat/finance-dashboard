@@ -1,0 +1,70 @@
+# Dependency audit (M7.7): npm audit against both lockfiles, through
+# .github/scripts/audit-gate.mjs. The job's name, dependency-audit, is the
+# check to require in the ruleset.
+#
+# When it can fail (enforce):
+#   - a PR that touches backend/ or frontend/ package.json or lockfile, the
+#     allowlist, the gate script or this workflow: the change can be blamed;
+#   - the weekly run on main, so a new advisory in what's already merged
+#     surfaces within a week (a failed scheduled run notifies by email);
+#   - a manual run.
+# Every other PR, and pushes to main, get report mode: the same summary, and
+# a pass. One new advisory in an unrelated transitive package can't block
+# every merge.
+#
+# What fails: a high or critical advisory in the runtime set (npm audit
+# --omit=dev) that .github/audit-allowlist.json doesn't accept, an allowlist
+# entry past its reviewBy date, a malformed entry, or an audit that couldn't
+# run. Build and test tooling is summarised and never fails.
+
+name: Dependency audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1' # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # to diff a PR against its base
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: The gate's own tests
+        run: node --test .github/scripts/audit-gate.test.mjs
+
+      - name: Can this run fail?
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mode=enforce
+          if [ "$EVENT" = "pull_request" ]; then
+            changed=$(git diff --name-only "$BASE_SHA"...HEAD)
+            pattern='^(backend|frontend)/package(-lock)?\.json$|^\.github/(audit-allowlist\.json|scripts/audit-gate[^/]*|workflows/dependency-audit\.yml)$'
+            if echo "$changed" | grep -qE "$pattern"; then
+              echo "Dependency files changed:"; echo "$changed" | grep -E "$pattern"
+            else
+              mode=report
+              echo "No dependency files changed: report only."
+            fi
+          elif [ "$EVENT" = "push" ]; then
+            mode=report
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Audit
+        run: node .github/scripts/audit-gate.mjs --mode "${{ steps.mode.outputs.mode }}" backend frontend
