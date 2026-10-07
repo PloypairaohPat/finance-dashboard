@@ -19,8 +19,8 @@
 //      fingerprint, not just ids).
 //  Any difference rolls everything back.
 //
-//  Counts only: "user N" and "item N", numbered exactly as
-//  recurring-streams-audit.ts numbers them, so the two outputs line up.
+//  Counts only: "user N" and "item N", numbered as the M7.6 Stage 0 audit
+//  (recurring-streams-audit.ts, removed in PR 5f) numbered them.
 //  Railway is needed because fetching decrypts Plaid access tokens.
 // ─────────────────────────────────────────────────────────────────
 
