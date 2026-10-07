@@ -8,7 +8,7 @@ import type { PeriodInfo } from "./types"
 
 // ─────────────────────────────────────────────────────────────────
 //  SettingsProvider — the user's own settings (M7.2 period start day, M7.3
-//  payment-app inflows as income).
+//  payment-app inflows as income, M7.6 the missed-paycheck alert).
 //
 //  Mounted above <Routes>, alongside SyncProvider and following its pattern:
 //  views that group by period add `useSettings().version` to their fetch
@@ -21,8 +21,8 @@ import type { PeriodInfo } from "./types"
 //  and only the Settings dialog changes it. `onChange` lets App re-fetch the
 //  data it holds itself (the hero's saved figure).
 //
-//  Demo mode is fixed at day 1: the demo user's stored value is the default,
-//  and the Settings entry isn't offered (writes are refused anyway).
+//  Demo mode shows the demo user's stored settings (day 1, the missed-paycheck
+//  alert on); every save is refused with the demo message.
 // ─────────────────────────────────────────────────────────────────
 
 export interface UserSettings {
@@ -34,9 +34,13 @@ export interface UserSettings {
    * is also the default for a user who has never set it.
    */
   paymentAppInflowsAreIncome: boolean
+  /** Alert me when a regular paycheck doesn't arrive. Off until loaded, and by default. */
+  missedPaycheckAlerts: boolean
 }
 
 interface SettingsState extends UserSettings {
+  /** Read-only: a regular paycheck the missed-paycheck alert could watch exists. */
+  regularPaycheckFound: boolean
   loaded: boolean
   /** Increases after every successful save. Use it as an effect dependency. */
   version: number
@@ -47,10 +51,11 @@ interface SettingsState extends UserSettings {
   save: (patch: Partial<UserSettings>) => Promise<string | null>
 }
 
-const DEFAULTS: UserSettings = { startDay: 1, paymentAppInflowsAreIncome: false }
+const DEFAULTS: UserSettings = { startDay: 1, paymentAppInflowsAreIncome: false, missedPaycheckAlerts: false }
 
 const SettingsContext = createContext<SettingsState>({
   ...DEFAULTS,
+  regularPaycheckFound: false,
   loaded: false,
   version: 0,
   save: async () => "Settings are unavailable here.",
@@ -79,6 +84,7 @@ export default function SettingsProvider({
   const enabled = demoMode || (isLoaded && !!isSignedIn)
 
   const [settings, setSettings] = useState<UserSettings>(DEFAULTS)
+  const [regularPaycheckFound, setRegularPaycheckFound] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [version, setVersion] = useState(0)
 
@@ -101,7 +107,9 @@ export default function SettingsProvider({
           setSettings({
             startDay: typeof data?.periodStartDay === "number" ? data.periodStartDay : DEFAULTS.startDay,
             paymentAppInflowsAreIncome: data?.paymentAppInflowsAreIncome === true,
+            missedPaycheckAlerts: data?.missedPaycheckAlerts === true,
           })
+          setRegularPaycheckFound(data?.regularPaycheckFound === true)
         }
       } catch (e: any) {
         console.error("Settings fetch failed:", e.message)
@@ -123,6 +131,9 @@ export default function SettingsProvider({
           ...(patch.paymentAppInflowsAreIncome !== undefined && {
             paymentAppInflowsAreIncome: patch.paymentAppInflowsAreIncome,
           }),
+          ...(patch.missedPaycheckAlerts !== undefined && {
+            missedPaycheckAlerts: patch.missedPaycheckAlerts,
+          }),
         }),
       })
       // Not res.ok alone: a blocked demo write is HTTP 200 { demo: true, ok: false }.
@@ -137,7 +148,12 @@ export default function SettingsProvider({
           typeof saved?.paymentAppInflowsAreIncome === "boolean"
             ? saved.paymentAppInflowsAreIncome
             : patch.paymentAppInflowsAreIncome ?? prev.paymentAppInflowsAreIncome,
+        missedPaycheckAlerts:
+          typeof saved?.missedPaycheckAlerts === "boolean"
+            ? saved.missedPaycheckAlerts
+            : patch.missedPaycheckAlerts ?? prev.missedPaycheckAlerts,
       }))
+      if (typeof saved?.regularPaycheckFound === "boolean") setRegularPaycheckFound(saved.regularPaycheckFound)
       setVersion((v) => v + 1)
       onChangeRef.current?.()
       return null
@@ -147,8 +163,8 @@ export default function SettingsProvider({
   }, [apiFetch])
 
   const value = useMemo(
-    () => ({ ...settings, loaded, version, save }),
-    [settings, loaded, version, save],
+    () => ({ ...settings, regularPaycheckFound, loaded, version, save }),
+    [settings, regularPaycheckFound, loaded, version, save],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

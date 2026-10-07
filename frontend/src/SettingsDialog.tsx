@@ -6,6 +6,7 @@ import { API_URL } from "./config"
 import { useApiFetch } from "./lib/useApiFetch"
 import { readWriteResult } from "./lib/writeResult"
 import { backupSentence, logSentence } from "./lib/retention"
+import { useDemo } from "./lib/DemoContext"
 
 /** Mirrors the server's DELETE_CONFIRMATION; the server checks it again. */
 const DELETE_CONFIRMATION = "delete my data"
@@ -13,13 +14,15 @@ const DELETE_CONFIRMATION = "delete my data"
 // ─────────────────────────────────────────────────────────────────
 //  SettingsDialog — opened from "Settings" in the account menu (M7.2).
 //
-//  Two controls: the day money periods start on (M7.2), and whether money in
-//  through a payment app counts as income (M7.3). Below them, "Delete account
-//  and all data". It is not a settings page;
+//  Three controls: the day money periods start on (M7.2), whether money in
+//  through a payment app counts as income (M7.3), and the missed-paycheck
+//  alert (M7.6). Below them, "Delete account and all data". It is not a settings page;
 //  it lives behind the account menu because both settings reach the hero,
 //  Insights and five charts, not one chart's header.
 //
-//  Signed-in users only: demo mode is fixed at day 1 and never shows it.
+//  In demo mode it shows the demo's stored settings: any change is sent at once
+//  and answered with the demo message, the control staying as stored, and the
+//  delete section isn't shown (the demo can't be deleted).
 // ─────────────────────────────────────────────────────────────────
 
 const ordinal = (n: number) => {
@@ -31,9 +34,11 @@ const ordinal = (n: number) => {
 const DAYS = Array.from({ length: 28 }, (_, i) => i + 1)
 
 export default function SettingsDialog({ onClose }: { onClose: () => void }) {
-  const { startDay, paymentAppInflowsAreIncome, loaded, save } = useSettings()
+  const { startDay, paymentAppInflowsAreIncome, missedPaycheckAlerts, regularPaycheckFound, loaded, save } = useSettings()
+  const { demoMode } = useDemo()
   const [choice, setChoice] = useState(startDay)
   const [asIncome, setAsIncome] = useState(paymentAppInflowsAreIncome)
+  const [paycheckAlerts, setPaycheckAlerts] = useState(missedPaycheckAlerts)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
@@ -43,6 +48,18 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   // Adopt the stored values if they finish loading after the dialog opened.
   useEffect(() => { setChoice(startDay) }, [startDay])
   useEffect(() => { setAsIncome(paymentAppInflowsAreIncome) }, [paymentAppInflowsAreIncome])
+  useEffect(() => { setPaycheckAlerts(missedPaycheckAlerts) }, [missedPaycheckAlerts])
+
+  /**
+   * A change. Signed in, it waits for Save. In demo mode it's sent at once, so
+   * the visitor sees the demo message where they acted; the control stays as stored.
+   */
+  const change = async <T,>(set: (v: T) => void, value: T, patch: Parameters<typeof save>[0]) => {
+    if (!demoMode) { set(value); return }
+    setSaving(true)
+    setError(await save(patch))
+    setSaving(false)
+  }
 
   useEffect(() => {
     selectRef.current?.focus()
@@ -54,13 +71,13 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   const onSave = async () => {
     setSaving(true)
     setError(null)
-    const message = await save({ startDay: choice, paymentAppInflowsAreIncome: asIncome })
+    const message = await save({ startDay: choice, paymentAppInflowsAreIncome: asIncome, missedPaycheckAlerts: paycheckAlerts })
     setSaving(false)
     if (message) setError(message)
     else onClose()
   }
 
-  const unchanged = choice === startDay && asIncome === paymentAppInflowsAreIncome
+  const unchanged = choice === startDay && asIncome === paymentAppInflowsAreIncome && paycheckAlerts === missedPaycheckAlerts
 
   return (
     <>
@@ -95,7 +112,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
           ref={selectRef}
           value={choice}
           disabled={!loaded || saving}
-          onChange={(e) => setChoice(Number(e.target.value))}
+          onChange={(e) => change(setChoice, Number(e.target.value), { startDay: Number(e.target.value) })}
           style={{
             width: "100%", padding: "10px 12px", borderRadius: 6,
             background: colors.surface3, color: colors.textHi,
@@ -125,7 +142,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
               type="checkbox"
               checked={asIncome}
               disabled={!loaded || saving}
-              onChange={(e) => setAsIncome(e.target.checked)}
+              onChange={(e) => change(setAsIncome, e.target.checked, { paymentAppInflowsAreIncome: e.target.checked })}
               style={{ marginTop: 3, accentColor: colors.green, width: 15, height: 15 }}
             />
             <span>
@@ -150,13 +167,43 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
           </p>
         </div>
 
+        <div style={{ borderTop: `1px solid ${colors.border2}`, margin: "20px 0 0", paddingTop: 18 }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={paycheckAlerts}
+              disabled={!loaded || saving}
+              onChange={(e) => change(setPaycheckAlerts, e.target.checked, { missedPaycheckAlerts: e.target.checked })}
+              style={{ marginTop: 3, accentColor: colors.green, width: 15, height: 15 }}
+            />
+            <span>
+              <span style={{
+                display: "block", fontFamily: fonts.mono, fontSize: 11,
+                letterSpacing: ".06em", textTransform: "uppercase", color: colors.muted, marginBottom: 6,
+              }}>
+                Tell me when a paycheck is late
+              </span>
+              <span style={{ fontSize: 13, lineHeight: 1.6, color: colors.muted2 }}>
+                An alert when your regular paycheck hasn&rsquo;t arrived two banking days after
+                its usual payday.
+              </span>
+            </span>
+          </label>
+          {paycheckAlerts && loaded && !regularPaycheckFound && (
+            <p role="status" style={{ fontSize: 12, lineHeight: 1.6, color: colors.amber, margin: "10px 0 0 25px" }}>
+              We haven&rsquo;t found a regular paycheck in your linked accounts yet, so this won&rsquo;t
+              alert you.
+            </p>
+          )}
+        </div>
+
         {error && (
           <div role="alert" style={{ marginTop: 14, fontFamily: fonts.mono, fontSize: 12, color: colors.red }}>
             ⚠ {error}
           </div>
         )}
 
-        <DeleteAccount />
+        {!demoMode && <DeleteAccount />}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
           <button onClick={onClose} style={{
