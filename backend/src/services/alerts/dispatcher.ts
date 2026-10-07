@@ -1,6 +1,7 @@
 import prisma from "../../lib/prisma"
 import type { AlertKind, Detector, DetectorContext, DetectedAlert } from "./types"
 import { composeSubscriptions } from "../streamComposition.service"
+import { loadPaycheckInput } from "../missedPaycheck.service"
 import { classifyWindow } from "../classification.service"
 import { getPeriodStartDay } from "../user.service"
 import { fromDateKey, recentPeriods } from "../../lib/period"
@@ -12,6 +13,7 @@ import { detectLargeTransaction } from "./detectors/largeTransaction"
 import { detectSubscriptionPriceUp } from "./detectors/subscriptionPriceUp"
 import { detectBudgetExceeded, detectBudgetProjectedOver } from "./detectors/budgetStatus"
 import { detectPositiveMilestones } from "./detectors/positiveMilestones"
+import { detectMissedPaycheck } from "./detectors/missedPaycheck"
 
 // Each detector owns the alert kinds it emits. Resolution works by absence — an
 // alert its owner no longer emits is no longer true — so ownership has to be
@@ -24,7 +26,7 @@ interface Registration {
 const DETECTORS: Registration[] = [
   { detector: detectOverspending, kinds: ["overspending"] },
   { detector: detectLowBalance, kinds: ["low_balance"] },
-  // missed_paycheck: no detector until M7.6, which stores Plaid's income streams.
+  { detector: detectMissedPaycheck, kinds: ["missed_paycheck"] },
   { detector: detectLargeTransaction, kinds: ["large_transaction"] },
   { detector: detectSubscriptionPriceUp, kinds: ["subscription_price_up"] },
   { detector: detectBudgetExceeded, kinds: ["budget_exceeded"] },
@@ -44,7 +46,7 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
   // refuses to report for a period it only partly covers.
   const periods = recentPeriods(now, startDay, CONTEXT_PERIODS)
 
-  const [accounts, classification, budgets, subscriptions, active] = await Promise.all([
+  const [accounts, classification, budgets, subscriptions, active, paychecks] = await Promise.all([
     prisma.account.findMany({
       where: { userId },
     }),
@@ -66,6 +68,11 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
     // firing. Dismissed-but-unresolved alerts count as firing — the user hid
     // the alert, they did not fix the thing.
     prisma.alert.findMany({ where: { userId, deletedAt: null, resolvedAt: null } }),
+    // Stored data only, and carried like subscriptions.
+    loadPaycheckInput(userId).then(
+      (input) => ({ ok: true as const, input }),
+      (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error : new Error(String(error)) }),
+    ),
   ])
 
   return {
@@ -79,6 +86,7 @@ export async function loadContext(userId: string): Promise<DetectorContext> {
     budgets,
     subscriptions,
     activeAlerts: new Map(active.map((a) => [a.fingerprint, a])),
+    paychecks,
   }
 }
 

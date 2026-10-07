@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma'
 import { DEMO_USER_ID } from '../middleware/auth'
+import { regularPaycheckFound } from './missedPaycheck.service'
 import { DEFAULT_PERIOD_START_DAY } from '../lib/period'
 
 // Clerk authenticates users but never creates a row in our own User table.
@@ -36,16 +37,28 @@ export async function getPeriodStartDay(userId: string): Promise<number> {
 export interface UserSettings {
   periodStartDay: number
   paymentAppInflowsAreIncome: boolean
+  /** M7.6 PR 6b — the missed-paycheck alert, opt-in. */
+  missedPaycheckAlerts: boolean
 }
 
-export async function getUserSettings(userId: string): Promise<UserSettings> {
-  const row = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { periodStartDay: true, paymentAppInflowsAreIncome: true },
-  })
+/** What GET /user/settings answers: the settings, and whether the paycheck alert has anything to watch. */
+export interface UserSettingsView extends UserSettings {
+  /** A regular paycheck the missed-paycheck alert could watch exists. Read-only. */
+  regularPaycheckFound: boolean
+}
+
+const SETTINGS_SELECT = { periodStartDay: true, paymentAppInflowsAreIncome: true, missedPaycheckAlerts: true } as const
+
+export async function getUserSettings(userId: string): Promise<UserSettingsView> {
+  const [row, found] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: SETTINGS_SELECT }),
+    regularPaycheckFound(userId),
+  ])
   return {
     periodStartDay: row?.periodStartDay ?? DEFAULT_PERIOD_START_DAY,
     paymentAppInflowsAreIncome: row?.paymentAppInflowsAreIncome ?? false,
+    missedPaycheckAlerts: row?.missedPaycheckAlerts ?? false,
+    regularPaycheckFound: found,
   }
 }
 
@@ -59,7 +72,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
 export async function updateUserSettings(
   userId: string,
   patch: Partial<UserSettings>,
-): Promise<UserSettings> {
+): Promise<UserSettingsView> {
   if (userId === DEMO_USER_ID) throw new Error('Demo settings are read-only')
   await ensureUser(userId)
   const row = await prisma.user.update({
@@ -69,10 +82,13 @@ export async function updateUserSettings(
       ...(patch.paymentAppInflowsAreIncome !== undefined && {
         paymentAppInflowsAreIncome: patch.paymentAppInflowsAreIncome,
       }),
+      ...(patch.missedPaycheckAlerts !== undefined && {
+        missedPaycheckAlerts: patch.missedPaycheckAlerts,
+      }),
     },
-    select: { periodStartDay: true, paymentAppInflowsAreIncome: true },
+    select: SETTINGS_SELECT,
   })
-  return row
+  return { ...row, regularPaycheckFound: await regularPaycheckFound(userId) }
 }
 
 // Callers validate the value (isValidPeriodStartDay) first. The demo user is

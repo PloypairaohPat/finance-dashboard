@@ -9,8 +9,8 @@
 //  after; one on a Saturday is not moved (the Reserve Banks open the Friday
 //  before), so that Friday is still a banking day.
 //
-//  Used by scripts/missed-paycheck-backtest.ts. If PR 6 adopts it, it moves to
-//  src/lib with its test.
+//  Used by the missed-paycheck alert (lib/missedPaycheck.ts) and its backtest
+//  (scripts/missed-paycheck-backtest.ts).
 // ─────────────────────────────────────────────────────────────────
 
 const DAY = 86_400_000

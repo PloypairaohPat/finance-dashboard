@@ -186,7 +186,7 @@ describe('GET /user/settings', () => {
     const res = await request(app).put('/user/settings').set('X-Test-User', USER)
       .send({ paymentAppInflowsAreIncome: true })
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ periodStartDay: 1, paymentAppInflowsAreIncome: true })
+    expect(res.body).toEqual({ periodStartDay: 1, paymentAppInflowsAreIncome: true, missedPaycheckAlerts: false, regularPaycheckFound: false })
     await setSetting(false)
   })
 })

@@ -1,13 +1,12 @@
 // ─────────────────────────────────────────────────────────────────
-//  paycheckBacktest — the pure part of scripts/missed-paycheck-backtest.ts.
-//
-//  Which inflow streams qualify for a missed-paycheck alert, the paydays a
-//  stream's deposits imply, and how each payday went: on time, late by some
-//  banking days, or never. No database, no clock: the script supplies both.
-//  Dates are UTC midnights in ms.
+//  paydays — which inflow streams qualify for the missed-paycheck alert, the
+//  paydays a stream's deposits imply, and how each payday went: on time, late
+//  by some banking days, or never. Pure: no database, no clock. Shared by the
+//  alert (lib/missedPaycheck.ts) and its backtest
+//  (scripts/missed-paycheck-backtest.ts). Dates are UTC midnights in ms.
 //
 //  The schedule is NOMINAL, inferred from all the stream's deposits: the usual
-//  day of the month (one in each half for SEMI_MONTHLY), or the usual phase of
+//  day of the month (two for SEMI_MONTHLY), or the usual phase of
 //  the week or fortnight. Anchoring each payday on the previous deposit drifts
 //  instead: pay sent early because the 15th is a Sunday would make next month's
 //  15th look two days late. Inferring from all deposits uses hindsight a live
@@ -79,9 +78,8 @@ export function nominalSchedule(deposits: readonly number[], f: PayFrequency, un
     for (let d = t * DAY; d <= until; d += p * DAY) out.push(d)
     return out
   }
-  const doms = f === 'MONTHLY'
-    ? [mode(days.map(monthDay), true)]
-    : [mode(days.map(monthDay).filter((x) => x <= 15), true), mode(days.map(monthDay).filter((x) => x > 15), true)]
+  const doms = f === 'MONTHLY' ? [mode(days.map(monthDay), true)] : semiMonthlyDays(days)
+  if (!doms) return []
   const start = new Date(days[0])
   for (let k = 0; ; k++) {
     const y = start.getUTCFullYear(), m = start.getUTCMonth() + k
@@ -101,17 +99,29 @@ export interface Payday {
 }
 
 /**
+ * A SEMI_MONTHLY stream's two usual days of the month: the most common, then
+ * the most common at least 6 days from it, counted around the month (the 31st
+ * and the 1st are neighbours). The 1st and 15th, the 15th and month end, the
+ * 5th and 20th all work. null until both have been seen.
+ */
+export function semiMonthlyDays(days: readonly number[]): [number, number] | null {
+  const doms = days.map(monthDay)
+  if (doms.length === 0) return null
+  const first = mode(doms, true)
+  const apart = (x: number) => { const d = Math.abs(x - first); return Math.min(d, 31 - d) > 5 }
+  const others = doms.filter(apart)
+  return others.length === 0 ? null : [first, mode(others, true)]
+}
+
+/**
  * Each nominal payday after the first deposit, up to `until`, with the
  * deposit nearest to it within half a period, each deposit used once. A
- * SEMI_MONTHLY stream needs a deposit in each half of the month to have a
- * schedule; with fewer, there's nothing to judge.
+ * SEMI_MONTHLY stream needs both its usual days seen to have a schedule;
+ * until then, there's nothing to judge.
  */
 export function paydays(deposits: readonly number[], f: PayFrequency, until: number): Payday[] {
   const days = [...deposits].map(dayOf).sort((a, b) => a - b)
-  if (f === 'SEMI_MONTHLY') {
-    const doms = days.map((d) => new Date(d).getUTCDate())
-    if (!doms.some((x) => x <= 15) || !doms.some((x) => x > 15)) return []
-  }
+  if (f === 'SEMI_MONTHLY' && !semiMonthlyDays(days)) return []
   const used = new Set<number>([0])
   const half = HALF_PERIOD_DAYS[f] * DAY
   return nominalSchedule(days, f, until).map((expected) => {

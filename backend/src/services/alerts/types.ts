@@ -2,12 +2,12 @@ import type { Account, Alert, Budget } from "@prisma/client"
 import type { SubscriptionAnalysis } from "../subscriptions.service"
 import type { ClassifiedRow } from "../classification.service"
 import type { Period } from "../../lib/period"
+import type { PaycheckInput } from "../../lib/missedPaycheck"
 
 export type AlertKind =
   | "overspending"
   | "low_balance"
-  // No detector until M7.6 (see docs/m7.3-consumer-audit.md, "Carried to M7.6").
-  // An unowned kind is never resolved by absence; none are stored.
+  // M7.6 PR 6b: a salary stream's payday passed without pay (lib/missedPaycheck).
   | "missed_paycheck"
   | "large_transaction"
   | "subscription_price_up"
@@ -54,6 +54,13 @@ export interface DetectorContext {
    * `null` here used to make it do.
    */
   subscriptions: { ok: true; analysis: SubscriptionAnalysis } | { ok: false; error: Error }
+  /**
+   * The missed-paycheck alert's stored inputs (missedPaycheck.service): the
+   * user's setting, qualifying salary streams with their deposits, and their
+   * Items' sync and refresh times. Carried, like `subscriptions`, so a failure
+   * fails only the detector that reads it.
+   */
+  paychecks: { ok: true; input: PaycheckInput } | { ok: false; error: Error }
   /**
    * Alerts still standing, by fingerprint — not resolved, not deleted, whether
    * or not the user dismissed them. A detector needs this when "still true"

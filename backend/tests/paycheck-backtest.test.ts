@@ -1,9 +1,9 @@
-// The missed-paycheck backtest's pure parts (scripts/lib): banking days and
-// paydays. All dates are invented.
+// Banking days and paydays (src/lib), shared by the missed-paycheck alert
+// and its backtest. All dates are invented.
 
 import { describe, expect, it } from 'vitest'
-import { addBusinessDays, businessDaysAfter, federalReserveHolidays, isBusinessDay } from '../scripts/lib/businessDays'
-import { exclusionOf, nominalSchedule, paydays, wouldFire } from '../scripts/lib/paycheckBacktest'
+import { addBusinessDays, businessDaysAfter, federalReserveHolidays, isBusinessDay } from '../src/lib/businessDays'
+import { exclusionOf, nominalSchedule, paydays, wouldFire } from '../src/lib/paydays'
 
 const d = (iso: string) => Date.parse(`${iso}T00:00:00Z`)
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
@@ -63,6 +63,11 @@ describe('paydays', () => {
     expect(late.lateBy).toBe(2)
     expect(wouldFire(late, 1)).toBe(true)
     expect(wouldFire(late, 2)).toBe(false)
+  })
+
+  it('semi-monthly on the 1st and the 15th: both usual days in the first half of the month', () => {
+    const s = nominalSchedule(['2026-04-01', '2026-04-15', '2026-05-01', '2026-05-15', '2026-06-01', '2026-06-15'].map(d), 'SEMI_MONTHLY', d('2026-07-01'))
+    expect(s.map(iso)).toEqual(['2026-04-15', '2026-05-01', '2026-05-15', '2026-06-01', '2026-06-15', '2026-07-01'])
   })
 
   it('semi-monthly on the 15th and the last day: the last day whatever the month length', () => {
