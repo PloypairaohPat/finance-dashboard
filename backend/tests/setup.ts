@@ -114,6 +114,8 @@ process.env.PLAID_SECRET ??= 'test-plaid-secret'
 process.env.PLAID_ENV ??= 'sandbox'
 // Must be exactly 32 bytes (64 hex chars) — utils/encrypt.ts uses aes-256-gcm.
 process.env.ENCRYPTION_KEY ??= 'ab'.repeat(32)
+// The audit log's hash key: 64 hex, and never equal to ENCRYPTION_KEY.
+process.env.AUDIT_HASH_KEY ??= 'cd'.repeat(32)
 process.env.CLERK_SECRET_KEY ??= 'sk_test_dummy_isolation_suite'
 process.env.CLERK_PUBLISHABLE_KEY ??= 'pk_test_dummy_isolation_suite'
 process.env.WEBHOOK_URL ??= 'http://localhost:3001/webhook'
@@ -127,7 +129,8 @@ process.env.WEBHOOK_URL ??= 'http://localhost:3001/webhook'
 vi.mock('@clerk/express', () => ({
   clerkMiddleware: () => (_req: any, _res: any, next: any) => next(),
   requireAuth: () => (_req: any, _res: any, next: any) => next(),
-  getAuth: (req: any) => ({ userId: req.header('X-Test-User') || null }),
+  // X-Test-Session stands in for the Clerk session id (audit log: session.first_seen).
+  getAuth: (req: any) => ({ userId: req.header('X-Test-User') || null, sessionId: req.header('X-Test-Session') || null }),
   // Account deletion bans, unbans and deletes Clerk users. Never a real call.
   clerkClient: {
     users: {

@@ -376,6 +376,9 @@ jupyter lab
 > ```bash
 > openssl rand -hex 32
 > ```
+>
+> `AUDIT_HASH_KEY` (the audit log's hash key, M7.7) takes the same format and is generated the
+> same way, separately: never derived from `ENCRYPTION_KEY`, and refused at startup if it equals it.
 
 ### Local databases
 
