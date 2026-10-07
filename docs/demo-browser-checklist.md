@@ -59,6 +59,18 @@ Items marked **(5e)** hold since the tab reads Plaid's streams (M7.6 PR 5e).
 - [ ] Price-up alerts for Viewloom and the Ironline gym, and no subscription alert for anything
       missing from the tab.
 
+## The missed-paycheck alert (M7.6 PR 6b)
+
+- [ ] The bell has **"Your paycheck from LANTERN BOOKS PAYROLL hasn't arrived"**, medium, saying
+      when it was due (7 days before the reseed) and that it hasn't reached Everyday Checking.
+- [ ] There's no such alert for the main salary (BRIGHTLINE PAYROLL, the 1st and the 15th).
+- [ ] A **Settings** button sits beside "Exit demo". The dialog shows **Tell me when a paycheck
+      is late** ticked, with no "we haven't found a regular paycheck" line under it.
+- [ ] Unticking it (or changing any setting) shows the demo message at once, and the box stays
+      ticked. There is no "Delete account and all data" section in the demo.
+- [ ] A week after a reseed the alert is gone (the side job's next payday came): reseed to see
+      it again.
+
 ## Phone width (about 375 px)
 
 - [ ] Every chip (Pending, New, Ended, Confirmed by you, the price chips) is fully visible: not

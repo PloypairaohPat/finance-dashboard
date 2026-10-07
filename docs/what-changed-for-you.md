@@ -202,6 +202,34 @@ longer sets off a "large purchase" alert — nothing was bought. And a budget al
 quotes exactly the same figure as the budget card it's about, instead of a slightly
 different one worked out separately.
 
+## An alert when your paycheck is late (if you want one)
+
+There's a new setting: **Tell me when a paycheck is late**, in Settings. It's off unless you
+turn it on.
+
+When it's on, and your bank data shows a regular paycheck — paid on a fixed schedule, like
+every other Friday or on the 1st and 15th — the bell tells you if one hasn't arrived **two
+banking days** after its usual payday. Weekends and bank holidays don't count, and pay that
+comes early because a payday falls on a weekend counts as on time.
+
+Some things it's careful about:
+
+- **It only watches regular pay.** If you're paid when you work, on no fixed schedule, there's
+  no payday to miss, so it won't alert you. Interest, refunds and money moved in from your own
+  accounts never count as a paycheck. If it hasn't found a regular paycheck yet, the setting
+  says so, so you never think you're covered when you aren't.
+- **A bigger paycheck is never "missing".** A bonus or overtime counts as your paycheck
+  arriving. Only a deposit well under your usual pay doesn't.
+- **A pending deposit counts.** If your pay is on its way, that's enough.
+- **It won't guess from out-of-date data.** If your bank connection needs attention, or we
+  haven't caught up with your bank since the payday, it waits rather than warning you about
+  pay that may already be there.
+- **It clears itself** when the pay arrives, when you turn the setting off, or when the next
+  payday comes round. A change at work can move a payday, and a deposit can simply be late;
+  the alert says so.
+
+In the demo the setting is on, and the bell shows what the alert looks like.
+
 ## Your card payment is no longer listed as a bill
 
 The Subscriptions & Bills page could list your monthly credit-card payment as a recurring
