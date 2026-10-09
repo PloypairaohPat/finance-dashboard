@@ -1,0 +1,11 @@
+-- M7.7: drop "Budget_backup_m53", a rollback copy of Budget made by hand in
+-- Supabase's SQL editor before the M5.3 budget-category migration
+-- (CREATE TABLE ... AS SELECT * FROM "Budget"). No migration, model or script
+-- ever used it, nothing depends on it, and no deletion path reached it. In
+-- production it held two old budget rows of one existing user; a manual dump
+-- from 2026-10-09 keeps them until the first verified backup. Dropped before
+-- daily backups start, so no backup ever contains it.
+--
+-- IF EXISTS: only production has the table; on every other database (dev,
+-- test, CI, a restore) this does nothing.
+DROP TABLE IF EXISTS "Budget_backup_m53";
