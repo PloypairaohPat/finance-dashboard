@@ -10,11 +10,16 @@
 //  User now (user_foreign_keys, recurring_streams), so these should read 0; a
 //  non-zero count means a key is missing or was bypassed.
 //
+//  Then stray tables: any table in public that is neither a user table nor a
+//  known non-user one (scripts/lib/stray-tables.ts). It should read "none";
+//  a name there holds data no deletion reaches, and the run exits 2.
+//
 //    railway run npx tsx scripts/user-data-inventory.ts --allow-remote <db host>
 // ─────────────────────────────────────────────────────────────────
 
 import { connectReadOnly, redact } from './lib/read-only-db'
 import { NON_DEMO_TABLES } from './lib/non-demo-baseline'
+import { strayTables } from './lib/stray-tables'
 
 const SOFT_DELETING = new Set(['Transaction', 'Alert', 'Goal'])
 const ORPHAN_CHECKED = ['Budget', 'BalanceSnapshot', 'Alert', 'Goal', 'RecurringStream']
@@ -46,6 +51,14 @@ async function main() {
       `SELECT count(*)::int AS n FROM "${table}" t WHERE NOT EXISTS (SELECT 1 FROM "User" u WHERE u.id = t."userId")`,
     )
     console.log(`  ${table.padEnd(16)} ${r.n}`)
+  }
+
+  // Names only: a stray table's rows are never read.
+  const stray = await strayTables(db.prisma)
+  console.log(`\nStray tables (not a user table, not known): ${stray.length ? stray.join(', ') : 'none'}`)
+  if (stray.length) {
+    console.log('  PROBLEM: no deletion reaches these. Account for each in NON_DEMO_TABLES, or drop it with a migration.')
+    process.exitCode = 2
   }
   console.log()
   await db.prisma.$disconnect()
