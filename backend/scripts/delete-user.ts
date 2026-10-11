@@ -33,8 +33,9 @@ Copies this script can't reach — check each by hand, then reply to the person:
   [ ] Local database dumps or exports made while debugging (delete any that include this user).
   [ ] Gitignored local analysis files: notebooks, CSV or spreadsheet exports, scratch query output.
   [ ] Your own notes, messages or screenshots that quote their transactions, balances or ids.
-  [ ] Database backups and service logs: they age out on their own (see "Delete account and
-      all data" in the app for the exact retention). Nothing to do but not restore from them.
+  [ ] Encrypted daily backups (up to 30 days) and service logs: they age out on their own.
+      Nothing to do now. If a backup is ever restored, docs/backups.md's post-restore check
+      runs this deletion again.
 `
 
 async function counts(db: { $queryRawUnsafe: PrismaClient['$queryRawUnsafe'] }, userId: string) {
