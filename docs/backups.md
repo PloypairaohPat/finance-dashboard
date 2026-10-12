@@ -159,4 +159,6 @@ Delete it when it's no longer needed, and no later than 30 days on.
 - **Changing the job:** `node backup/test/harness.mjs` (from the repo root; needs Docker, the
   local dev database and age on PATH) runs the real image against throwaway containers: a good
   run, every way it should refuse or fail, the drill and `restore.sh`. CI runs shellcheck and
-  checks the image builds with the right tools.
+  checks the image builds with the right tools. Run shellcheck locally with the same pinned
+  version CI uses, `koalaman/shellcheck:v0.11.0`, from the repo root:
+  `docker run --rm -v ${PWD}\backup:/mnt:ro koalaman/shellcheck:v0.11.0 -s sh /mnt/run.sh /mnt/restore.sh`

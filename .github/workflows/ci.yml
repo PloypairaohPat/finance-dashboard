@@ -139,10 +139,12 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
+      # A pinned shellcheck, the same one docs/backups.md uses locally: the
+      # runner's packaged one is older and reports differently.
       - name: shellcheck
-        run: shellcheck -s sh backup/run.sh backup/restore.sh
+        run: docker run --rm -v "$PWD/backup:/mnt:ro" koalaman/shellcheck:v0.11.0 -s sh /mnt/run.sh /mnt/restore.sh
 
       - name: Build the image
         run: docker build -f backup/Dockerfile -t ledger-backup:ci .

@@ -20,7 +20,10 @@ set -eu
 set -o pipefail
 
 file="${1:-}"
-[ -n "$file" ] && [ -f "$file" ] || { echo "restore: pass the .dump.age file's path inside the container"; exit 1; }
+if [ -z "$file" ] || [ ! -f "$file" ]; then
+  echo "restore: pass the .dump.age file's path inside the container"
+  exit 1
+fi
 [ -n "${RESTORE_TARGET_URL:-}" ] || { echo "restore: RESTORE_TARGET_URL is not set"; exit 1; }
 [ -d /work ] || { echo "restore: mount a tmpfs at /work (docker run --tmpfs /work)"; exit 1; }
 
