@@ -494,9 +494,20 @@ describe('who touches the table', () => {
   })
   const TOUCH = /\.auditEvent\b|"AuditEvent"/
 
-  it('only the audit log’s write and expiry functions and the summary script read or write it', () => {
+  it('only the audit log’s write and expiry functions, the summary script, and the two backup scripts that read it', () => {
     const touching = ['src', 'scripts', 'prisma'].flatMap(tsFiles).filter((f) => TOUCH.test(readFileSync(path.join(BACKEND, f), 'utf8')))
-    expect(touching.sort()).toEqual(['scripts/audit-log-summary.ts', 'scripts/lib/audit-triggers.ts', 'src/lib/auditLog.ts'])
+    expect(touching.sort()).toEqual([
+      'scripts/audit-log-summary.ts', 'scripts/lib/audit-triggers.ts',
+      // Backups (docs/backups.md), read-only: the drill counts unlinks and
+      // deletions since a backup; the post-restore check reads deletions.
+      'scripts/post-restore-check.ts', 'scripts/restore-drill.ts',
+      'src/lib/auditLog.ts',
+    ])
+    for (const f of ['scripts/post-restore-check.ts', 'scripts/restore-drill.ts']) {
+      const lines = readFileSync(path.join(BACKEND, f), 'utf8').split('\n').filter((l) => TOUCH.test(l))
+      expect(lines.length, f).toBeGreaterThan(0)
+      expect(lines.filter((l) => !/\bSELECT\b[\s\S]*\bFROM "AuditEvent"/.test(l) || /\b(INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\b/i.test(l)), f).toEqual([])
+    }
 
     // In auditLog.ts, only these functions.
     const src = readFileSync(path.join(BACKEND, 'src/lib/auditLog.ts'), 'utf8')

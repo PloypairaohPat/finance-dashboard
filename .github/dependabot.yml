@@ -43,6 +43,13 @@ updates:
         applies-to: security-updates
         patterns: ['*']
 
+  # The backup job's base image (backup/Dockerfile): Alpine, pinned by digest.
+  - package-ecosystem: docker
+    directory: /backup
+    schedule:
+      interval: weekly
+      day: monday
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -340,8 +340,9 @@ money?", subscription marks) went with it. It no longer does:
 every bank you've linked (so Plaid loses access), deletes everything Ledger stored about you,
 then deletes your sign-in account and signs you out. It can't be undone.
 
-What it can't reach: Ledger's database host keeps no automatic backups, so no backup copy of your
-data lingers. Server logs record your account id (not your transactions) and drop out of view
+What it can't reach: Ledger's encrypted daily backups may still hold your data for up to 30 days,
+until each one expires on its own; they can't be edited, and if one is ever restored, your
+deletion is run again. Server logs record your account id (not your transactions) and drop out of view
 after 7 days, though the host may keep them longer internally. Plaid keeps its own records under
 its own policy. If you'd rather ask by message, the same deletion can be run for you.
 
