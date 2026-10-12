@@ -162,3 +162,32 @@ Delete it when it's no longer needed, and no later than 30 days on.
   checks the image builds with the right tools. Run shellcheck locally with the same pinned
   version CI uses, `koalaman/shellcheck:v0.11.0`, from the repo root:
   `docker run --rm -v ${PWD}\backup:/mnt:ro koalaman/shellcheck:v0.11.0 -s sh /mnt/run.sh /mnt/restore.sh`
+
+## Phase 8: moving to the home server
+
+In Phase 8 the live database moves from Supabase to a home server, and the backup job moves
+with it: the same script, run nightly by a timer or a container on that server instead of
+Railway's cron.
+
+**Three copies:**
+
+1. the live database;
+2. a nightly encrypted dump on a separate disk at home, for fast restores;
+3. the same dump in R2, the off-site copy. R2 and the 7-day bucket lock on `daily/` stay.
+
+**Unchanged:**
+
+- The age secret key never touches the server. The server holds only the public key, so it can
+  write backups but not read them, local copies included.
+- `pg_dump` matches the server's Postgres major, as now (see "A Postgres major upgrade" above).
+- Local copies are pruned at 29 days too, so "deleted data stays in encrypted backups for up to
+  30 days" stays true.
+- The Sentry monitor, and the monthly drill.
+
+**Moving day is the drill:**
+
+1. Dump Supabase.
+2. Restore it into the home Postgres (empty, schema and data, as in "Restoring for real").
+3. Compare per-table counts.
+4. Run the user-deletion check (`post-restore-check.ts`).
+5. Once all of that is verified, delete the Supabase project.
