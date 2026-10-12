@@ -41,7 +41,7 @@
     "jose": "^6.2.12",
     "node-cron": "^4.6.0",
     "plaid": "^24.0.0",
-    "prisma": "^6.11.1"
+    "prisma": "^7.10.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
