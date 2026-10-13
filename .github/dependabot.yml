@@ -38,6 +38,10 @@ updates:
       # `npm run build` and starts the built server.
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+      # Sentry 11 failed `test`; take it on purpose, with the frontend's
+      # @sentry/react (held below).
+      - dependency-name: '@sentry/node'
+        update-types: ['version-update:semver-major']
     groups:
       backend-runtime:
         dependency-type: production
@@ -79,7 +83,7 @@ updates:
       - dependency-name: react-plaid-link
         update-types: ['version-update:semver-major']
       # Sentry 11 failed the frontend job; take it on purpose, with the
-      # backend's @sentry/node.
+      # backend's @sentry/node (held above).
       - dependency-name: '@sentry/react'
         update-types: ['version-update:semver-major']
     groups:
