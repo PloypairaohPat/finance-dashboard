@@ -11,6 +11,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # Node's types belong to the Node major in .nvmrc, so they change with
+      # Node, by hand, never on their own. (They're at 25 against Node 22 today;
+      # moving them to 22 is its own decision.)
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       backend-runtime:
         dependency-type: production
@@ -31,6 +37,9 @@ updates:
     ignore:
       # Create React App's last release; a major would be a migration, not an update.
       - dependency-name: react-scripts
+        update-types: ['version-update:semver-major']
+      # As in /backend: Node's types move with .nvmrc, by hand.
+      - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
     groups:
       frontend-runtime:

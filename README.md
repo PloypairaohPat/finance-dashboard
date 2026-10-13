@@ -340,7 +340,7 @@ Each phase had an explicit milestone roadmap and acceptance criteria before any 
 
 ## Local Setup
 
-**Prereqs:** Node 20+, Python 3.11+ (optional, for analytics), PostgreSQL (or a Supabase project), Plaid sandbox keys, Clerk dev keys.
+**Prereqs:** Node 22 (the major in `.nvmrc`, which production and CI run), Python 3.11+ (optional, for analytics), PostgreSQL (or a Supabase project), Plaid sandbox keys, Clerk dev keys.
 
 ```bash
 # 1. Clone

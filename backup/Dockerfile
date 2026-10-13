@@ -1,5 +1,6 @@
 # The daily backup job (M7.7): pg_dump 17, age, rclone and curl on Alpine.
-# Built by Railway from the repo root (backup/railway.json), and by CI.
+# Built by Railway from the repo root (settings in Railway's UI; see
+# docs/backups.md), and by CI.
 #
 # pg_dump must be at least the server's major version: production is
 # Postgres 17. When Supabase moves to 18, this job fails loudly until
