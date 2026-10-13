@@ -110,6 +110,7 @@ The app pulls live transactions from my Wells Fargo accounts through Plaid Produ
 - **Per-user data isolation** — every Prisma query is scoped to a server-resolved `userId`, never one supplied in a request param or body. For authenticated users that id comes from the verified Clerk JWT; the only other path, read-only demo mode, resolves to a single fixed public user. No request can name whose data to read.
 - **Read-only demo mode** — an `X-Demo-Mode` header maps a request to one pre-seeded demo user with entirely synthetic data. A global guard blocks every mutating request (and every Plaid call) for it, so it exposes no real financial data and can never resolve to a real account — it exists purely so the dashboard can be explored without a login.
 - **Secrets posture** — `.env` files gitignored; production secrets live only in Railway/Vercel/Supabase/Clerk dashboards. The Python analytics environment connects directly to Supabase via a separate read connection and is never deployed.
+- **Threat model and data handling** — what Ledger protects, from whom, and what's still open: [docs/threat-model.md](docs/threat-model.md). What it stores, where, for how long, and what deleting removes: [docs/data-handling.md](docs/data-handling.md).
 
 ### Data pipeline
 Every sync runs the same chain:
