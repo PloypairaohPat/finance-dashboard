@@ -33,6 +33,11 @@ updates:
       # `npm run dev` and every db:dev:* script stop. CI doesn't run those.
       - dependency-name: dotenv
         update-types: ['version-update:semver-major']
+      # TypeScript 7 is the new native compiler, and `tsc` builds production's
+      # dist/. CI only typechecks, so take it in its own PR that runs
+      # `npm run build` and starts the built server.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     groups:
       backend-runtime:
         dependency-type: production
