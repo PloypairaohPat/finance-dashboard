@@ -2,6 +2,11 @@
 # few PRs. Majors aren't grouped: each comes as its own PR. Security updates
 # (turned on in the repo's Code security settings) are grouped per directory.
 # Every npm PR touches a lockfile, so dependency-audit enforces on it.
+#
+# Majors we've decided to hold are listed under each directory's `ignore`,
+# with the reason. Closing a Dependabot PR only skips that one release, so a
+# hold lives here, not in a PR comment. The weekly dependency-audit run still
+# fails on any high or critical runtime advisory, held or not.
 
 version: 2
 updates:
@@ -16,6 +21,22 @@ updates:
       # Node, by hand, never on their own. (They're at 25 against Node 22 today;
       # moving them to 22 is its own decision.)
       - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Prisma 7 is a planned migration, not a bump (it failed `test`), and the
+      # CLI and client move together.
+      - dependency-name: prisma
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@prisma/client'
+        update-types: ['version-update:semver-major']
+      # dotenv 18 ships its own `dotenv` command, which replaces dotenv-cli's:
+      # `dotenv -e .env.dev -- ...` prints help instead of running, so
+      # `npm run dev` and every db:dev:* script stop. CI doesn't run those.
+      - dependency-name: dotenv
+        update-types: ['version-update:semver-major']
+      # TypeScript 7 is the new native compiler, and `tsc` builds production's
+      # dist/. CI only typechecks, so take it in its own PR that runs
+      # `npm run build` and starts the built server.
+      - dependency-name: typescript
         update-types: ['version-update:semver-major']
     groups:
       backend-runtime:
@@ -40,6 +61,26 @@ updates:
         update-types: ['version-update:semver-major']
       # As in /backend: Node's types move with .nvmrc, by hand.
       - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Create React App can't take TypeScript 7.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # React 19 goes with replacing Create React App. react and react-dom
+      # (and their types) can only move together.
+      - dependency-name: react
+        update-types: ['version-update:semver-major']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/react-dom'
+        update-types: ['version-update:semver-major']
+      # The bank-link screen: a major needs a real-browser link test first.
+      - dependency-name: react-plaid-link
+        update-types: ['version-update:semver-major']
+      # Sentry 11 failed the frontend job; take it on purpose, with the
+      # backend's @sentry/node.
+      - dependency-name: '@sentry/react'
         update-types: ['version-update:semver-major']
     groups:
       frontend-runtime:
