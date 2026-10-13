@@ -10,16 +10,21 @@ dotenv.config()
 // SENTRY_DSN is intentionally NOT in REQUIRED_ENV — the app must boot fine without it
 // (local dev, tests, or a deploy that hasn't configured Sentry yet).
 import * as Sentry from '@sentry/node'
-import { scrubSentryEvent } from './utils/sentryScrub'
+import { dropConsoleBreadcrumb, scrubSentryEvent } from './utils/sentryScrub'
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     sendDefaultPii: false,
     // Explicit scrubbing, not reliance on SDK defaults: strip bodies/cookies/auth
-    // headers and deep-scrub anything token- or key-shaped from the whole event.
+    // headers/query strings and deep-scrub anything token-, key- or query-shaped
+    // from the whole event.
     beforeSend(event) {
       return scrubSentryEvent(event)
+    },
+    // Console output stays in Railway's logs, not in Sentry's breadcrumbs.
+    beforeBreadcrumb(breadcrumb) {
+      return dropConsoleBreadcrumb(breadcrumb)
     },
   })
 }

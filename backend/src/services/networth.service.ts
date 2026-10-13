@@ -93,7 +93,9 @@ export async function captureBalanceSnapshots(userId: string) {
       })
       captured++
     } catch (err: any) {
-      console.error(`Snapshot failed for ${acct.name}:`, err.message)
+      // Plaid's opaque account id, not the account's name: logs needn't say what
+      // someone banks with.
+      console.error(`Snapshot failed for account ${acct.plaidAccountId}:`, err.message)
     }
   }
 
