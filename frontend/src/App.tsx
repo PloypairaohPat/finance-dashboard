@@ -70,37 +70,6 @@ const styles: Record<string, CSSProperties | ((...args: any[]) => CSSProperties)
     fontFamily: "'IBM Plex Mono', monospace",
     lineHeight: 1.6,
   },
-  stepList: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-    margin: "32px 0 48px",
-  },
-  step: (done: boolean) => ({
-    padding: "14px 18px",
-    border: `1px solid ${done ? `${colors.green}30` : "#222"}`,
-    borderRadius: "8px",
-    background: done ? "#0d1f15" : "#111",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    transition: "all 0.3s",
-  }),
-  stepDot: (done: boolean) => ({
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    background: done ? colors.green : "#333",
-    flexShrink: 0,
-    transition: "all 0.3s",
-    boxShadow: done ? `0 0 8px ${colors.green}80` : "none",
-  }),
-  stepLabel: (done: boolean) => ({
-    fontSize: "13px",
-    fontFamily: "'IBM Plex Mono', monospace",
-    color: done ? colors.green : "#555",
-    transition: "color 0.3s",
-  }),
   connectBtn: {
     background: colors.green,
     color: "#000",
@@ -511,16 +480,6 @@ export default function App() {
     }
   }, [authFetch])
 
-  const steps = [
-    { label: "backend scaffolded",    done: true },
-    { label: "link_token endpoint",   done: !!linkToken },
-    { label: "exchange_public_token", done: connected },
-    { label: "plaid link UI mounted", done: !!linkToken },
-    { label: "wells fargo connected", done: connected },
-    { label: "balances fetched",      done: accounts.length > 0 },
-    { label: "transactions fetched",  done: connected },
-  ];
-
   // ── Initial loading splash ───────────────────────────────────────
   // Deliberately a const rather than the early `return` this used to be.
   // Every branch App can render has to end up inside the BrowserRouter at the
@@ -654,76 +613,24 @@ export default function App() {
     />
   );
 
-  const setupPanel = (
-        <div style={styles.hero as CSSProperties}>
-          <h1 style={{
-            ...(styles.heroTitle as CSSProperties),
-            fontSize: isMobile ? "32px" : "52px",
-            letterSpacing: isMobile ? "-1px" : "-2px",
-          }}>Connect your<br />bank account.</h1>
-          <p style={styles.heroSub as CSSProperties}>
-            Node.js + React + Plaid Link integration.<br />
-            Production mode — connected to Wells Fargo.
-          </p>
-
-          <div style={{
-            ...(styles.stepList as CSSProperties),
-            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-          }}>
-            {steps.map((s, i) => (
-              <div key={i} style={(styles.step as (d: boolean) => CSSProperties)(s.done)}>
-                <div style={(styles.stepDot as (d: boolean) => CSSProperties)(s.done)} />
-                <span style={(styles.stepLabel as (d: boolean) => CSSProperties)(s.done)}>{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {!connected ? (
+  // Link prompts and errors show whether or not the connect panel does.
+  const linkNotices = (
+    <>
+      {linkPrompt && (
+        <div role="alert" data-testid="link-prompt" style={{
+          marginTop: 16, padding: "12px 14px", borderRadius: 8,
+          background: "#0d1510", border: "1px solid #253325", color: "#d4e8d4",
+          fontSize: 13, lineHeight: 1.5,
+        }}>
+          {linkPrompt.kind === "duplicate" ? (
             <>
-              <button
-                style={{
-                  ...(loading.link || !ready ? styles.loadingBtn as CSSProperties : styles.connectBtn as CSSProperties),
-                  ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
-                }}
-                onClick={() => open()}
-                disabled={loading.link || !ready}
-                onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  // Hover darkens to the token's dim green (was an off-token #00c98d).
-                  if (ready) e.currentTarget.style.background = colors.greenDim;
-                }}
-                onMouseOut={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  if (ready) e.currentTarget.style.background = colors.green;
-                }}
-              >
-                {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
-              </button>
-              <p style={styles.hint as CSSProperties}>Link a new bank account via Plaid to get started.</p>
-            </>
-          ) : (
-            <button style={{
-              ...(styles.connectBtn as CSSProperties),
-              background: "#1a2e20", color: colors.green,
-              ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
-            }} onClick={fetchData}>
-              ↻ Refresh Data
-            </button>
-          )}
-
-          {linkPrompt && (
-            <div role="alert" data-testid="link-prompt" style={{
-              marginTop: 16, padding: "12px 14px", borderRadius: 8,
-              background: "#0d1510", border: "1px solid #253325", color: "#d4e8d4",
-              fontSize: 13, lineHeight: 1.5,
-            }}>
-              {linkPrompt.kind === "duplicate" ? (
-                <>
-                  <div>{linkPrompt.institutionName ?? "This bank"} is already connected, with these accounts. Reconnect it instead of linking it again.</div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                    <button type="button" style={styles.connectBtn as CSSProperties}
-                      onClick={() => startItemUpdate(linkPrompt.itemId, false)}>Reconnect</button>
-                    <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
-                      onClick={() => setLinkPrompt(null)}>Cancel</button>
-                  </div>
+              <div>{linkPrompt.institutionName ?? "This bank"} is already connected, with these accounts. Reconnect it instead of linking it again.</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <button type="button" style={styles.connectBtn as CSSProperties}
+                  onClick={() => startItemUpdate(linkPrompt.itemId, false)}>Reconnect</button>
+                <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
+                  onClick={() => setLinkPrompt(null)}>Cancel</button>
+              </div>
                 </>
               ) : (
                 <>
@@ -732,19 +639,60 @@ export default function App() {
                     If it's the same login with other accounts, we'll add them to the connection you have.
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                    <button type="button" style={styles.connectBtn as CSSProperties}
-                      onClick={() => exchange(linkPrompt.publicToken, linkPrompt.metadata, true)}>Yes, a different login</button>
-                    <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
-                      onClick={() => startItemUpdate(linkPrompt.itemId, true)}>No, same login</button>
-                  </div>
-                </>
-              )}
+                <button type="button" style={styles.connectBtn as CSSProperties}
+                  onClick={() => exchange(linkPrompt.publicToken, linkPrompt.metadata, true)}>Yes, a different login</button>
+                <button type="button" style={{ ...(styles.connectBtn as CSSProperties), background: "#1a2e20", color: colors.green }}
+                  onClick={() => startItemUpdate(linkPrompt.itemId, true)}>No, same login</button>
+              </div>
+            </>
+          )}
             </div>
           )}
 
           {error && <div style={styles.error as CSSProperties}>⚠ {error}</div>}
-        </div>
+    </>
   );
+
+  // The connect panel is a first-run screen: it shows while no bank is linked yet,
+  // or after "+ Link Account". Once connected, all that's left here is a link
+  // prompt or an error, if there is one. (It used to show to everyone, the public
+  // demo included, with a build checklist and the owner's bank's name.)
+  const setupPanel = !connected ? (
+        <div style={styles.hero as CSSProperties}>
+          <h1 style={{
+            ...(styles.heroTitle as CSSProperties),
+            fontSize: isMobile ? "32px" : "52px",
+            letterSpacing: isMobile ? "-1px" : "-2px",
+          }}>Connect your<br />bank account.</h1>
+          <p style={{ ...(styles.heroSub as CSSProperties), marginBottom: "32px" }}>
+            Ledger links your bank through Plaid. It can read balances and
+            transactions; it can't move money.
+          </p>
+
+          <button
+            style={{
+              ...(loading.link || !ready ? styles.loadingBtn as CSSProperties : styles.connectBtn as CSSProperties),
+              ...(isMobile ? { width: "100%", padding: "14px 20px", fontSize: "15px" } : {}),
+            }}
+            onClick={() => open()}
+            disabled={loading.link || !ready}
+            onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => {
+              // Hover darkens to the token's dim green (was an off-token #00c98d).
+              if (ready) e.currentTarget.style.background = colors.greenDim;
+            }}
+            onMouseOut={(e: React.MouseEvent<HTMLButtonElement>) => {
+              if (ready) e.currentTarget.style.background = colors.green;
+            }}
+          >
+            {loading.link ? "Loading Plaid…" : "Connect Bank Account →"}
+          </button>
+          <p style={styles.hint as CSSProperties}>Link a new bank account via Plaid to get started.</p>
+
+          {linkNotices}
+        </div>
+  ) : (linkPrompt || error) ? (
+        <div style={{ marginBottom: "32px" }}>{linkNotices}</div>
+  ) : null;
 
   const dashboard = (
     <OverviewView
