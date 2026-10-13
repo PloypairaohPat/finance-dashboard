@@ -77,7 +77,8 @@ remove a key it never saw.
   names itself. That is application logic, not URL plumbing.
 - **What the lint rule does not cover:** writing the query string through
   `useNavigate('?…')` or the History API directly. Neither is banned; don't.
-- Needs a Node with built-in TypeScript type stripping (verified on Node 24.14). Node
+- Needs a Node with built-in TypeScript type stripping, on by default from Node 22.18
+  (CI runs it on the Node in `.nvmrc`; also verified on 22.22 and 24.14). Node
   prints a `MODULE_TYPELESS_PACKAGE_JSON` warning when it loads the `.ts` helper;
   it is harmless.
 

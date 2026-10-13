@@ -47,9 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The Node major production runs (Railway reads backend/package.json's
+      # engines); .nvmrc is the one place CI takes it from.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -97,11 +99,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The same Node as the backend and Vercel's build (frontend/package.json's
+      # engines). Both repro scripts import .ts files directly and rely on
+      # Node's built-in TypeScript type stripping, on by default from 22.18.
       - uses: actions/setup-node@v7
         with:
-          # 24, not 22: both repro scripts import .ts files directly and rely on
-          # Node's built-in TypeScript type stripping, verified on Node 24.
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 

@@ -9,7 +9,7 @@ alerts, the restore drill, a real restore, and manual dumps.
 
 ## What runs
 
-A Railway service built from `backup/` (config `backup/railway.json`) runs `backup/run.sh` at
+A Railway cron service, `ledger-backup`, built from `backup/Dockerfile`, runs `backup/run.sh` at
 **03:17 UTC** every day, clear of the backend's own jobs (syncs at 00, 06, 12 and 18; the 07:00
 streams backstop; midnight's keepalive and audit-log expiry). It:
 
@@ -32,8 +32,8 @@ its first 7 days, even with the job's token.
 
 ## Setting it up
 
-In this order. The Railway service is created after the merge: before it, `main` has no
-`backup/railway.json`, and Railway would fall back to its defaults (no cron).
+In this order. The Railway service is created after the merge, so its first build finds
+`backup/` on `main`.
 
 1. **age 1.3.2 on your machine:** `winget install --id FiloSottile.age -e --version 1.3.2`
    (the official zip, checked against winget's SHA-256), then a new terminal and `age --version`.
@@ -57,16 +57,36 @@ In this order. The Railway service is created after the merge: before it, `main`
    railway run -- docker run --rm -it -e DIRECT_URL postgres:17-alpine sh -c 'set -f; psql $DIRECT_URL'
    ```
    then `\password backup_reader`. Its URL is the session pooler's (port 5432) with the user
-   `backup_reader.<project ref>`.
+   `backup_reader.<project ref>`, not the `postgres.<project ref>` the dashboard's copy starts
+   with. If the password was set in the SQL editor instead, delete that snippet: a saved snippet
+   keeps the password in its text.
 5. **Merge** the PR that adds `backup/`.
 6. **The same evening, before 03:17 UTC:**
-   - Railway: a new service from this repo; config file `/backup/railway.json`; variables
-     `BACKUP_DATABASE_URL`, `BACKUP_AGE_RECIPIENT`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
-     `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `SENTRY_DSN` (the backend's DSN is fine).
-   - Sentry: a cron monitor, slug **`ledger-db-backup`**, crontab `17 3 * * *` UTC, check-in
-     margin 30 minutes, max runtime 20 minutes, an issue on the first failed or missed check-in;
-     and an alert rule on it. Created the same day as the service, so it doesn't alert on runs
-     that couldn't have happened.
+   - Railway: a new service from this repo, named `ledger-backup`, set up by hand in its
+     Settings. Railway's config files are deprecated: they aren't read for services created
+     after 2026-08-28, and stop working for every service on 2026-12-01. So the repo holds no
+     copy of these, and they're recorded here instead:
+
+     | Setting | Value |
+     | --- | --- |
+     | Root directory | `/` (the Dockerfile copies `backup/run.sh` from the repo root) |
+     | Builder | Dockerfile |
+     | Dockerfile path | `backup/Dockerfile` |
+     | Watch paths | `/backup/**` |
+     | Cron schedule | `17 3 * * *` (UTC) |
+     | Restart policy | Never |
+     | Start command | none (the image runs `run.sh`) |
+
+     Variables: `BACKUP_DATABASE_URL`, `BACKUP_AGE_RECIPIENT`, `R2_ACCOUNT_ID`,
+     `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `SENTRY_DSN` (the backend's DSN is
+     fine). A cron service shows "offline" between runs; its **Cron Runs** tab has **Run now**
+     and the recent runs.
+   - Sentry: a cron monitor **created with the name `ledger-db-backup`**, crontab `17 3 * * *`
+     UTC, check-in margin 30 minutes, max runtime 20 minutes (the run's own timeout is 15), an
+     issue on the first failed or missed check-in; and an alert rule on it. The slug comes from
+     the name at creation and never changes, so renaming a monitor doesn't fix a wrong slug:
+     check it under the monitor's Details, and check it again before deleting one. Created the
+     same day as the service, so it doesn't alert on runs that couldn't have happened.
 7. **The next morning:** an `ok` check-in in Sentry and an object in `daily/`; then the drill
    (below).
 
@@ -75,8 +95,9 @@ In this order. The Railway service is created after the merge: before it, `main`
 - **Missed:** the job didn't start, or couldn't reach Sentry (no `SENTRY_DSN`). Check the
   service's latest cron run in Railway, and its variables.
 - **Error:** the Railway log for that run says which step failed, by variable name or by stage.
-  A wrong password or an unreachable pooler shows as "did not finish". Nothing it uploaded is in
-  `daily/`.
+  A wrong password or an unreachable pooler shows as "did not finish". `password authentication
+  failed for user "postgres"` means `BACKUP_DATABASE_URL` still has the dashboard's default user,
+  not `backup_reader.<project ref>`. Nothing it uploaded is in `daily/`.
 - **Timeout** (max runtime): a hung run. Check Railway; a later run can't start until it ends.
 
 Until it's fixed, take a manual dump (below) if a day without a backup matters.
@@ -86,10 +107,12 @@ Until it's fixed, take a manual dump (below) if a day without a backup matters.
 Monthly, and after any migration that adds a table. From `backend/`:
 
 1. Download the newest object under `daily/` from the Cloudflare dashboard (no R2 credential on
-   your machine).
-2. Run the drill, comparing with production read-only:
+   your machine). The dashboard names the download `daily_ledger-….dump.age`: drop the
+   `daily_`, or the drill can't read the backup's time from the name.
+2. Run the drill, comparing with production read-only (`--service` makes sure it gets the
+   backend's variables, whichever service `backend/` is linked to):
    ```
-   railway run npx tsx scripts/restore-drill.ts --file C:\Users\kpaoi\Downloads\<name>.dump.age --allow-remote aws-1-us-east-2.pooler.supabase.com
+   railway run --service finance-dashboard -- npx tsx scripts/restore-drill.ts --file C:\Users\kpaoi\Downloads\<name>.dump.age --allow-remote aws-1-us-east-2.pooler.supabase.com
    ```
    It asks for the secret key at a hidden prompt, restores into a fresh in-memory Postgres 17
    container, checks the audit log's triggers and limits, the required tables (`User`,
@@ -123,7 +146,7 @@ refuse the rows. A full restore loads rows before it creates triggers, which is 
 4. **Run the deletions again.** Anyone deleted after the backup was taken is back. From
    `backend/`, against the restored database:
    ```
-   railway run npx tsx scripts/post-restore-check.ts --allow-remote <restored db host> --taken-at <backup time, ISO>
+   railway run --service finance-dashboard -- npx tsx scripts/post-restore-check.ts --allow-remote <restored db host> --taken-at <backup time, ISO>
    ```
    It reads the restored users and checks two sources:
    - **The old database's audit log**, if it's still reachable (`--old-url-env NAME`, the
@@ -140,10 +163,11 @@ refuse the rows. A full restore loads rows before it creates triggers, which is 
 
 Before something risky, or when the job is down. It uses the job's read-only role and writes
 only ciphertext (plaintext stays in the container's pipe), named `ledger-manual-…` so the drill
-never deletes it. From `backend/`, linked to the backup service in Railway:
+never deletes it. From `backend/`, left linked to the backend service: `--service ledger-backup`
+lends this one command the backup service's variables, without relinking anything.
 
 ```
-railway run --service <backup service> -- docker run --rm -e BACKUP_DATABASE_URL -e BACKUP_AGE_RECIPIENT -v C:\Users\kpaoi\ledger-backups:/out postgres:17-alpine sh -c 'set -f -o pipefail; apk add -q age; pg_dump --format=custom --schema=public --no-owner --no-privileges --dbname=$BACKUP_DATABASE_URL | age -r $BACKUP_AGE_RECIPIENT -o /out/ledger-manual-YYYY-MM-DD.dump.age'
+railway run --service ledger-backup -- docker run --rm -e BACKUP_DATABASE_URL -e BACKUP_AGE_RECIPIENT -v C:\Users\kpaoi\ledger-backups:/out postgres:17-alpine sh -c 'set -f -o pipefail; apk add -q age; pg_dump --format=custom --schema=public --no-owner --no-privileges --dbname=$BACKUP_DATABASE_URL | age -r $BACKUP_AGE_RECIPIENT -o /out/ledger-manual-YYYY-MM-DD.dump.age'
 ```
 
 Delete it when it's no longer needed, and no later than 30 days on.
@@ -156,6 +180,9 @@ Delete it when it's no longer needed, and no later than 30 days on.
   `postgres:17-alpine` to 18 with it.
 - **A new key:** set the new public key in Railway, and keep the old secret key until the last
   backup encrypted to it has expired (29 days).
+- **Railway's settings:** they exist only in Railway's UI (the table under "Setting it up"). If
+  the service is ever recreated, or Railway's replacement for config files is adopted, start
+  from that table. A change to it belongs in this doc in the same sitting.
 - **Changing the job:** `node backup/test/harness.mjs` (from the repo root; needs Docker, the
   local dev database and age on PATH) runs the real image against throwaway containers: a good
   run, every way it should refuse or fail, the drill and `restore.sh`. CI runs shellcheck and

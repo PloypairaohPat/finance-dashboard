@@ -2,7 +2,8 @@
 # ─────────────────────────────────────────────────────────────────
 #  ledger-backup — the daily encrypted production backup (M7.7).
 #
-#  Run by Railway's cron (backup/railway.json), once a day; exits when done.
+#  Run by Railway's cron, once a day; exits when done. The schedule and build
+#  settings live in Railway's UI (docs/backups.md).
 #
 #    pg_dump (custom format, public schema, no owner, no privileges)
 #      | age, to BACKUP_AGE_RECIPIENT's public key

@@ -2,6 +2,9 @@
   "name": "plaid-frontend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.4",
     "@sentry/react": "^10.73.0",
