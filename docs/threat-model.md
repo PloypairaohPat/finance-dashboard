@@ -46,7 +46,7 @@ account; the database role; the operator's own machine.
 | **Access tokens stolen from the database** | AES-256-GCM, a fresh IV each time, the key only in Railway and checked at startup; tokens never logged or returned. | The database and Railway together give working tokens. They're read-only: no money moves. |
 | **Abuse and cost** (scraping, link spam, Plaid bills) | Rate limits: 150 requests per 15 minutes per IP, 20 on the endpoints that cost Plaid money; a 10-minute cooldown on refreshing recurring streams. | Plaid bills per live Item, so an idle tester's connection costs money until removed. |
 | **Leaks through telemetry** | Sentry gets no bodies, cookies, auth headers, URL queries, backend log lines, or token-, key- or secret-shaped values (both apps, tested). Railway keeps logs 7 days. | Sentry events for deletion and Plaid failures carry a Clerk user id or a Plaid Item id, on purpose. Logs name users by Clerk id and the bank linked. Sentry's server-side scrubbers should be confirmed on. |
-| **Secrets or personal data in the repo or the bundle** | A full-history secret scan came back clean (Phase 6). CI fails on anything shaped like a real Clerk id, Plaid id or dated amount. The browser bundle holds only the API URL, Clerk's publishable key and the Sentry DSN, all public by design. | The live site serves source maps, so the frontend's full source is public. Harmless while the repo is public; decide with the repo's visibility. |
+| **Secrets or personal data in the repo or the bundle** | A full-history secret scan came back clean (Phase 6). CI fails on anything shaped like a real Clerk id, Plaid id or dated amount. The browser bundle holds only the API URL, Clerk's publishable key and the Sentry DSN, all public by design. | Production builds ship no source maps (`frontend/.env.production`), so the live site no longer serves the frontend's source; its minified code is still readable, as any site's is. Frontend errors in Sentry show minified stack traces. |
 | **A malicious or vulnerable dependency** | Lockfiles; `npm ci` in CI; the `dependency-audit` gate fails on a high or critical runtime advisory; Dependabot weekly, with deliberate holds on majors; the backup image pinned by digest. | Create React App's build tooling carries advisories that only replacing it clears. Actions are pinned by major version, not commit SHA. `dependency-audit` isn't yet a required check. |
 | **A vendor account taken over** (GitHub, Railway, Supabase, Vercel, Clerk, Plaid, Sentry, Cloudflare) | Two-factor sign-in on each; `main` protected by a ruleset (PR required, no force-push or deletion, required checks); secrets live only in the vendors' settings. | Confirm two-factor on Cloudflare and the ruleset's bypass list in the next access review. GitHub reaches everything that deploys. |
 | **Someone with database access** (a leaked `DATABASE_URL`, a hosting breach) | The audit log's triggers refuse edits, truncation and early deletion, and stamp each row's time. | The app and migrations share one role, which owns the audit table and could drop its triggers. The backup role's password reads every row. Separate roles would close the first; accepted at this scale. |
@@ -72,7 +72,9 @@ moment to look at them again.
 2. Confirm Sentry's server-side Data Scrubber is on in both projects.
 3. Tighten CORS to Ledger's own origins and set Clerk's `authorizedParties` (prove it with
    a local sign-in).
-4. Decide the repo's visibility, and source maps with it.
+4. Make the repo private (source maps are already off in production builds). Possibly later:
+   upload source maps to Sentry at build time, without serving them, so frontend stack traces
+   are readable again. Minified traces are accepted for now.
 5. Isolation tests for every new model before it holds real data (M7.4).
 6. Act on bank-side revocations: delete what was revoked.
 7. Separate database roles for the app and for migrations.
