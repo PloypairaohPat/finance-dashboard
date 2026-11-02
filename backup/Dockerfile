@@ -5,7 +5,7 @@
 # pg_dump must be at least the server's major version: production is
 # Postgres 17. When Supabase moves to 18, this job fails loudly until
 # postgresql17-client here becomes postgresql18-client (docs/backups.md).
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 RUN apk add --no-cache postgresql17-client age rclone curl ca-certificates
 
